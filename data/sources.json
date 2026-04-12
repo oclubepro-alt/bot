@@ -1,0 +1,20 @@
+[
+  {
+    "name": "Shopee Ofertas do Dia",
+    "url": "https://shopee.com.br/flash_sale",
+    "active": true,
+    "notes": "Página de flash sale da Shopee"
+  },
+  {
+    "name": "Mercado Livre Ofertas",
+    "url": "https://www.mercadolivre.com.br/ofertas",
+    "active": true,
+    "notes": "Página de ofertas do ML"
+  },
+  {
+    "name": "Exemplo - Produto específico",
+    "url": "https://www.exemplo.com.br/categoria/ofertas",
+    "active": false,
+    "notes": "Exemplo de URL de categoria. Mude para URLs reais e ative."
+  }
+]

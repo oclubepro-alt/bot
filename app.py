@@ -1,0 +1,98 @@
+"""
+app.py - Ponto de entrada do Bot de Achadinhos
+Configura logging, registra handlers e inicia o polling.
+"""
+import logging
+import sys
+
+from telegram.ext import ApplicationBuilder, CommandHandler, ConversationHandler, CallbackQueryHandler, MessageHandler, filters
+
+from bot.utils.config import TELEGRAM_BOT_TOKEN
+from bot.handlers import build_main_handler, build_review_queue_handler
+from bot.services.scheduler_service import setup_scheduler
+
+
+# Garante saída no Windows com utf-8
+if sys.stdout and hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+
+# ── Logging ──────────────────────────────────────────────────────────────────
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+    handlers=[
+        logging.StreamHandler(sys.stdout),
+    ],
+)
+
+# Silencia logs verbosos de bibliotecas externas
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("openai").setLevel(logging.WARNING)
+logging.getLogger("telegram").setLevel(logging.WARNING)
+
+logger = logging.getLogger(__name__)
+
+
+def main() -> None:
+    logger.info("=" * 60)
+    logger.info("  🛍️  BOT DE ACHADINHOS — Iniciando (Fase 3)...")
+    logger.info("=" * 60)
+
+    if not TELEGRAM_BOT_TOKEN:
+        logger.error("[ERRO] TELEGRAM_BOT_TOKEN não encontrado!")
+        sys.exit(1)
+
+    app = (
+        ApplicationBuilder()
+        .token(TELEGRAM_BOT_TOKEN)
+        .build()
+    )
+
+    logger.info("Bot iniciado com sucesso")
+
+    # Handlers básicos explícitos para garantir resposta (Requisito de Estabilidade)
+    from bot.handlers.start import start_command
+    from bot.handlers.cancel import cancel_command
+    app.add_handler(CommandHandler("start", start_command))
+    app.add_handler(CommandHandler("cancel", cancel_command))
+
+    # Handler de conversação principal (Fases 1 e 2)
+    app.add_handler(build_main_handler())
+
+    # Handler de aprovação manual das ofertas automáticas (Fase 3)
+    # Registrado FORA do ConversationHandler para funcionar a qualquer momento
+    app.add_handler(build_review_queue_handler())
+
+    # Handler do fluxo de configuração de afiliados
+    # Handler do fluxo de configuração de afiliados
+    from bot.handlers.affiliate_config import (
+        start_config_afiliado, receber_selecao_loja, receber_credencial, cancelar_config,
+        SELECIONAR_LOJA, DIGITAR_CREDENCIAL, CB_CANCELAR_CONFIG
+    )
+    
+    config_handler = ConversationHandler(
+        entry_points=[
+            CommandHandler("config_afiliado", start_config_afiliado),
+            CallbackQueryHandler(start_config_afiliado, pattern=rf"^menu_config_afiliado$")
+        ],
+        states={
+            SELECIONAR_LOJA: [CallbackQueryHandler(receber_selecao_loja, pattern=rf"^(config_afiliado_|{CB_CANCELAR_CONFIG})")],
+            DIGITAR_CREDENCIAL: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, receber_credencial),
+                CommandHandler("cancelar", cancelar_config)
+            ],
+        },
+        fallbacks=[CommandHandler("cancelar", cancelar_config)],
+    )
+    app.add_handler(config_handler)
+
+    # Registra o scheduler de varredura automática (Fase 3)
+    setup_scheduler(app)
+
+    logger.info("[APP] Handlers e scheduler registrados. Bot em execução... (Ctrl+C para parar)")
+    app.run_polling(drop_pending_updates=True)
+
+
+if __name__ == "__main__":
+    main()
