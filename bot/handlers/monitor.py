@@ -8,7 +8,7 @@ from telegram.ext import ContextTypes
 from telegram.constants import ParseMode
 
 from bot.utils.constants import (
-    CB_MONITOR_MENU, CB_MONITOR_START, CB_MONITOR_STOP, CB_VOLTAR_MENU
+    CB_MONITOR_MENU, CB_MONITOR_START, CB_MONITOR_STOP, CB_VOLTAR_MENU, CB_MENU_PRINCIPAL
 )
 from bot.services.scheduler_service import is_monitor_active, start_monitor, stop_monitor
 
@@ -37,7 +37,7 @@ async def monitor_menu_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     else:
         keyboard.append([InlineKeyboardButton("🛑 Parar Monitoramento", callback_data=CB_MONITOR_STOP)])
         
-    keyboard.append([InlineKeyboardButton("🔙 Voltar ao Menu Principal", callback_data=CB_VOLTAR_MENU)])
+    keyboard.append([InlineKeyboardButton("🔙 Voltar ao Menu Principal", callback_data=CB_MENU_PRINCIPAL)])
     
     reply_markup = InlineKeyboardMarkup(keyboard)
     

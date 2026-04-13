@@ -11,7 +11,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from telegram.constants import ParseMode
 
-from bot.utils.constants import CB_REVIEW_APPROVE, CB_REVIEW_REJECT
+from bot.utils.constants import CB_REVIEW_APPROVE, CB_REVIEW_REJECT, CB_MENU_PRINCIPAL
 from bot.services.dedup_store import mark_seen
 from bot.services.publisher_router import publish_offer
 
@@ -65,7 +65,7 @@ async def handle_review_callback(
                 f"🔹 *Fonte:* {source_name}"
             )
             back_keyboard = InlineKeyboardMarkup([[
-                InlineKeyboardButton("⬅️ Voltar ao Menu", callback_data="monitor_voltar")
+                InlineKeyboardButton("⬅️ Voltar ao Menu", callback_data=CB_MENU_PRINCIPAL)
             ]])
             try:
                 if imagem:
@@ -99,7 +99,7 @@ async def handle_review_callback(
         try:
             reject_text = f"❌ *Oferta rejeitada.* `{nome}` não será publicada."
             back_keyboard = InlineKeyboardMarkup([[
-                InlineKeyboardButton("⬅️ Voltar ao Menu", callback_data="monitor_voltar")
+                InlineKeyboardButton("⬅️ Voltar ao Menu", callback_data=CB_MENU_PRINCIPAL)
             ]])
             if imagem:
                 await query.message.delete()

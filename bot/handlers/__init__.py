@@ -12,8 +12,9 @@ from bot.handlers.offer import (
 from bot.handlers.offer_by_link import (
     start_offer_by_link, receber_link_produto, preencher_nome_faltante, preencher_preco_faltante,
     receber_link_afiliado, pular_link_afiliado, confirmar_envio_link,
+    btn_editar_oferta, escolher_campo_edicao, salvar_edicao,
     LINK_PRODUTO, PREENCHER_NOME_FALTANTE, PREENCHER_PRECO_FALTANTE, LINK_AFILIADO, CONFIRMAR_LINK,
-    CB_CONFIRMAR_LINK
+    EDITAR_CAMPOS, CB_CONFIRMAR_LINK
 )
 from bot.handlers.review_queue import handle_review_callback
 from bot.handlers.monitor import monitor_menu_handler, monitor_action_handler, voltar_menu_handler
@@ -21,7 +22,7 @@ from bot.utils.constants import (
     CB_PUBLICAR_MANUAL, CB_PUBLICAR_LINK, CB_CANCELAR_MENU, CB_CANCELAR_OFERTA,
     CB_CONFIRMAR, CB_REVIEW_APPROVE, CB_REVIEW_REJECT,
     CB_MONITOR_MENU, CB_MONITOR_START, CB_MONITOR_STOP, CB_VOLTAR_MENU, CB_GERENCIAR_CANAIS,
-    CB_GERENCIAR_WHATS
+    CB_GERENCIAR_WHATS, CB_MENU_PRINCIPAL
 )
 
 from bot.handlers.channels import (
@@ -41,6 +42,7 @@ def build_main_handler() -> ConversationHandler:
     return ConversationHandler(
         entry_points=[
             CommandHandler("start", start_command),
+            CallbackQueryHandler(start_command, pattern=f"^({CB_VOLTAR_MENU}|{CB_MENU_PRINCIPAL})$"),
             CallbackQueryHandler(start_offer_manual, pattern=f"^{CB_PUBLICAR_MANUAL}$"),
             CallbackQueryHandler(start_offer_by_link, pattern=f"^{CB_PUBLICAR_LINK}$"),
             CallbackQueryHandler(monitor_menu_handler, pattern=f"^{CB_MONITOR_MENU}$"),
@@ -51,7 +53,7 @@ def build_main_handler() -> ConversationHandler:
             CallbackQueryHandler(menu_whatsapp, pattern=f"^{CB_GERENCIAR_WHATS}$"),
             CallbackQueryHandler(btn_add_whatsapp, pattern=f"^add_wpp$"),
             CallbackQueryHandler(btn_remover_whatsapp, pattern=f"^del_wpp\\|"),
-            CallbackQueryHandler(voltar_menu_handler, pattern=f"^{CB_VOLTAR_MENU}$"),
+            CallbackQueryHandler(start_command, pattern=f"^({CB_VOLTAR_MENU}|{CB_MENU_PRINCIPAL})$"),
             CallbackQueryHandler(cancel_menu_callback, pattern=f"^{CB_CANCELAR_MENU}$"),
         ],
         states={
@@ -75,7 +77,7 @@ def build_main_handler() -> ConversationHandler:
             CONFIRMAR: [
                 CallbackQueryHandler(confirmar_envio, pattern=f"^{CB_CONFIRMAR}$"),
                 CallbackQueryHandler(confirmar_envio, pattern=f"^{CB_CANCELAR_OFERTA}$"),
-                CallbackQueryHandler(voltar_menu_handler, pattern=f"^{CB_VOLTAR_MENU}$"),
+                CallbackQueryHandler(start_command, pattern=f"^({CB_VOLTAR_MENU}|{CB_MENU_PRINCIPAL})$"),
             ],
             
             # --- Estados por Link ---
@@ -89,7 +91,12 @@ def build_main_handler() -> ConversationHandler:
             CONFIRMAR_LINK: [
                 CallbackQueryHandler(confirmar_envio_link, pattern=f"^{CB_CONFIRMAR_LINK}$"),
                 CallbackQueryHandler(confirmar_envio_link, pattern=f"^{CB_CANCELAR_OFERTA}$"),
-                CallbackQueryHandler(voltar_menu_handler, pattern=f"^{CB_VOLTAR_MENU}$"),
+                CallbackQueryHandler(btn_editar_oferta, pattern=f"^editar_oferta$"),
+                CallbackQueryHandler(start_command, pattern=f"^({CB_VOLTAR_MENU}|{CB_MENU_PRINCIPAL})$"),
+            ],
+            EDITAR_CAMPOS: [
+                CallbackQueryHandler(escolher_campo_edicao, pattern=f"^(edit_|cancel_edit)"),
+                MessageHandler(filters.TEXT & ~filters.COMMAND, salvar_edicao),
             ],
         },
         fallbacks=[

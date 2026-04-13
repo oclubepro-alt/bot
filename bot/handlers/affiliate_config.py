@@ -8,6 +8,7 @@ from telegram.constants import ParseMode
 
 from bot.permissions import is_admin
 from bot.utils.affiliate_store import get_affiliate, set_affiliate
+from bot.utils.constants import CB_MENU_PRINCIPAL
 from bot.handlers.start import start_command
 
 logger = logging.getLogger(__name__)
@@ -37,7 +38,7 @@ async def start_config_afiliado(update: Update, context: ContextTypes.DEFAULT_TY
         [InlineKeyboardButton("Netshoes (Link Afiliado)", callback_data="config_afiliado_netshoes")],
         [InlineKeyboardButton("Mercado Livre (Link Afiliado)", callback_data="config_afiliado_mercadolivre")],
         [InlineKeyboardButton("Outra (Base link)", callback_data="config_afiliado_other")],
-        [InlineKeyboardButton("⬅️ Voltar ao Menu", callback_data="voltar_ao_menu")]
+        [InlineKeyboardButton("⬅️ Voltar ao Menu", callback_data=CB_MENU_PRINCIPAL)]
     ]
 
     if update.message:
@@ -61,7 +62,7 @@ async def receber_selecao_loja(update: Update, context: ContextTypes.DEFAULT_TYP
     query = update.callback_query
     await query.answer()
 
-    if query.data == "voltar_ao_menu":
+    if query.data == CB_MENU_PRINCIPAL:
         await start_command(update, context)
         return ConversationHandler.END
 

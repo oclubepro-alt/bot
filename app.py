@@ -8,6 +8,7 @@ import sys
 from telegram.ext import ApplicationBuilder, CommandHandler, ConversationHandler, CallbackQueryHandler, MessageHandler, filters
 
 from bot.utils.config import TELEGRAM_BOT_TOKEN
+from bot.utils.constants import CB_MENU_PRINCIPAL
 from bot.handlers import build_main_handler, build_review_queue_handler
 from bot.services.scheduler_service import setup_scheduler
 
@@ -77,7 +78,7 @@ def main() -> None:
             CallbackQueryHandler(start_config_afiliado, pattern=rf"^menu_config_afiliado$")
         ],
         states={
-            SELECIONAR_LOJA: [CallbackQueryHandler(receber_selecao_loja, pattern=rf"^(config_afiliado_|{CB_CANCELAR_CONFIG})")],
+            SELECIONAR_LOJA: [CallbackQueryHandler(receber_selecao_loja, pattern=rf"^(config_afiliado_|{CB_CANCELAR_CONFIG}|{CB_MENU_PRINCIPAL})")],
             DIGITAR_CREDENCIAL: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, receber_credencial),
                 CommandHandler("cancelar", cancelar_config)

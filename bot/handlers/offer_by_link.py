@@ -16,7 +16,7 @@ from telegram.ext import ContextTypes, ConversationHandler
 from telegram.constants import ParseMode
 
 from bot.permissions import is_admin
-from bot.utils.constants import CB_CANCELAR_OFERTA
+from bot.utils.constants import CB_CANCELAR_OFERTA, CB_MENU_PRINCIPAL
 from bot.utils.url_resolver import resolve_url
 from bot.services.product_extractor import extract_product_data
 from bot.services.affiliate_links import get_final_link
@@ -31,7 +31,7 @@ from bot.utils.formatter import build_offer_message, build_preview_message
 logger = logging.getLogger(__name__)
 
 # Estados do fluxo de link
-LINK_PRODUTO, PREENCHER_NOME_FALTANTE, PREENCHER_PRECO_FALTANTE, LINK_AFILIADO, CONFIRMAR_LINK = range(10, 15)
+LINK_PRODUTO, PREENCHER_NOME_FALTANTE, PREENCHER_PRECO_FALTANTE, LINK_AFILIADO, CONFIRMAR_LINK, EDITAR_CAMPOS = range(10, 16)
 
 # Callback exclusivo de confirmação deste fluxo
 CB_CONFIRMAR_LINK = "oferta_link_confirmar"
@@ -109,8 +109,9 @@ async def receber_link_produto(update: Update, context: ContextTypes.DEFAULT_TYP
         )
         return PREENCHER_PRECO_FALTANTE
 
-    await _pedir_link_afiliado(update, context)
-    return LINK_AFILIADO
+    # Agora, em vez de pedir link de afiliado, vamos direto para a prévia completa
+    # (O sistema de injeção automática já vai cuidar de aplicar as tags do .env)
+    return await _gerar_previa_link(update, context)
 
 
 async def preencher_nome_faltante(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -124,15 +125,13 @@ async def preencher_nome_faltante(update: Update, context: ContextTypes.DEFAULT_
         )
         return PREENCHER_PRECO_FALTANTE
 
-    await _pedir_link_afiliado(update, context)
-    return LINK_AFILIADO
+    return await _gerar_previa_link(update, context)
 
 
 async def preencher_preco_faltante(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     preco = update.message.text.strip()
     context.user_data["extracted"]["preco"] = preco
-    await _pedir_link_afiliado(update, context)
-    return LINK_AFILIADO
+    return await _gerar_previa_link(update, context)
 
 
 async def _pedir_link_afiliado(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -198,8 +197,8 @@ async def _gerar_previa_link(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await update.message.reply_text(
             "⚠️ *ATENÇÃO: PREÇO SUSPEITO DETECTADO!*\n\n"
             f"O preço `{pipeline['preco']}` está muito distante da média histórica "
-            "para este produto\.\n"
-            "Verifique se é um erro de scraping antes de publicar\.",
+            "para este produto\\.\\n"
+            "Verifique se é um erro de scraping antes de publicar\\.",
             parse_mode="MarkdownV2",
         )
         logger.warning(
@@ -287,7 +286,8 @@ async def _gerar_previa_link(update: Update, context: ContextTypes.DEFAULT_TYPE)
             InlineKeyboardButton("✅ Confirmar Envio", callback_data=CB_CONFIRMAR_LINK),
             InlineKeyboardButton("❌ Cancelar", callback_data=CB_CANCELAR_OFERTA),
         ],
-        [InlineKeyboardButton("⬅️ Voltar ao Menu", callback_data="menu_principal")]
+        [InlineKeyboardButton("✏️ Corrigir Promoção", callback_data="editar_oferta")],
+        [InlineKeyboardButton("⬅️ Voltar ao Menu", callback_data=CB_MENU_PRINCIPAL)]
     ]
 
     img_url = dados.get("imagem")
@@ -321,7 +321,7 @@ async def confirmar_envio_link(update: Update, context: ContextTypes.DEFAULT_TYP
     await query.answer()
 
     back_keyboard = InlineKeyboardMarkup([[
-        InlineKeyboardButton("⬅️ Voltar ao Menu", callback_data="monitor_voltar")
+        InlineKeyboardButton("⬅️ Voltar ao Menu", callback_data=CB_MENU_PRINCIPAL)
     ]])
 
     if query.data == CB_CANCELAR_OFERTA:
@@ -366,3 +366,60 @@ async def confirmar_envio_link(update: Update, context: ContextTypes.DEFAULT_TYP
 
     context.user_data.clear()
     return ConversationHandler.END
+
+
+# ── Edição de Campos ────────────────────────────────────────────────────────
+
+async def btn_editar_oferta(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+    
+    keyboard = [
+        [InlineKeyboardButton("🏷️ Nome", callback_data="edit_nome"), InlineKeyboardButton("💰 Preço", callback_data="edit_preco")],
+        [InlineKeyboardButton("📝 Legenda/Copy", callback_data="edit_copy")],
+        [InlineKeyboardButton("⬅️ Cancelar Edição", callback_data="cancel_edit")]
+    ]
+    
+    await query.edit_message_text(
+        "🛠️ *O que você deseja corrigir?*",
+        parse_mode=ParseMode.MARKDOWN,
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+    return EDITAR_CAMPOS
+
+async def escolher_campo_edicao(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+    
+    if query.data == "cancel_edit":
+        return await _gerar_previa_link(update, context)
+        
+    campo = query.data.replace("edit_", "")
+    context.user_data["edit_campo"] = campo
+    
+    msgs = {
+        "nome": "Digite o novo *Nome* do produto:",
+        "preco": "Digite o novo *Preço* (ex: R$ 99,90):",
+        "copy": "Digite a nova *Legenda/Copy* (será usada no Telegram e no WhatsApp):"
+    }
+    
+    await query.edit_message_text(
+        f"✍️ {msgs.get(campo)}",
+        parse_mode=ParseMode.MARKDOWN
+    )
+    return EDITAR_CAMPOS # Reutilizamos o estado para receber a msg de texto
+
+async def salvar_edicao(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    novo_valor = update.message.text.strip()
+    campo = context.user_data.get("edit_campo")
+    
+    if campo == "nome":
+        context.user_data["extracted"]["nome"] = novo_valor
+    elif campo == "preco":
+        # Tentamos reprocessar o preço se for edição de valor
+        context.user_data["extracted"]["preco"] = novo_valor
+    elif campo == "copy":
+        context.user_data["copy_ia"] = novo_valor
+
+    await update.message.reply_text(f"✅ Campo *{campo}* atualizado!")
+    return await _gerar_previa_link(update, context)
