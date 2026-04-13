@@ -38,6 +38,12 @@ def resolve_url(url: str, timeout: int = 12) -> str:
     logger.info(f"[URL_RESOLVER] Resolvendo: {url[:100]}")
 
     try:
+        # Configuração de proxy para PythonAnywhere
+        proxies = {
+            "http": "http://proxy.server:3128",
+            "https": "http://proxy.server:3128",
+        }
+        
         # Usamos GET porque HEAD frequentemente é bloqueado ou ignorado por shorteners
         resp = requests.get(
             url,
@@ -45,6 +51,7 @@ def resolve_url(url: str, timeout: int = 12) -> str:
             allow_redirects=True,
             timeout=timeout,
             stream=True,   # Evita baixar o body pesado
+            proxies=proxies,
         )
         final = resp.url
         resp.close()

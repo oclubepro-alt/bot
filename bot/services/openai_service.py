@@ -2,6 +2,7 @@
 openai_service.py - Integração com OpenAI para geração de legenda da oferta
 """
 import logging
+import httpx
 from openai import AsyncOpenAI, OpenAIError
 
 from bot.utils.config import OPENAI_API_KEY, OPENAI_MODEL
@@ -9,7 +10,10 @@ from bot.utils.config import OPENAI_API_KEY, OPENAI_MODEL
 logger = logging.getLogger(__name__)
 
 # Cliente assíncrono (reutilizável)
-_client = AsyncOpenAI(api_key=OPENAI_API_KEY)
+_client = AsyncOpenAI(
+    api_key=OPENAI_API_KEY,
+    http_client=httpx.AsyncClient(proxy="http://proxy.server:3128")
+)
 
 _SYSTEM_PROMPT = """
 Você é um copywriter especialista em grupos de "achadinhos" do Telegram.

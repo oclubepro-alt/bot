@@ -2,4 +2,5 @@ python-telegram-bot[job-queue]
 openai
 python-dotenv
 requests
+httpx
 beautifulsoup4

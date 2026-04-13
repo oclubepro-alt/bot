@@ -495,10 +495,14 @@ def _extract_shopee(soup: BeautifulSoup, final_url: str) -> dict:
         item_id = match.group(2)
         api_url = f"https://shopee.com.br/api/v4/item/get?itemid={item_id}&shopid={shop_id}"
         try:
+            proxies = {
+                "http": "http://proxy.server:3128",
+                "https": "http://proxy.server:3128",
+            }
             r = requests.get(api_url, headers={
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
                 "Accept": "application/json"
-            }, timeout=10)
+            }, timeout=10, proxies=proxies)
             if r.status_code == 200:
                 json_data = r.json()
                 if json_data.get("data"):
@@ -577,6 +581,13 @@ def extract_product_data(url: str) -> dict:
         headers = _HEADERS_AMAZON if store_key == "amazon" else _HEADERS_GENERIC
         session = requests.Session()
         session.headers.update(headers)
+        
+        # Configuração de proxy para PythonAnywhere
+        session.proxies.update({
+            "http": "http://proxy.server:3128",
+            "https": "http://proxy.server:3128",
+        })
+        
         res = session.get(url, timeout=15, allow_redirects=True)
         final_url = res.url
         logger.info(f"[EXTRACTOR] URL após redirect : {final_url[:100]}")

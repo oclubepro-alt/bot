@@ -47,6 +47,8 @@ def main() -> None:
     app = (
         ApplicationBuilder()
         .token(TELEGRAM_BOT_TOKEN)
+        .proxy("http://proxy.server:3128")
+        .get_updates_proxy("http://proxy.server:3128")
         .build()
     )
 
