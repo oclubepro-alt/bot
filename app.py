@@ -12,7 +12,6 @@ from bot.utils.constants import CB_MENU_PRINCIPAL
 from bot.handlers import build_main_handler, build_review_queue_handler
 from bot.services.scheduler_service import setup_scheduler
 
-
 # Garante saída no Windows com utf-8
 if sys.stdout and hasattr(sys.stdout, 'reconfigure'):
     sys.stdout.reconfigure(encoding='utf-8')
@@ -26,7 +25,6 @@ logging.basicConfig(
         logging.StreamHandler(sys.stdout),
     ],
 )
-
 # Silencia logs verbosos de bibliotecas externas
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("openai").setLevel(logging.WARNING)
@@ -37,7 +35,7 @@ logger = logging.getLogger(__name__)
 
 def main() -> None:
     logger.info("=" * 60)
-    logger.info("  🛍️  BOT DE ACHADINHOS — Iniciando (Fase 3)...")
+    logger.info(" 🛒 BOT DE ACHADINHOS — Iniciando (Fase 3)...")
     logger.info("=" * 60)
 
     if not TELEGRAM_BOT_TOKEN:
@@ -47,8 +45,6 @@ def main() -> None:
     app = (
         ApplicationBuilder()
         .token(TELEGRAM_BOT_TOKEN)
-        .proxy("http://proxy.server:3128")
-        .get_updates_proxy("http://proxy.server:3128")
         .build()
     )
 
@@ -60,7 +56,7 @@ def main() -> None:
     app.add_handler(CommandHandler("start", start_command))
     app.add_handler(CommandHandler("cancel", cancel_command))
 
-    # Handler de conversação principal (Fases 1 e 2)
+    # Handler de conversão principal (Fases 1 e 2)
     app.add_handler(build_main_handler())
 
     # Handler de aprovação manual das ofertas automáticas (Fase 3)
@@ -68,12 +64,11 @@ def main() -> None:
     app.add_handler(build_review_queue_handler())
 
     # Handler do fluxo de configuração de afiliados
-    # Handler do fluxo de configuração de afiliados
     from bot.handlers.affiliate_config import (
         start_config_afiliado, receber_selecao_loja, receber_credencial, cancelar_config,
         SELECIONAR_LOJA, DIGITAR_CREDENCIAL, CB_CANCELAR_CONFIG
     )
-    
+
     config_handler = ConversationHandler(
         entry_points=[
             CommandHandler("config_afiliado", start_config_afiliado),
