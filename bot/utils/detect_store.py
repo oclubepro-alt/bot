@@ -16,12 +16,15 @@ logger = logging.getLogger(__name__)
 # (substring_no_netloc, nome_exibição, chave_interna)
 _STORE_MAP: list[tuple[str, str, str]] = [
     ("amazon.",         "Amazon",        "amazon"),
+    ("amzn.",           "Amazon",        "amazon"),
     ("mercadolivre.",   "Mercado Livre", "mercadolivre"),
     ("mercadolibre.",   "Mercado Livre", "mercadolivre"),
+    ("mli.",            "Mercado Livre", "mercadolivre"),
     ("magazineluiza.",  "Magalu",        "magalu"),
     ("magalu.",         "Magalu",        "magalu"),
     ("netshoes.",       "Netshoes",      "netshoes"),
     ("shopee.",         "Shopee",        "shopee"),
+    ("shp.ee",          "Shopee",        "shopee"),
     ("aliexpress.",     "AliExpress",    "aliexpress"),
 ]
 
@@ -41,9 +44,9 @@ def detect_store(url: str) -> tuple[str, str]:
         netloc = url.lower()
 
     for fragment, display, key in _STORE_MAP:
-        if fragment in netloc:
-            logger.info(f"[DETECT_STORE] '{fragment}' encontrado em '{netloc}' → {display}")
+        if fragment in netloc or fragment in url.lower():
+            logger.info(f"[DETECT_STORE] '{fragment}' encontrado → {display}")
             return display, key
 
-    logger.info(f"[DETECT_STORE] Loja não identificada para netloc='{netloc}' → Outra")
+    logger.info(f"[DETECT_STORE] Loja não identificada para '{netloc or url[:40]}' → Outra")
     return "Outra", "other"
