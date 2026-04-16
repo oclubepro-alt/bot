@@ -46,7 +46,7 @@ def build_main_handler() -> ConversationHandler:
             CallbackQueryHandler(start_offer_manual, pattern=f"^{CB_PUBLICAR_MANUAL}$"),
             CallbackQueryHandler(start_offer_by_link, pattern=f"^{CB_PUBLICAR_LINK}$"),
             CallbackQueryHandler(monitor_menu_handler, pattern=f"^{CB_MONITOR_MENU}$"),
-            CallbackQueryHandler(monitor_action_handler, pattern=f"^monitor_(start|stop)$"),
+            CallbackQueryHandler(monitor_action_handler, pattern=r"^monitor_(start|stop|scrape_now)$"),
             CallbackQueryHandler(menu_canais, pattern=f"^{CB_GERENCIAR_CANAIS}$"),
             CallbackQueryHandler(btn_add_canal, pattern=f"^add_chan$"),
             CallbackQueryHandler(btn_remover_canal, pattern=f"^remove_chan\\|"),

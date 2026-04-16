@@ -28,7 +28,7 @@ from bot.services.affiliate_injector import get_affiliate_url
 from bot.services.link_shortener import shorten_for_publication
 from bot.services.publisher_router import publish_offer
 
-async def _run_scan(context, limit: int = 10, manual: bool = False) -> int:
+async def _run_scan(context, limit: int = 10, manual: bool = False, trigger_user_id: int = None) -> int:
     """
     Job executado pelo scheduler ou manualmente via botão: varre fontes, extrai dados,
     gera copy e publica ou envia prévias.
@@ -36,14 +36,33 @@ async def _run_scan(context, limit: int = 10, manual: bool = False) -> int:
     """
     logger.info(f"[SCHEDULER] Iniciando varredura das fontes (limite pedido: {limit})...")
     
+    # Feedback inicial para o usuário no modo manual
+    if manual and trigger_user_id:
+        try:
+            await context.bot.send_message(
+                chat_id=trigger_user_id,
+                text="🔎 <b>Iniciando varredura...</b>\nIsso pode levar alguns instantes dependendo da resposta das fontes.",
+                parse_mode=ParseMode.HTML
+            )
+        except Exception: pass
+
     if not ADMIN_IDS and not manual:
         logger.warning("[SCHEDULER] ADMIN_IDS vazio — ninguém receberá prévias.")
         return 0
 
-    all_found_items = scan_sources()
+    try:
+        # Causa 3: Executa scraping síncrono em thread para não travar o bot
+        all_found_items = await asyncio.to_thread(scan_sources)
+    except Exception as e:
+        logger.error(f"[SCHEDULER] Erro ao escanear fontes: {e}")
+        if manual and trigger_user_id:
+            await context.bot.send_message(chat_id=trigger_user_id, text=f"❌ Erro ao escanear fontes: {e}")
+        return 0
 
     if not all_found_items:
         logger.info("[SCHEDULER] Nenhum item novo encontrado nesta rodada.")
+        if manual and trigger_user_id:
+            await context.bot.send_message(chat_id=trigger_user_id, text="ℹ️ Nenhuma oferta nova encontrada nas fontes cadastradas.")
         return 0
 
     logger.info(f"[SCHEDULER] {len(all_found_items)} novos itens encontrados. Aplicando limite de {limit} e processando.")
@@ -64,19 +83,24 @@ async def _run_scan(context, limit: int = 10, manual: bool = False) -> int:
             logger.info(f"--- [PROCESSO {count+1}/{limit}] ---")
             logger.info(f"[SCHEDULER] Extraindo: {product_url[:60]}")
             
-            # 1. Extração Mestra (Etapas 1, 2, 3, 4)
-            dados = extract_product_data(product_url)
+            # 1. Extração Mestra (Síncrono -> Thread)
+            dados = await asyncio.to_thread(extract_product_data, product_url)
 
-            # 2. Injeção de Afiliado e Encurtamento
+            if not dados.get("title") or dados.get("title") == "Produto":
+                logger.warning(f"[SCHEDULER] Falha ao extrair título para {product_url}. Pulando.")
+                continue
+
+            # 2. Injeção de Afiliado e Encurtamento (Síncrono -> Thread)
             store_key = dados.get("store_key", "other")
-            affiliate_url = get_affiliate_url(
+            affiliate_url = await asyncio.to_thread(
+                get_affiliate_url,
                 original_url=product_url,
-                resolved_url=dados.get("product_url"), # URL final resolvida
+                resolved_url=dados.get("product_url"),
                 store_key=store_key
             )
-            final_link = shorten_for_publication(affiliate_url)
+            final_link = await asyncio.to_thread(shorten_for_publication, affiliate_url)
 
-            # 3. Geração de Copy IA
+            # 3. Geração de Copy IA (Já é async)
             copy_ia = await generate_caption(
                 nome=dados["title"], 
                 preco=dados["price"], 
@@ -99,7 +123,6 @@ async def _run_scan(context, limit: int = 10, manual: bool = False) -> int:
                     preco_original=dados.get("preco_original")
                 )
 
-                # Publicar (Etapa 5: Photo vs Message é tratado no publisher_telegram)
                 await publish_offer(context.bot, copies, dados.get("image_url"))
                 mark_seen(product_url)
                 count += 1
@@ -149,6 +172,12 @@ async def _run_scan(context, limit: int = 10, manual: bool = False) -> int:
 
         except Exception as e:
             logger.error(f"[SCHEDULER] Falha crítica ao processar item {product_url}: {e}", exc_info=True)
+
+    if manual and trigger_user_id:
+        status_msg = f"✅ <b>Varredura concluída!</b>\nProcessados: {count} novos itens."
+        if count == 0:
+            status_msg = "ℹ️ A varredura não encontrou novos itens ou todos já foram publicados."
+        await context.bot.send_message(chat_id=trigger_user_id, text=status_msg, parse_mode=ParseMode.HTML)
 
     logger.info(f"[SCHEDULER] Varredura finalizada. Total processado: {count}/{limit}")
     return count

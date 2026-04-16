@@ -54,8 +54,16 @@ async def monitor_action_handler(update: Update, context: ContextTypes.DEFAULT_T
     
     if action == "monitor_scrape_now":
         await query.answer("🚀 Iniciando busca de 10 ofertas... Veja o canal em instantes!", show_alert=True)
-        # Executa a varredura manual (manual=True publica direto)
-        await _run_scan(context, limit=10, manual=True)
+        try:
+            # Executa a varredura manual (manual=True publica direto)
+            # Passamos trigger_user_id para que o scheduler mande feedback direto para o admin
+            await _run_scan(context, limit=10, manual=True, trigger_user_id=query.from_user.id)
+        except Exception as e:
+            logger.error(f"[MONITOR] Erro manual scan: {e}")
+            await context.bot.send_message(
+                chat_id=query.from_user.id,
+                text=f"❌ Erro ao processar sua busca: {e}"
+            )
         return
 
     await query.answer()
