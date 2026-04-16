@@ -27,10 +27,13 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 _HEADERS_ANTI_BLOCK = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-    "Accept-Language": "pt-BR,pt;q=0.9",
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+    "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
+    "Accept-Encoding": "gzip, deflate, br",
+    "Referer": "https://www.google.com/",
     "Connection": "keep-alive",
+    "Cache-Control": "max-age=0",
 }
 
 # ---------------------------------------------------------------------------
@@ -177,7 +180,7 @@ def extract_product_data(url: str) -> dict:
         "error":     None
     }
 
-    logger.info(f"[EXTRACTOR] --- V2.5 --- Iniciando para: {url[:60]}")
+    logger.info(f"[EXTRACTOR] --- V2.6 --- Iniciando para: {url[:60]}")
 
     try:
         # Etapa 1 — Resolução de Redirecionamentos
