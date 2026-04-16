@@ -169,9 +169,8 @@ def _extract_shopee_api(url: str) -> dict:
 
 def extract_product_data(url: str) -> dict:
     """
-    Função Mestra de Extração (Etapas 1, 2, 3 e 4).
+    Função Mestra de Extração V3.1 (GHOST MODE).
     """
-    # Fallback padrão (Etapa 4)
     result = {
         "image_url": None,
         "price":     "Preço não disponível",
@@ -180,134 +179,68 @@ def extract_product_data(url: str) -> dict:
         "error":     None
     }
 
-    logger.info(f"[EXTRACTOR] --- V3.0 --- Iniciando para: {url[:60]}")
- 
+    logger.info(f"[EXTRACTOR] --- GHOST MODE V3.1 --- Iniciando para: {url[:60]}")
+
     try:
         # Etapa 1 — Resolução de Redirecionamentos
         res = requests.get(url, headers=_HEADERS_ANTI_BLOCK, timeout=15, allow_redirects=True)
         final_url = res.url
         logger.info(f"[EXTRACTOR] URL Final: {final_url[:60]}")
 
-        # ESPECIAL V2.9: Scanner de Vitrine/Social (Mercado Livre)
-        # Se cair em /social/, procura o primeiro item da lista e vai nele
-        if "/social/" in final_url and "mercadolivre.com.br" in final_url:
-            logger.info("[EXTRACTOR] Detectada página 'Social'. Buscando primeiro item...")
-            social_soup = BeautifulSoup(res.text, "html.parser")
-            # Procura links que contenham /p/MLB ou /MLB-
-            first_item = None
-            for a in social_soup.find_all("a", href=True):
-                href = a["href"]
-                if "/p/MLB" in href or "/MLB-" in href:
-                    first_item = urljoin(final_url, href)
-                    break
-            
-            if first_item:
-                logger.info(f"[EXTRACTOR] Redirecionando Vitrine -> Produto: {first_item[:50]}")
-                # Faz um novo request para o produto real
-                res = requests.get(first_item, headers=_HEADERS_ANTI_BLOCK, timeout=15, allow_redirects=True)
-                final_url = res.url
-
-        # Identifica a loja para estratégias específicas
+        # Identificação da Loja
         store_display, store_key = detect_store(final_url)
         result["loja"] = store_display
 
-        # Etapa 2 — Estratégia por Domínio Especial (API)
-        if store_key == "mercadolivre":
-            ml_data = _extract_mercadolivre_api(final_url)
-            if ml_data:
-                result["title"] = ml_data.get("nome") or result["title"]
-                result["price"] = clean_price(ml_data.get("preco")) or result["price"]
-                result["image_url"] = ml_data.get("imagem")
-                if result["image_url"] and result["price"] != "Preço não disponível":
-                    return result
-
-        if store_key == "shopee":
-            shp_data = _extract_shopee_api(final_url)
-            if shp_data:
-                result["title"] = shp_data.get("nome") or result["title"]
-                result["price"] = clean_price(shp_data.get("preco")) or result["price"]
-                result["image_url"] = shp_data.get("imagem")
-                if result["image_url"]: return result
+        # Tenta API do ML se for link direto de produto
+        if store_key == "mercadolivre" and "/MLB-" in final_url:
+            ml_js = _extract_mercadolivre_api(final_url)
+            if ml_js:
+                result["title"] = ml_js.get("nome") or result["title"]
+                result["price"] = clean_price(ml_js.get("preco")) or result["price"]
+                result["image_url"] = ml_js.get("imagem")
+                if result["image_url"] and result["price"] != "Preço não disponível": return result
 
         # Scraping HTML (Soup)
         soup = BeautifulSoup(res.text, "html.parser")
 
-        # --- Estratégia 1: Meta Tags (OG) ---
-        og_img = _meta(soup, "og:image", "twitter:image")
-        og_price = _meta(soup, "product:price:amount", "og:price:amount", "og:price")
-        og_title = _meta(soup, "og:title", "twitter:title")
+        # --- ESTRATÉGIA V3.1: Meta Tag Scanner (Agressivo) ---
+        og_t = _meta(soup, "og:title", "twitter:title")
+        og_d = _meta(soup, "og:description", "twitter:description")
+        og_i = _meta(soup, "og:image", "twitter:image")
+        og_p = _meta(soup, "product:price:amount", "og:price:amount", "og:price")
 
-        if og_img:   result["image_url"] = urljoin(final_url, og_img)
-        if og_price: result["price"]     = clean_price(og_price) or result["price"]
-        if og_title: 
-            # EXTRA: Se preço falhou mas está no Título (Comum no Mercado Livre)
-            if result["price"] == "Preço não disponível":
-                price_match = re.search(r"R\$\s?(\d{1,3}(?:\.\d{3})*(?:,\d{2})?)", og_title)
-                if price_match:
-                    result["price"] = f"R$ {price_match.group(1)}"
-            
-            # Limpa " - R$ ...", " - Mercado Livre" e " no Mercado Livre" do título
-            clean_t = re.sub(r"\s-\sR\$.*", "", og_title)
-            clean_t = re.sub(r"\s-\sMercado\sLivre.*", "", clean_t, flags=re.IGNORECASE)
-            clean_t = re.sub(r"\sno\sMercado\sLivre.*", "", clean_t, flags=re.IGNORECASE)
-            clean_t = re.sub(r"\| Mercado Livre", "", clean_t, flags=re.IGNORECASE)
-            
-            # Especial ML Social (V3.0): Caso o título falhe, tenta a descrição
-            result["title"] = clean_t.strip()
-            if "/social/" in final_url or result["title"].lower() in ["produto", "mercado livre", "mercadolivre"]:
-                 og_desc = _meta(soup, "og:description", "twitter:description")
-                 if og_desc:
-                      # Limpa textos genéricos de vitrine
-                      d = re.sub(r"Visite a página e encontre todos os produtos.*", "", og_desc, flags=re.IGNORECASE)
-                      d = re.sub(r"Encontre os melhores produtos.*", "", d, flags=re.IGNORECASE)
-                      d = d.replace("Descontinho de Mamãe", "").replace(" - Mercado Livre", "").strip()
-                      if len(d) > 10:
-                           result["title"] = d
+        if og_i: result["image_url"] = urljoin(final_url, og_i)
+        if og_p: result["price"]     = clean_price(og_p) or result["price"]
 
-        # --- Estratégia 2: JSON-LD ---
-        if result["price"] == "Preço não disponível" or not result["image_url"] or result["title"].lower() in ["produto", "mercado livre"]:
+        # Decisão de Título (V3.1): Se o og:title é genérico, vai na og:description
+        titles = [og_t, og_d]
+        for t in titles:
+            if not t: continue
+            # Limpeza
+            c = re.sub(r"Visite a página.*", "", t, flags=re.IGNORECASE)
+            c = re.sub(r"\s-\sMercado\sLivre.*", "", c, flags=re.IGNORECASE)
+            c = re.sub(r"\sno\sMercado\sLivre.*", "", c, flags=re.IGNORECASE)
+            c = c.replace("Descontinho de Mamãe", "").replace("|", "").replace("  ", " ").strip()
+            
+            if len(c) > 15 and c.lower() not in ["mercado livre", "mercadolivre"]:
+                result["title"] = c
+                break
+
+        # --- ESTRATÉGIA V3.1: JSON-LD e Scripts fallback ---
+        if result["price"] == "Preço não disponível" or result["title"] == "Produto":
             jld = extract_json_ld(soup)
             if jld:
-                if not result["image_url"] and jld.get("image"):
-                    img = jld["image"]
-                    if isinstance(img, list) and img: img = img[0]
-                    if isinstance(img, dict): img = img.get("url")
-                    result["image_url"] = urljoin(final_url, str(img))
-                
+                if result["title"] == "Produto": result["title"] = jld.get("name") or result["title"]
                 if result["price"] == "Preço não disponível":
-                    offers = jld.get("offers")
-                    if isinstance(offers, dict):
-                        p = offers.get("price") or offers.get("lowPrice")
-                        if p: result["price"] = clean_price(str(p)) or result["price"]
-                    elif isinstance(offers, list) and offers[0].get("price"):
-                        result["price"] = clean_price(str(offers[0]["price"])) or result["price"]
-                
-                # JSON-LD costuma ter o nome limpo do produto
-                if jld.get("name") and str(jld["name"]).strip().lower() != "mercado livre":
-                    result["title"] = str(jld["name"]).strip()
-        
-        # --- Estratégia Adicional: H1 e Busca Bruta ---
-        if result["title"].lower() in ["produto", "mercado livre"]:
-            h1 = soup.find("h1")
-            if h1: result["title"] = h1.text.strip()
-            
-        # Se AINDA não tem preço, busca bruta no HTML (V2.7)
-        if result["price"] == "Preço não disponível":
-            # 1. Procura por "price":989 no JSON
-            raw_match = re.search(r'"price":\s*(\d+(?:\.\d{1,2})?)', res.text)
-            if raw_match:
-                result["price"] = clean_price(raw_match.group(1)) or result["price"]
-            
-            # 2. Procura por padrão de R$ XX,XX no HTML bruto (Regex BR)
-            if result["price"] == "Preço não disponível":
-                br_price = re.search(r'R\$\s?(\d{1,3}(?:\.\d{3})*,\d{2})', res.text)
-                if br_price:
-                    result["price"] = f"R$ {br_price.group(1)}"
+                    off = jld.get("offers")
+                    if isinstance(off, dict):
+                         p = off.get("price") or off.get("lowPrice")
+                         if p: result["price"] = clean_price(str(p))
+                    elif isinstance(off, list) and off[0].get("price"):
+                         result["price"] = clean_price(str(off[0]["price"]))
 
-        # --- Estratégia 3: Seletores CSS Específicos ---
+        # Busca final por seletores (Amazon / Magalu)
         if store_key == "amazon":
-            # Preço Amazon (Atualizado V2.7)
-            for sel in ["span.a-price .a-offscreen", "span.a-price-whole", "#priceblock_ourprice", ".a-color-price"]:
                 tag = soup.select_one(sel)
                 if tag:
                     p_text = tag.text.strip()
