@@ -1,17 +1,15 @@
-"""
-publisher_router.py - Roteador de publicações (preparado para multi-plataformas)
-"""
 import logging
 from telegram import Bot
 from bot.services.publisher_telegram import publish_to_telegram
 from bot.services.publisher_whatsapp import publish_to_whatsapp
+from bot.services.affiliate_injector import aplicar_link_afiliado
 
 logger = logging.getLogger(__name__)
 
 async def publish_offer(bot: Bot, copies: str | dict, photo: str | None = None) -> None:
     """
-    Roteador responsável por coordenar a publicação nas plataformas suportadas.
-    'copies' pode ser um dict {"telegram": "...", "whatsapp": "..."} ou uma string (apenas Telegram).
+    Roteador responsável por aplicar o link de afiliado final e publicar.
+    Sempre passa as cópias pela função aplicar_link_afiliado antes do disparo.
     """
     logger.info("[PUBLISHER_ROUTER] Iniciando rotina de publicação...")
     
@@ -19,7 +17,14 @@ async def publish_offer(bot: Bot, copies: str | dict, photo: str | None = None) 
     if isinstance(copies, str):
         copies = {"telegram": copies, "whatsapp": None}
 
-    # 1. Publica no Telegram (pode enviar para múltiplos canais)
+    # 1. Aplicação Final de Link de Afiliado (Rede de Segurança Sniper)
+    if copies.get("telegram"):
+        copies["telegram"] = aplicar_link_afiliado(copies["telegram"])
+    
+    if copies.get("whatsapp"):
+        copies["whatsapp"] = aplicar_link_afiliado(copies["whatsapp"])
+
+    # 2. Publica no Telegram
     text_telegram = copies.get("telegram")
     if text_telegram:
         try:
@@ -27,7 +32,7 @@ async def publish_offer(bot: Bot, copies: str | dict, photo: str | None = None) 
         except Exception as e:
             logger.error(f"[PUBLISHER_ROUTER] Erro Telegram: {e}")
 
-    # 2. Publica no WhatsApp (pode enviar para múltiplos destinos)
+    # 3. Publica no WhatsApp
     text_whatsapp = copies.get("whatsapp")
     if text_whatsapp:
         try:
