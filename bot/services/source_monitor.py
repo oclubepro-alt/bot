@@ -19,7 +19,7 @@ _SOURCES_PATH = Path(__file__).resolve().parents[2] / "data" / "sources.json"
 
 # Padrões de URL que sugerem uma página de produto individual
 _PRODUCT_URL_PATTERNS = re.compile(
-    r"(/produto|/p/|/item/|/pd/|/product|/oferta|/-/|/dp/|/gp/|jm/|[?&]id=)",
+    r"(/produto|/p/|/item/|/pd/|/product|/oferta|/-/|/dp/|/gp/|jm/|[?&]id=|/MLB-|/shopee\.com\.br/.*-i\.)",
     re.IGNORECASE
 )
 
@@ -35,9 +35,16 @@ _HEADERS = {
 
 def load_sources() -> list[dict]:
     """Carrega a lista de fontes de data/sources.json."""
+    logger.info(f"[MONITOR] Localizando fontes em: {_SOURCES_PATH.absolute()}")
     try:
         if _SOURCES_PATH.exists():
-            return json.loads(_SOURCES_PATH.read_text(encoding="utf-8"))
+            content = _SOURCES_PATH.read_text(encoding="utf-8")
+            sources = json.loads(content)
+            active = [s for s in sources if s.get("active", False)]
+            logger.info(f"[MONITOR] Sucesso: {len(sources)} totais, {len(active)} ativas.")
+            return sources
+        else:
+            logger.error(f"[MONITOR] ERRO: Arquivo não existe em {_SOURCES_PATH}")
     except Exception as e:
         logger.error(f"[MONITOR] Erro ao carregar sources.json: {e}")
     return []
