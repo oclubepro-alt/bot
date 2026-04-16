@@ -29,93 +29,115 @@ def clean_price(text: str) -> str | None:
     return f"R$ {text}"
 
 def _extract_seo_data(soup, html):
-    """Extração via metadados SEO e seletores visuais."""
+    """Extração via metadados SEO e seletores visuais específicos."""
     data = {"title": None, "price": None, "image_url": None, "descricao": None}
     
-    # --- 1. TITULO ---
-    t_og = soup.find(name="meta", attrs={"property": "og:title"})
-    t_tw = soup.find(name="meta", attrs={"name": "twitter:title"})
-    h1 = soup.find(name="h1")
+    # --- 1. TITULO (Prioridade para o que o usuário vê) ---
+    # Seletores específicos de lojas famosas (ML, Amazon, Magalu)
+    title_selectors = [
+        ".ui-pdp-title",          # Mercado Livre Produto
+        ".ui-vpp-title",          # Mercado Livre VPP
+        "#productTitle",           # Amazon
+        "h1[itemprop='name']",     # Magalu/Generico
+        ".header-product__title", # Netshoes
+        ".product-name",          # Geral
+    ]
     
-    raw_title = (t_og.get("content") if t_og else None) or \
-                (t_tw.get("content") if t_tw else None) or \
-                (h1.get_text().strip() if h1 else None) or \
-                (soup.title.string if soup.title else None)
-    
-    if raw_title:
-        logger.info(f"[EXTRACTOR] Título Bruto: {raw_title[:60]}")
-        # Limpa apenas sufixos comuns em vez de usar .* agressivo
-        cleaned = re.sub(r'\s*[|–-]\s*Mercado Livre.*', '', raw_title, flags=re.IGNORECASE)
+    found_title = None
+    for sel in title_selectors:
+        tag = soup.select_one(sel)
+        if tag and len(tag.get_text().strip()) > 15: # Evita pegar lixo
+            found_title = tag.get_text().strip()
+            logger.info(f"[EXTRACTOR] Título pego via seletor CSS: {sel}")
+            break
+
+    if not found_title or found_title.lower() == "mercado livre":
+        t_og = soup.find(name="meta", attrs={"property": "og:title"})
+        t_tw = soup.find(name="meta", attrs={"name": "twitter:title"})
+        h1_gen = soup.find(name="h1")
+        
+        found_title = (t_og.get("content") if t_og else None) or \
+                    (t_tw.get("content") if t_tw else None) or \
+                    (h1_gen.get_text().strip() if h1_gen else None) or \
+                    (soup.title.string if soup.title else None)
+
+    if found_title:
+        logger.info(f"[EXTRACTOR] Título Bruto: {found_title[:60]}")
+        # Limpeza fina
+        cleaned = re.sub(r'\s*[|–-]\s*Mercado Livre.*', '', found_title, flags=re.IGNORECASE)
         cleaned = re.sub(r'\s*[|–-]\s*Amazon\.com.*', '', cleaned, flags=re.IGNORECASE)
         cleaned = cleaned.strip()
         
-        # Garante que termos importantes fiquem, mas sem duplicar
         if "AOC" in cleaned and "Smart TV" not in cleaned:
             cleaned = f"Smart TV {cleaned}"
         data["title"] = cleaned
 
     # --- 2. PREÇO (Camadas de Precedência) ---
-    # Camada A: Metadados estruturados
     p_meta = soup.find(name="meta", attrs={"property": "product:price:amount"})
     if p_meta: data["price"] = clean_price(p_meta.get("content"))
 
-    # Camada B: JSON-LD
     if not data["price"]:
         for script in soup.find_all(name="script", attrs={"type": "application/ld+json"}):
             try:
                 js = json.loads(script.string)
                 items = js if isinstance(js, list) else [js]
                 for item in items:
-                    if item.get("@type") == "Product" or "Product" in str(item.get("@type")):
-                        off = item.get("offers", {})
+                    # ML e outros podem usar esquemas aninhados
+                    product_data = item if item.get("@type") == "Product" else None
+                    if not product_data and isinstance(item.get("mainEntity"), dict):
+                        if item["mainEntity"].get("@type") == "Product":
+                            product_data = item["mainEntity"]
+                    
+                    if product_data:
+                        off = product_data.get("offers", {})
                         if isinstance(off, dict):
                             p = off.get("price")
                             if p: data["price"] = clean_price(str(p))
                         elif isinstance(off, list) and off:
                             p = off[0].get("price")
                             if p: data["price"] = clean_price(str(p))
+                    if data["price"]: break
             except: continue
 
-    # Camada C: Seletores CSS Visuais (Específicos ML / Universais)
     if not data["price"]:
         price_selectors = [
-            # Mercado Livre Moderno
             ".ui-pdp-price__second-line .andes-money-amount__fraction",
             ".andes-money-amount--main .andes-money-amount__fraction",
             ".ui-pdp-price__part--main .andes-money-amount__fraction",
-            # Outros
+            ".ui-pdp-price .andes-money-amount__fraction",
             "[itemprop='price']",
             ".price-tag-fraction",
-            ".a-price-whole"
         ]
         for sel in price_selectors:
             p_tag = soup.select_one(sel)
             if p_tag:
                 val = p_tag.get_text().strip()
-                # Tenta pegar centavos
                 parent = p_tag.parent
                 cents = parent.select_one(".andes-money-amount__cents") or \
-                        parent.select_one(".price-tag-cents") or \
-                        parent.select_one(".a-price-fraction")
-                if cents:
-                    val += f",{cents.get_text().strip()}"
+                        parent.select_one(".price-tag-cents")
+                if cents: val += f",{cents.get_text().strip()}"
                 data["price"] = clean_price(val)
-                if data["price"]: 
+                if data["price"]:
                     logger.info(f"[EXTRACTOR] Preço pego via seletor: {sel}")
                     break
+
+    # Fallback Extremo: Regex no HTML para preços R$
+    if not data["price"]:
+        match = re.search(r'R\$\s*(\d{1,3}(\.\d{3})*,\d{2})', html)
+        if match:
+            data["price"] = f"R$ {match.group(1)}"
+            logger.info("[EXTRACTOR] Preço pego via Regex Fallback")
 
     # --- 3. IMAGEM ---
     img_og = soup.find(name="meta", attrs={"property": "og:image"})
     img_tw = soup.find(name="meta", attrs={"name": "twitter:image"})
     img_rel = soup.find(name="link", attrs={"rel": "image_src"})
+    img_sel = soup.select_one(".ui-pdp-gallery__figure__image, .ui-pdp-image")
     
     data["image_url"] = (img_og.get("content") if img_og else None) or \
                         (img_tw.get("content") if img_tw else None) or \
-                        (img_rel.get("href") if img_rel else None)
-    
-    # --- 4. DESCRIÇÃO ---
-    desc_og = soup.find(name="meta", attrs={"property": "og:description"})
-    if desc_og: data["descricao"] = desc_og.get("content")
+                        (img_rel.get("href") if img_rel else None) or \
+                        (img_sel.get("src") if img_sel else None)
     
     return data
 
@@ -125,28 +147,23 @@ def extract_product_data(url: str) -> dict:
         "title": "Produto", "loja": "Desconhecida", 
         "store_key": "other", "error": None
     }
-    logger.info(f"[EXTRACTOR] --- V6.4 (REFINED) --- {url[:50]}")
+    logger.info(f"[EXTRACTOR] --- V6.5 (SNIPER) --- {url[:50]}")
 
     try:
         session = requests.Session()
         res = session.get(url, headers=_GOOGLEBOT_HEADERS, timeout=15, allow_redirects=True)
-        
-        logger.info(f"[EXTRACTOR] Status: {res.status_code} | Bytes: {len(res.text)}")
-        
         html, final_url = res.text, res.url
         soup = BeautifulSoup(html, "html.parser")
         
         result["loja"], result["store_key"] = detect_store(final_url)
 
-        # Se for /social/ (ML)
+        # /social/
         if "/social/" in final_url:
             m_code = re.search(r'MLB-?\d+', html) or re.search(r'short_name=([^&"]+)', url)
             code = m_code.group(0) if m_code else ""
             m_link = re.search(fr'https?://[^"\s]*{code}[^"\s]*MLB[^"\s>]*', html)
-            
             if m_link:
                 real_url = m_link.group(0).replace("&amp;", "&")
-                logger.info(f"[EXTRACTOR] MLB Social detectado -> Seguindo: {real_url[:50]}")
                 res_real = session.get(real_url, headers=_GOOGLEBOT_HEADERS, timeout=10)
                 soup = BeautifulSoup(res_real.text, "html.parser")
                 html = res_real.text
@@ -160,7 +177,7 @@ def extract_product_data(url: str) -> dict:
             result["image_url"] = urljoin(final_url, result["image_url"])
 
     except Exception as e:
-        logger.error(f"[EXTRACTOR] Erro V6.4: {e}")
+        logger.error(f"[EXTRACTOR] Erro V6.5: {e}")
         result["error"] = str(e)
 
     return result
