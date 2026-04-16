@@ -1,13 +1,13 @@
 """
 product_extractor.py - Extração robusta de dados do produto via scraping.
-Versão V3.5 (SHADOW TRACER) - Localização de item específico em vitrines sociais via ID.
+Versão V3.6 (RECURSIVE SCANNER) - Extração em duas etapas para Vitrines Sociais.
 """
 import logging
 import re
 import json
 import requests
 from bs4 import BeautifulSoup
-from urllib.parse import urljoin, urlparse, parse_qs
+from urllib.parse import urljoin, urlparse
 
 from bot.utils.detect_store import detect_store
 
@@ -30,82 +30,82 @@ def clean_price(text: str) -> str | None:
         return f"R$ {val}"
     return None
 
+def _extract_from_html(html, url):
+    """Função interna de extração direta de uma página de produto real."""
+    soup = BeautifulSoup(html, "html.parser")
+    data = {"title": None, "price": None, "image_url": None}
+    
+    # 1. Título
+    og_t = (soup.find("meta", property="og:title") or {}).get("content")
+    if og_t: data["title"] = re.sub(r"Mercado Livre.*|\||-", "", og_t, flags=re.IGNORECASE).strip()
+    
+    # 2. Imagem (Alta resolução)
+    og_i = (soup.find("meta", property="og:image") or {}).get("content")
+    if og_i: data["image_url"] = og_i
+    else:
+        m = re.search(r'https://http2\.mlstatic\.com/D_NQ_NP_[^"\s]+-O\.jpg', html)
+        if m: data["image_url"] = m.group(0)
+
+    # 3. Preço
+    og_p = (soup.find("meta", property="product:price:amount") or {}).get("content")
+    if og_p: data["price"] = clean_price(og_p)
+    else:
+        m_p = re.search(r'R\$\s?(\d{1,3}(?:\.\d{3})*,\d{2})', html)
+        if m_p: data["price"] = f"R$ {m_p.group(1)}"
+        
+    return data
+
 def extract_product_data(url: str) -> dict:
     result = {
-        "image_url": None, 
-        "price": "Preço não disponível", 
-        "title": "Produto", 
-        "loja": "Desconhecida", 
-        "store_key": "other",
-        "error": None
+        "image_url": None, "price": "Preço não disponível", 
+        "title": "Produto", "loja": "Desconhecida", 
+        "store_key": "other", "error": None
     }
-    logger.info(f"[EXTRACTOR] --- SHADOW TRACER V3.5 --- {url[:50]}")
+    logger.info(f"[EXTRACTOR] --- RECURSIVE SCANNER V3.6 --- {url[:50]}")
 
     try:
-        # Tenta pegar o short_name do link (ex: 22yDfB2)
-        parsed = urlparse(url)
-        params = parse_qs(parsed.query)
-        short_name = params.get("short_name", [parsed.path.split("/")[-1]])[0]
-        
         session = requests.Session()
         res = session.get(url, headers=_HEADERS_ANTI_BLOCK, timeout=15, allow_redirects=True)
         html = res.text
-        soup = BeautifulSoup(html, "html.parser")
         
         final_url = res.url
         store_display, store_key = detect_store(final_url)
         result["loja"] = store_display
         result["store_key"] = store_key
 
-        # 1. Título via Meta (Geralmente é confiável para o item principal)
-        og_t = (soup.find("meta", property="og:title") or {}).get("content")
-        og_d = (soup.find("meta", property="og:description") or {}).get("content")
-        
-        for c in [og_t, og_d]:
-            if not c: continue
-            clean = re.sub(r"Visite a página.*|Mercado Livre|Descontinho.*|\||-|Encontre os melhores.*|Veja este produto.*", "", c, flags=re.IGNORECASE).strip()
-            if len(clean) > 15:
-                result["title"] = clean
-                break
+        # SE FOR PÁGINA SOCIAL - ATIVAR RECURSIVIDADE
+        if "/social/" in final_url:
+            logger.info("[EXTRACTOR] Vitrine Social detectada. Buscando link do produto real...")
+            # Procura links MLB- ou links que pareçam ser de produtos reais do ML
+            links_real = re.findall(r'https://www\.mercadolivre\.com\.br/p/MLB[^"\s?#]+', html) or \
+                         re.findall(r'https://produto\.mercadolivre\.com\.br/MLB-[^"\s?#]+', html)
+            
+            if links_real:
+                real_product_url = links_real[0]
+                logger.info(f"[EXTRACTOR] Seguindo para o produto real: {real_product_url}")
+                res_real = session.get(real_product_url, headers=_HEADERS_ANTI_BLOCK, timeout=10)
+                deep_data = _extract_from_html(res_real.text, real_product_url)
+                
+                result["title"] = deep_data["title"] or result["title"]
+                result["image_url"] = deep_data["image_url"] or result["image_url"]
+                result["price"] = deep_data["price"] or result["price"]
+                
+                if result["image_url"] and result["price"] != "Preço não disponível":
+                    return result
 
-        # 2. Busca o Bloco de Dados do Item Específico (Sniper Index)
-        # Em vitrines sociais, os dados ficam em scripts ou em cards com o ID do short_name
-        
-        # Estratégia de Imagem: Busca pela imagem que contenha o ID do produto ou seja a maior da página
-        ml_imgs = re.findall(r'https://http2\.mlstatic\.com/D_NQ_NP_[^"\s]+\.jpg', html)
-        if ml_imgs:
-            # Pega a primeira que não seja um ícone pequeno (F.jpg ou O.jpg são melhores)
-            for img in ml_imgs:
-                if "-F.jpg" in img or "-O.jpg" in img:
-                    result["image_url"] = img
-                    break
-            if not result["image_url"]: result["image_url"] = ml_imgs[0]
+        # ELSE: Extração normal (ou se a recursividade falhou)
+        normal_data = _extract_from_html(html, final_url)
+        result["title"] = normal_data["title"] or result["title"]
+        result["image_url"] = normal_data["image_url"] or result["image_url"]
+        result["price"] = normal_data["price"] or result["price"]
 
-        # Estratégia de Preço: Procura o preço PRÓXIMO ao título no HTML
-        # Se for uma TV, o preço deve ser > 400.00
-        all_prices = re.findall(r'R\$\s?(\d{1,3}(?:\.\d{3})*,\d{2})', html)
-        valid_prices = []
-        for p in all_prices:
-            val_float = float(p.replace(".", "").replace(",", "."))
-            # Heurística: Se o título tem "TV", ignoramos preços < 300 reais (provavelmente acessórios)
-            if "TV" in result["title"].upper() and val_float < 400:
-                continue
-            valid_prices.append(p)
-        
-        if valid_prices:
-            result["price"] = f"R$ {valid_prices[0]}"
-        elif og_d:
-            # Tenta extrair preço da descrição meta
-            p_desc = clean_price(og_d)
-            if p_desc: result["price"] = p_desc
-
-        # Fallback de Imagem se ainda não tiver
-        if not result["image_url"]:
-            img_meta = (soup.find("meta", property="og:image") or {}).get("content")
-            if img_meta: result["image_url"] = img_meta
+        # Heurística de Preço para TV (V3.5)
+        if "TV" in result["title"].upper() and result["price"] != "Preço não disponível":
+            p_val = float(result["price"].replace("R$ ", "").replace(".", "").replace(",", "."))
+            if p_val < 300: result["price"] = "Preço não disponível" # Provavelmente acessório
 
     except Exception as e:
-        logger.error(f"[EXTRACTOR] Erro V3.5: {e}")
+        logger.error(f"[EXTRACTOR] Erro V3.6: {e}")
         result["error"] = str(e)
 
     return result
