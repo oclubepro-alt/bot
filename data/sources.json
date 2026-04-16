@@ -1,0 +1,26 @@
+[
+  {
+    "name": "Amazon Ofertas do Dia",
+    "url": "https://www.amazon.com.br/gp/goldbox",
+    "active": true,
+    "notes": "Página de promoções da Amazon"
+  },
+  {
+    "name": "Magalu Ofertas",
+    "url": "https://www.magazineluiza.com.br/selecao/ofertas-do-dia/",
+    "active": true,
+    "notes": "Página de ofertas do dia Magalu"
+  },
+  {
+    "name": "Mercado Livre Ofertas",
+    "url": "https://www.mercadolivre.com.br/ofertas",
+    "active": true,
+    "notes": "Página de ofertas do ML"
+  },
+  {
+    "name": "Shopee Ofertas",
+    "url": "https://shopee.com.br/flash_sale",
+    "active": true,
+    "notes": "Flash Sale Shopee"
+  }
+]
