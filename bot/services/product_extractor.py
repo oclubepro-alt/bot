@@ -209,6 +209,13 @@ def extract_product_data(url: str) -> dict:
         if og_price: result["price"]     = clean_price(og_price) or result["price"]
         if og_title: result["title"]     = og_title
 
+        # EXTRA: Se preço falhou mas está no Título (Comum no Mercado Livre)
+        if result["price"] == "Preço não disponível" and og_title:
+            price_match = re.search(r"R\$\s?(\d{1,3}(?:\.\d{3})*(?:,\d{2})?)", og_title)
+            if price_match:
+                result["price"] = f"R$ {price_match.group(1)}"
+                logger.info(f"[EXTRACTOR] Preço extraído do og:title: {result['price']}")
+
         # --- Estratégia 2: JSON-LD ---
         if result["price"] == "Preço não disponível" or not result["image_url"]:
             jld = extract_json_ld(soup)
@@ -221,12 +228,13 @@ def extract_product_data(url: str) -> dict:
                 
                 if result["price"] == "Preço não disponível":
                     offers = jld.get("offers")
-                    if isinstance(offers, dict) and offers.get("price"):
-                        result["price"] = clean_price(str(offers["price"])) or result["price"]
+                    if isinstance(offers, dict):
+                        p = offers.get("price") or offers.get("lowPrice")
+                        if p: result["price"] = clean_price(str(p)) or result["price"]
                     elif isinstance(offers, list) and offers[0].get("price"):
                         result["price"] = clean_price(str(offers[0]["price"])) or result["price"]
                 
-                if result["title"] == "Produto" and jld.get("name"):
+                if (result["title"] == "Produto" or result["title"] == "Mercado Livre") and jld.get("name"):
                     result["title"] = jld["name"]
 
         # --- Estratégia 3: Seletores CSS Específicos ---
@@ -245,6 +253,30 @@ def extract_product_data(url: str) -> dict:
                     if img: result["image_url"] = urljoin(final_url, img)
                     break
         
+        elif store_key == "mercadolivre":
+            # Preço ML (Seletores de classe andes e ui-pdp)
+            if result["price"] == "Preço não disponível":
+                sel_p = [".ui-pdp-price__second-line .andes-money-amount__fraction", 
+                         ".ui-pdp-price__current-price .andes-money-amount__fraction",
+                         ".andes-money-amount__fraction"]
+                for s in sel_p:
+                    tag = soup.select_one(s)
+                    if tag:
+                        cents = tag.parent.select_one(".andes-money-amount__cents")
+                        p_str = tag.text.strip() + (f",{cents.text.strip()}" if cents else ",00")
+                        result["price"] = clean_price(p_str)
+                        break
+            
+            # Imagem ML
+            if not result["image_url"]:
+                sel_img = [".ui-pdp-gallery__figure img", ".ui-pdp-image", "img.ui-pdp-image"]
+                for s in sel_img:
+                    tag = soup.select_one(s)
+                    if tag:
+                        img = tag.get("data-zoom") or tag.get("src")
+                        if img: result["image_url"] = urljoin(final_url, img)
+                        break
+
         elif store_key == "magalu":
             tag = soup.select_one("[data-testid='price-value']")
             if tag: result["price"] = clean_price(tag.text) or result["price"]
