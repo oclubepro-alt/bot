@@ -180,7 +180,7 @@ def extract_product_data(url: str) -> dict:
         "error":     None
     }
 
-    logger.info(f"[EXTRACTOR] --- V2.9 --- Iniciando para: {url[:60]}")
+    logger.info(f"[EXTRACTOR] --- V3.0 --- Iniciando para: {url[:60]}")
  
     try:
         # Etapa 1 — Resolução de Redirecionamentos
@@ -252,12 +252,17 @@ def extract_product_data(url: str) -> dict:
             clean_t = re.sub(r"\sno\sMercado\sLivre.*", "", clean_t, flags=re.IGNORECASE)
             clean_t = re.sub(r"\| Mercado Livre", "", clean_t, flags=re.IGNORECASE)
             
-            # Especial ML Social (V2.8): Força o título se for página de influenciador
+            # Especial ML Social (V3.0): Caso o título falhe, tenta a descrição
             result["title"] = clean_t.strip()
-            if "/social/" in final_url:
-                 # Se o título ficou genérico, tenta remontar ou manter o OG limpo
-                 if len(result["title"]) < 10:
-                      result["title"] = clean_t.strip()
+            if "/social/" in final_url or result["title"].lower() in ["produto", "mercado livre", "mercadolivre"]:
+                 og_desc = _meta(soup, "og:description", "twitter:description")
+                 if og_desc:
+                      # Limpa textos genéricos de vitrine
+                      d = re.sub(r"Visite a página e encontre todos os produtos.*", "", og_desc, flags=re.IGNORECASE)
+                      d = re.sub(r"Encontre os melhores produtos.*", "", d, flags=re.IGNORECASE)
+                      d = d.replace("Descontinho de Mamãe", "").replace(" - Mercado Livre", "").strip()
+                      if len(d) > 10:
+                           result["title"] = d
 
         # --- Estratégia 2: JSON-LD ---
         if result["price"] == "Preço não disponível" or not result["image_url"] or result["title"].lower() in ["produto", "mercado livre"]:
