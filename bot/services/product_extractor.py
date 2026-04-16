@@ -150,12 +150,16 @@ def extract_product_data(url: str) -> dict:
     logger.info(f"[EXTRACTOR] --- V6.5 (SNIPER) --- {url[:50]}")
 
     try:
+        from bot.utils.url_resolver import extract_from_query
         session = requests.Session()
         res = session.get(url, headers=_GOOGLEBOT_HEADERS, timeout=15, allow_redirects=True)
-        html, final_url = res.text, res.url
+        html = res.text
+        # Limpa o link final caso tenha caído em um redirecionador de afiliado (Viglink/etc)
+        final_url = extract_from_query(res.url)
         soup = BeautifulSoup(html, "html.parser")
         
         result["loja"], result["store_key"] = detect_store(final_url)
+        result["product_url"] = final_url  # Salva a URL limpa para uso posterior
 
         # /social/
         if "/social/" in final_url:

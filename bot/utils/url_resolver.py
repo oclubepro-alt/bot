@@ -15,20 +15,23 @@ _HEADERS = {
 }
 
 def extract_from_query(url: str) -> str:
-    """Tenta extrair uma URL embutida em parâmetros de afiliados (ex: Rakuten/Awin)."""
+    """Tenta extrair uma URL embutida em parâmetros de afiliados (ex: Viglink, Rakuten/Awin)."""
+    if not url: return url
     parsed = urlparse(url)
     qs = parse_qs(parsed.query)
     
-    # Rakuten usa 'murl'
-    if "murl" in qs:
-        return unquote(qs["murl"][0])
-    # Awin usa 'ued'
-    if "ued" in qs:
-        return unquote(qs["ued"][0])
-    # Outros comuns (url, dest)
-    for param in ["url", "dest"]:
-        if param in qs and qs[param][0].startswith("http"):
-            return unquote(qs[param][0])
+    # Parâmetros comuns de redirecionamento de afiliados
+    # u = Viglink, murl = Rakuten, ued = Awin
+    keys_to_check = ["u", "murl", "ued", "url", "dest", "link", "redir", "target"]
+    
+    for key in keys_to_check:
+        # Busca case-insensitive
+        actual_key = next((k for k in qs.keys() if k.lower() == key), None)
+        if actual_key:
+            potential_url = unquote(qs[actual_key][0])
+            if potential_url.startswith("http"):
+                logger.info(f"[URL_RESOLVER] URL extraída do parâmetro '{actual_key}': {potential_url[:60]}...")
+                return potential_url
             
     return url
 

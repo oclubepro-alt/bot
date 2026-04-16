@@ -71,6 +71,10 @@ def inject_affiliate(url: str, store_key: str = None) -> str:
     if not url or not isinstance(url, str):
         return url
 
+    # Limpeza nuclear: Remove parâmetros de rastro/afiliação de terceiros antes de injetar
+    # Remove utm_*, fbclid, gclid e tags comuns
+    url = re.sub(r"[?&](utm_[^&]+|fbclid|gclid|aff_id|clickid)=[^&]*", "", url)
+    
     if not store_key:
         from bot.utils.detect_store import detect_store
         _, store_key = detect_store(url)
