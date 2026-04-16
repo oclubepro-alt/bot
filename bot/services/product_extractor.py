@@ -180,16 +180,32 @@ def extract_product_data(url: str) -> dict:
         "error":     None
     }
 
-    logger.info(f"[EXTRACTOR] --- V2.8 --- Iniciando para: {url[:60]}")
-
+    logger.info(f"[EXTRACTOR] --- V2.9 --- Iniciando para: {url[:60]}")
+ 
     try:
         # Etapa 1 — Resolução de Redirecionamentos
-        session = requests.Session()
-        res = session.get(url, headers=_HEADERS_ANTI_BLOCK, timeout=15, allow_redirects=True)
-        # Força UTF-8 para evitar problemas com R$ e acentos
-        res.encoding = 'utf-8' 
+        res = requests.get(url, headers=_HEADERS_ANTI_BLOCK, timeout=15, allow_redirects=True)
         final_url = res.url
         logger.info(f"[EXTRACTOR] URL Final: {final_url[:60]}")
+
+        # ESPECIAL V2.9: Scanner de Vitrine/Social (Mercado Livre)
+        # Se cair em /social/, procura o primeiro item da lista e vai nele
+        if "/social/" in final_url and "mercadolivre.com.br" in final_url:
+            logger.info("[EXTRACTOR] Detectada página 'Social'. Buscando primeiro item...")
+            social_soup = BeautifulSoup(res.text, "html.parser")
+            # Procura links que contenham /p/MLB ou /MLB-
+            first_item = None
+            for a in social_soup.find_all("a", href=True):
+                href = a["href"]
+                if "/p/MLB" in href or "/MLB-" in href:
+                    first_item = urljoin(final_url, href)
+                    break
+            
+            if first_item:
+                logger.info(f"[EXTRACTOR] Redirecionando Vitrine -> Produto: {first_item[:50]}")
+                # Faz um novo request para o produto real
+                res = requests.get(first_item, headers=_HEADERS_ANTI_BLOCK, timeout=15, allow_redirects=True)
+                final_url = res.url
 
         # Identifica a loja para estratégias específicas
         store_display, store_key = detect_store(final_url)
