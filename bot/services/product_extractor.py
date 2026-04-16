@@ -227,8 +227,9 @@ def extract_product_data(url: str) -> dict:
                 if price_match:
                     result["price"] = f"R$ {price_match.group(1)}"
             
-            # Limpa " - R$ ..." e " no Mercado Livre" do título
+            # Limpa " - R$ ...", " - Mercado Livre" e " no Mercado Livre" do título
             clean_t = re.sub(r"\s-\sR\$.*", "", og_title)
+            clean_t = re.sub(r"\s-\sMercado\sLivre.*", "", clean_t, flags=re.IGNORECASE)
             clean_t = re.sub(r"\sno\sMercado\sLivre.*", "", clean_t, flags=re.IGNORECASE)
             result["title"] = clean_t.strip()
 
@@ -251,8 +252,13 @@ def extract_product_data(url: str) -> dict:
                         result["price"] = clean_price(str(offers[0]["price"])) or result["price"]
                 
                 # JSON-LD costuma ter o nome limpo do produto
-                if jld.get("name"):
+                if jld.get("name") and str(jld["name"]).strip().lower() != "mercado livre":
                     result["title"] = str(jld["name"]).strip()
+        
+        # --- Estratégia Adicional: H1 (Último recurso de scraping) ---
+        if result["title"] == "Produto" or result["title"].lower() == "mercado livre":
+            h1 = soup.find("h1")
+            if h1: result["title"] = h1.text.strip()
 
         # --- Estratégia 3: Seletores CSS Específicos ---
         if store_key == "amazon":
