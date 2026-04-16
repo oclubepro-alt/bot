@@ -122,9 +122,12 @@ async def receber_link_produto(update: Update, context: ContextTypes.DEFAULT_TYP
         return PREENCHER_NOME_FALTANTE
 
     if not dados.get("preco") or dados.get("preco") == "Preço não disponível":
+        nome_extraido = dados.get("nome", "Não extraído")
         await update.message.reply_text(
-            f"✅ Nome: <b>{dados['nome']}</b>\n\n"
-            "📝 Não consegui extrair o preço. Por favor, digite o <b>preço</b> (ex: R$ 49,90):",
+            f"✅ Nome: <b>{nome_extraido}</b>\n"
+            f"🏪 Loja: <b>{dados.get('loja', 'Desconhecida')}</b>\n"
+            f"⚠️ <i>(Debug V2.3)</i>\n\n"
+            "📝 Não consegui extrair o preço automaticamente. Por favor, digite o <b>preço</b> (ex: R$ 49,90):",
             parse_mode=ParseMode.HTML
         )
         return PREENCHER_PRECO_FALTANTE
