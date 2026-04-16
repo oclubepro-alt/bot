@@ -89,23 +89,20 @@ async def receber_link_produto(update: Update, context: ContextTypes.DEFAULT_TYP
         "⏳ Resolvendo link e extraindo dados do produto... Aguarde."
     )
 
-    # Resolve a URL final — usada APENAS para extração e detecção de loja
-    try:
-        resolved = resolve_url(original_link)
-        context.user_data["resolved_url"] = resolved
-    except Exception as e:
-        logger.error(f"[OFERTA LINK] Erro ao resolver URL: {e}")
-        resolved = original_link
-        context.user_data["resolved_url"] = resolved
-
-    # Extração sempre na URL resolvida
-    dados = extract_product_data(resolved)
+    # Extração Mestra (Etapas 1, 2, 3, 4) — Agora faz o resolve internamente
+    dados = extract_product_data(original_link)
+    
+    # Normalização para compatibilidade com o resto do handler
+    # O novo extrator retorna 'title', 'price', 'image_url'
+    dados["nome"] = dados.get("title")
+    dados["preco"] = dados.get("price")
+    dados["imagem"] = dados.get("image_url")
     
     # Preserva o link original como URL do produto (não a URL técnica)
     dados["product_url"] = original_link
     
     # Se capturamos uma descrição base, usamos se o extractor falhar
-    if context.user_data.get("descricao_base") and not dados.get("descricao"):
+    if context.user_data.get("descricao_base") and (not dados.get("descricao") or dados.get("descricao") == "Produto"):
         dados["descricao"] = context.user_data["descricao_base"]
 
     context.user_data["extracted"] = dados
@@ -116,15 +113,15 @@ async def receber_link_produto(update: Update, context: ContextTypes.DEFAULT_TYP
     store_key = dados.get("store_key", "other")
     logger.info(f"[OFERTA LINK] Loja detectada: {loja_txt} (key={store_key})")
 
-    # Fallbacks manuais
-    if not dados.get("nome"):
+    # Fallbacks manuais (Etapa 4: se voltou o padrão "Produto" ou "Preço não disponível")
+    if not dados.get("nome") or dados.get("nome") == "Produto":
         await update.message.reply_text(
-            "📝 Não consegui extrair o nome. Por favor, digite o <b>nome do produto</b>:",
+            "📝 Não consegui extrair o nome automaticamente. Por favor, digite o <b>nome do produto</b>:",
             parse_mode=ParseMode.HTML
         )
         return PREENCHER_NOME_FALTANTE
 
-    if not dados.get("preco"):
+    if not dados.get("preco") or dados.get("preco") == "Preço não disponível":
         await update.message.reply_text(
             f"✅ Nome: <b>{dados['nome']}</b>\n\n"
             "📝 Não consegui extrair o preço. Por favor, digite o <b>preço</b> (ex: R$ 49,90):",

@@ -145,32 +145,30 @@ def _build_telegram(
     preco_original: str | None,
     desconto: str | None,
 ) -> str:
-    """
-    Monta copy para Telegram em HTML.
-    """
     nome_e  = _escape_html(nome)
     preco_e = _escape_html(preco)
     loja_e  = _escape_html(loja)
 
-    linhas = [f"{emoji} <b>{nome_e}</b>", ""]
+    linhas = [f"📦 <b>{nome_e}</b>", ""]
 
-    # Linha de preço
-    preco_line = f"💰 Preço: <b>{preco_e}</b>"
+    # Preço principal
+    p_line = f"💰 <b>Preço:</b> {preco_e}"
     if preco_original:
         orig_e = _escape_html(preco_original)
-        preco_line += f" <s>{orig_e}</s>"
+        p_line += f" <s>{orig_e}</s>"
     if desconto:
         desc_e = _escape_html(desconto)
-        preco_line += f" ({desc_e})"
-    linhas.append(preco_line)
+        p_line += f" ({desc_e})"
+    linhas.append(p_line)
+    
     linhas.append(f"🏪 <b>Loja:</b> {loja_e}")
 
     if legenda_ia and legenda_ia.strip():
         linhas.append("")
-        linhas.append(_escape_html(legenda_ia.strip()))
+        linhas.append(f"<i>{_escape_html(legenda_ia.strip())}</i>")
 
     linhas.append("")
-    linhas.append(f"👉 <a href='{short_url}'>VER OFERTA</a>")
+    linhas.append(f"🛒 <a href='{short_url}'><b>COMPRE AQUI</b></a>")
 
     return "\n".join(linhas)
 

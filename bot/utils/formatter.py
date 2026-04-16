@@ -16,12 +16,11 @@ def build_offer_message(
     Retorna a mensagem formatada em HTML pronta para enviar ao canal.
     """
     return (
-        f"🔥 <b>OFERTA</b>\n\n"
-        f"<b>Produto:</b> {escape_html(nome)}\n"
+        f"📦 <b>{escape_html(nome)}</b>\n\n"
         f"💰 <b>Preço:</b> {escape_html(preco)}\n"
         f"🏪 <b>Loja:</b> {escape_html(loja)}\n\n"
         f"{escape_html(legenda_ia)}\n\n"
-        f"👉 {escape_html(link)}"
+        f"🛒 <b>Compre aqui:</b> {escape_html(link)}"
     )
 
 

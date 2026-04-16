@@ -64,41 +64,34 @@ async def _run_scan(context, limit: int = 10, manual: bool = False) -> int:
             logger.info(f"--- [PROCESSO {count+1}/{limit}] ---")
             logger.info(f"[SCHEDULER] Extraindo: {product_url[:60]}")
             
-            # Resolve URL e extrai dados (Problem 2)
-            resolved_url = resolve_final_url(product_url)
-            dados = extract_product_data(resolved_url)
+            # 1. Extração Mestra (Etapas 1, 2, 3, 4)
+            dados = extract_product_data(product_url)
 
-            if not dados or not dados.get("nome"):
-                logger.warning(f"[SCHEDULER] Falha ao extrair nome do produto. Ignorando: {product_url[:60]}")
-                mark_seen(product_url)
-                continue
-
-            # 1. Injeção de Afiliado e Encurtamento (RESOLVE PROBLEMA 2 NO SCRAPER)
+            # 2. Injeção de Afiliado e Encurtamento
             store_key = dados.get("store_key", "other")
             affiliate_url = get_affiliate_url(
                 original_url=product_url,
-                resolved_url=resolved_url,
+                resolved_url=dados.get("product_url"), # URL final resolvida
                 store_key=store_key
             )
             final_link = shorten_for_publication(affiliate_url)
 
-            # 2. Geração de Copy IA
+            # 3. Geração de Copy IA
             copy_ia = await generate_caption(
-                nome=dados["nome"], 
-                preco=dados.get("preco", "Consulte"), 
+                nome=dados["title"], 
+                preco=dados["price"], 
                 loja=dados.get("loja", "Loja"), 
                 descricao=dados.get("descricao")
             )
 
-            # 3. DESTINO: Se manual ou AUTO_APPROVE, vai direto pro canal (RESOLVE PROBLEMA 3)
+            # 4. Publicação (Etapa 5)
             if manual or AUTO_APPROVE:
-                logger.info(f"[SCHEDULER] Publicando direto no CANAL: '{dados['nome'][:40]}'")
+                logger.info(f"[SCHEDULER] Publicando direto no CANAL: '{dados['title'][:40]}'")
                 
-                # Monta copies multi-plataforma
                 from bot.services.copy_builder import build_copy
                 copies = build_copy(
-                    nome=dados["nome"],
-                    preco=dados.get("preco", "Consulte"),
+                    nome=dados["title"],
+                    preco=dados["price"],
                     loja=dados.get("loja", "Loja"),
                     store_key=store_key,
                     short_url=final_link,
@@ -106,25 +99,23 @@ async def _run_scan(context, limit: int = 10, manual: bool = False) -> int:
                     preco_original=dados.get("preco_original")
                 )
 
-                # Publicar (Router garante Telegram canal + WhatsApp)
-                await publish_offer(context.bot, copies, dados.get("imagem"))
+                # Publicar (Etapa 5: Photo vs Message é tratado no publisher_telegram)
+                await publish_offer(context.bot, copies, dados.get("image_url"))
                 mark_seen(product_url)
                 count += 1
                 
-                # SLEEP PARA EVITAR RATE LIMIT (Requisito Problema 3)
                 logger.info("[SCHEDULER] Aguardando 3s para evitar rate limit...")
                 await asyncio.sleep(3) 
 
             else:
-                # Modo de Aprovação Manual (Padrão do Scheduler Normal)
+                # Modo de Aprovação Manual
                 offer_id = uuid.uuid4().hex[:12]
                 if "pending_offers" not in context.bot_data:
                     context.bot_data["pending_offers"] = {}
 
-                # Monta msg simples para prévia
                 mensagem_prev = build_offer_message(
-                    nome=dados["nome"], 
-                    preco=dados.get("preco", "Consulte"), 
+                    nome=dados["title"], 
+                    preco=dados["price"], 
                     loja=dados.get("loja", "Loja"), 
                     link=final_link, 
                     legenda_ia=copy_ia
@@ -132,9 +123,9 @@ async def _run_scan(context, limit: int = 10, manual: bool = False) -> int:
 
                 context.bot_data["pending_offers"][offer_id] = {
                     "product_url": product_url,
-                    "mensagem": mensagem_prev,
-                    "imagem": dados.get("imagem"),
-                    "nome": dados["nome"],
+                    "mensagem":    mensagem_prev,
+                    "imagem":      dados.get("image_url"),
+                    "nome":        dados["title"],
                 }
 
                 keyboard = InlineKeyboardMarkup([
@@ -146,13 +137,13 @@ async def _run_scan(context, limit: int = 10, manual: bool = False) -> int:
 
                 for admin_id in ADMIN_IDS:
                     try:
-                        if dados.get("imagem"):
-                            await context.bot.send_photo(chat_id=admin_id, photo=dados["imagem"], caption=preview_text, parse_mode=ParseMode.HTML, reply_markup=keyboard)
+                        if dados.get("image_url"):
+                            await context.bot.send_photo(chat_id=admin_id, photo=dados["image_url"], caption=preview_text, parse_mode=ParseMode.HTML, reply_markup=keyboard)
                         else:
                             await context.bot.send_message(chat_id=admin_id, text=preview_text, parse_mode=ParseMode.HTML, reply_markup=keyboard)
                     except Exception: pass
                 
-                mark_seen(product_url) # Marca como visto após enviar prévia
+                mark_seen(product_url)
                 count += 1
                 await asyncio.sleep(1) 
 
