@@ -37,18 +37,25 @@ def _extract_seo_data(soup, html):
     t_tw = soup.find(name="meta", attrs={"name": "twitter:title"})
     h1 = soup.find(name="h1")
     
-    data["title"] = (t_og.get("content") if t_og else None) or \
-                    (t_tw.get("content") if t_tw else None) or \
-                    (h1.get_text().strip() if h1 else None) or \
-                    (soup.title.string if soup.title else None)
+    raw_title = (t_og.get("content") if t_og else None) or \
+                (t_tw.get("content") if t_tw else None) or \
+                (h1.get_text().strip() if h1 else None) or \
+                (soup.title.string if soup.title else None)
     
-    if data["title"]:
-        data["title"] = re.sub(r'Mercado Livre.*|\||-|Smart TV', '', data["title"], flags=re.IGNORECASE).strip()
-        if "AOC" in data["title"] and "Smart TV" not in data["title"]:
-            data["title"] = f"Smart TV {data['title']}"
+    if raw_title:
+        logger.info(f"[EXTRACTOR] Título Bruto: {raw_title[:60]}")
+        # Limpa apenas sufixos comuns em vez de usar .* agressivo
+        cleaned = re.sub(r'\s*[|–-]\s*Mercado Livre.*', '', raw_title, flags=re.IGNORECASE)
+        cleaned = re.sub(r'\s*[|–-]\s*Amazon\.com.*', '', cleaned, flags=re.IGNORECASE)
+        cleaned = cleaned.strip()
+        
+        # Garante que termos importantes fiquem, mas sem duplicar
+        if "AOC" in cleaned and "Smart TV" not in cleaned:
+            cleaned = f"Smart TV {cleaned}"
+        data["title"] = cleaned
 
     # --- 2. PREÇO (Camadas de Precedência) ---
-    # Camada A: Metadados estruturados (Invisível)
+    # Camada A: Metadados estruturados
     p_meta = soup.find(name="meta", attrs={"property": "product:price:amount"})
     if p_meta: data["price"] = clean_price(p_meta.get("content"))
 
@@ -59,7 +66,7 @@ def _extract_seo_data(soup, html):
                 js = json.loads(script.string)
                 items = js if isinstance(js, list) else [js]
                 for item in items:
-                    if item.get("@type") == "Product":
+                    if item.get("@type") == "Product" or "Product" in str(item.get("@type")):
                         off = item.get("offers", {})
                         if isinstance(off, dict):
                             p = off.get("price")
@@ -69,32 +76,42 @@ def _extract_seo_data(soup, html):
                             if p: data["price"] = clean_price(str(p))
             except: continue
 
-    # Camada C: Seletores CSS Visuais (Específicos ML)
+    # Camada C: Seletores CSS Visuais (Específicos ML / Universais)
     if not data["price"]:
-        # Tenta seletor principal do Mercado Livre
         price_selectors = [
+            # Mercado Livre Moderno
             ".ui-pdp-price__second-line .andes-money-amount__fraction",
             ".andes-money-amount--main .andes-money-amount__fraction",
+            ".ui-pdp-price__part--main .andes-money-amount__fraction",
+            # Outros
+            "[itemprop='price']",
             ".price-tag-fraction",
-            "[itemprop='price']"
+            ".a-price-whole"
         ]
         for sel in price_selectors:
             p_tag = soup.select_one(sel)
             if p_tag:
                 val = p_tag.get_text().strip()
-                # Tenta pegar centavos se houver
+                # Tenta pegar centavos
                 parent = p_tag.parent
-                cents = parent.select_one(".andes-money-amount__cents") or parent.select_one(".price-tag-cents")
+                cents = parent.select_one(".andes-money-amount__cents") or \
+                        parent.select_one(".price-tag-cents") or \
+                        parent.select_one(".a-price-fraction")
                 if cents:
                     val += f",{cents.get_text().strip()}"
                 data["price"] = clean_price(val)
-                if data["price"]: break
+                if data["price"]: 
+                    logger.info(f"[EXTRACTOR] Preço pego via seletor: {sel}")
+                    break
 
     # --- 3. IMAGEM ---
     img_og = soup.find(name="meta", attrs={"property": "og:image"})
     img_tw = soup.find(name="meta", attrs={"name": "twitter:image"})
+    img_rel = soup.find(name="link", attrs={"rel": "image_src"})
+    
     data["image_url"] = (img_og.get("content") if img_og else None) or \
-                        (img_tw.get("content") if img_tw else None)
+                        (img_tw.get("content") if img_tw else None) or \
+                        (img_rel.get("href") if img_rel else None)
     
     # --- 4. DESCRIÇÃO ---
     desc_og = soup.find(name="meta", attrs={"property": "og:description"})
@@ -108,7 +125,7 @@ def extract_product_data(url: str) -> dict:
         "title": "Produto", "loja": "Desconhecida", 
         "store_key": "other", "error": None
     }
-    logger.info(f"[EXTRACTOR] --- V6.3 (RAILWAY) --- {url[:50]}")
+    logger.info(f"[EXTRACTOR] --- V6.4 (REFINED) --- {url[:50]}")
 
     try:
         session = requests.Session()
@@ -116,9 +133,6 @@ def extract_product_data(url: str) -> dict:
         
         logger.info(f"[EXTRACTOR] Status: {res.status_code} | Bytes: {len(res.text)}")
         
-        if res.status_code != 200:
-            logger.warning(f"[EXTRACTOR] Alerta: Recebido status {res.status_code}")
-
         html, final_url = res.text, res.url
         soup = BeautifulSoup(html, "html.parser")
         
@@ -132,7 +146,7 @@ def extract_product_data(url: str) -> dict:
             
             if m_link:
                 real_url = m_link.group(0).replace("&amp;", "&")
-                logger.info(f"[EXTRACTOR] MLB Social detectado -> Seguindo para fonte: {real_url[:50]}")
+                logger.info(f"[EXTRACTOR] MLB Social detectado -> Seguindo: {real_url[:50]}")
                 res_real = session.get(real_url, headers=_GOOGLEBOT_HEADERS, timeout=10)
                 soup = BeautifulSoup(res_real.text, "html.parser")
                 html = res_real.text
@@ -146,7 +160,7 @@ def extract_product_data(url: str) -> dict:
             result["image_url"] = urljoin(final_url, result["image_url"])
 
     except Exception as e:
-        logger.error(f"[EXTRACTOR] Erro V6.3: {e}")
+        logger.error(f"[EXTRACTOR] Erro V6.4: {e}")
         result["error"] = str(e)
 
     return result
