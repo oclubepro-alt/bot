@@ -1,6 +1,8 @@
-"""
-formatter.py - Monta a mensagem final da oferta no formato padrão
-"""
+def escape_html(text: str) -> str:
+    """Escapa caracteres HTML básicos."""
+    if not text:
+        return ""
+    return str(text).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
 def build_offer_message(
@@ -11,29 +13,18 @@ def build_offer_message(
     legenda_ia: str,
 ) -> str:
     """
-    Retorna a mensagem formatada pronta para enviar ao canal.
-
-    Formato:
-        🔥 OFERTA
-
-        Produto: {nome}
-        💰 Preço: {preco}
-        🏪 Loja: {loja}
-
-        {legenda_ia}
-
-        👉 {link}
+    Retorna a mensagem formatada em HTML pronta para enviar ao canal.
     """
     return (
-        f"🔥 *OFERTA*\n\n"
-        f"*Produto:* {nome}\n"
-        f"💰 *Preço:* {preco}\n"
-        f"🏪 *Loja:* {loja}\n\n"
-        f"{legenda_ia}\n\n"
-        f"👉 {link}"
+        f"🔥 <b>OFERTA</b>\n\n"
+        f"<b>Produto:</b> {escape_html(nome)}\n"
+        f"💰 <b>Preço:</b> {escape_html(preco)}\n"
+        f"🏪 <b>Loja:</b> {escape_html(loja)}\n\n"
+        f"{escape_html(legenda_ia)}\n\n"
+        f"👉 {escape_html(link)}"
     )
 
 
 def build_preview_message(message: str) -> str:
-    """Adiciona cabeçalho de prévia antes da mensagem real."""
-    return f"👀 *PRÉVIA DA OFERTA*\n\n{message}"
+    """O message já vem formatado em HTML pelo build_offer_message."""
+    return f"👀 <b>PRÉVIA DA OFERTA</b>\n\n{message}"

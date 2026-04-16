@@ -5,7 +5,7 @@ import logging
 import httpx
 from openai import AsyncOpenAI, OpenAIError
 
-from bot.utils.config import OPENAI_API_KEY, OPENAI_MODEL, OPENAI_BASE_URL
+from bot.utils.config import OPENAI_API_KEY, OPENAI_MODEL, OPENAI_BASE_URL, HTTP_PROXY
 
 logger = logging.getLogger(__name__)
 
@@ -14,10 +14,10 @@ client_kwargs = {"api_key": OPENAI_API_KEY}
 if OPENAI_BASE_URL:
     client_kwargs["base_url"] = OPENAI_BASE_URL
 
-_client = AsyncOpenAI(
-    **client_kwargs,
-    http_client=httpx.AsyncClient(proxy="http://proxy.server:3128")
-)
+if HTTP_PROXY:
+    client_kwargs["http_client"] = httpx.AsyncClient(proxy=HTTP_PROXY)
+
+_client = AsyncOpenAI(**client_kwargs)
 
 _SYSTEM_PROMPT = """
 Você é um copywriter especialista em grupos de "achadinhos" do Telegram.

@@ -19,30 +19,16 @@ from bot.services.ai_writer import generate_caption
 from bot.services.affiliate_links import get_final_link
 from bot.services.dedup_store import is_seen, mark_seen
 from bot.services.affiliate_links import resolve_final_url
-from bot.utils.formatter import build_offer_message, build_preview_message
+from bot.utils.formatter import build_offer_message, build_preview_message, escape_html
 
 logger = logging.getLogger(__name__)
-
-# Contador de execuções para o modo de teste (Fase 3)
-_RUNS_DONE = 0
-_MAX_RUNS = 5
-
 
 async def _run_scan(context) -> None:
     """
     Job executado pelo scheduler: varre fontes, extrai dados,
     gera copy e envia prévias aos admins para aprovação.
     """
-    global _RUNS_DONE
-    
-    if _RUNS_DONE >= _MAX_RUNS:
-        logger.info(f"[SCHEDULER] Limite de {_MAX_RUNS} execuções atingido. Parando...")
-        # Remove este job do scheduler
-        context.job.schedule_removal()
-        return
-
-    _RUNS_DONE += 1
-    logger.info(f"[SCHEDULER] Gerando varredura #{_RUNS_DONE} de {_MAX_RUNS}...")
+    logger.info("[SCHEDULER] Iniciando varredura das fontes...")
     
     if not ADMIN_IDS:
         logger.warning("[SCHEDULER] ADMIN_IDS vazio — ninguém receberá prévias.")
@@ -135,8 +121,8 @@ async def _run_scan(context) -> None:
         ])
 
         preview_text = (
-            f"🔍 *Nova oferta encontrada automaticamente!*\n"
-            f"📌 Fonte: _{source_name}_\n\n"
+            f"🔍 <b>Nova oferta encontrada automaticamente!</b>\n"
+            f"📌 Fonte: <i>{escape_html(source_name)}</i>\n\n"
             + build_preview_message(mensagem)
         )
 
@@ -147,14 +133,14 @@ async def _run_scan(context) -> None:
                         chat_id=admin_id,
                         photo=imagem,
                         caption=preview_text,
-                        parse_mode=ParseMode.MARKDOWN,
+                        parse_mode=ParseMode.HTML,
                         reply_markup=keyboard,
                     )
                 else:
                     await context.bot.send_message(
                         chat_id=admin_id,
                         text=preview_text,
-                        parse_mode=ParseMode.MARKDOWN,
+                        parse_mode=ParseMode.HTML,
                         reply_markup=keyboard,
                         disable_web_page_preview=True,
                     )
@@ -187,10 +173,6 @@ def start_monitor(app: Application) -> bool:
     if is_monitor_active(app):
         return False
         
-    # Reseta o contador para permitir novo ciclo de 5 se desejado
-    global _RUNS_DONE
-    _RUNS_DONE = 0
-    
     interval_seconds = MONITOR_INTERVAL_MINUTES * 60
     app.job_queue.run_repeating(
         _run_scan,

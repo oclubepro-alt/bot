@@ -1,0 +1,16 @@
+Original: https://amzn.to/47T7s8W
+Final:    https://www.amazon.com.br/dp/B0D7WY92VH/ref=cm_sw_r_as_gl_api_gl_i_9BQ2KXMHYE1EWYCZ4F3R?linkCode=ml1&tag=adrianodeol07-20&linkId=529458a62c0d68825020ab5fa6ef8867
+Params:   {'linkCode': ['ml1'], 'tag': ['adrianodeol07-20'], 'linkId': ['529458a62c0d68825020ab5fa6ef8867']}
+
+Original: https://meli.la/2aYZ6f3
+Final:    https://www.mercadolivre.com.br/social/enoise12?matt_word=desconteca&matt_tool=55765126&forceInApp=true&ref=BJeLUMqG6D47nBUhNICNqUuADa6Kx%2FRW5iEtz08pF6XVwPwt41y4gulWY6AboLNUUBwy9M8RpyZZI%2B8Zg7Ca7VMkLFZCJ%2BLTYdf%2BVUiC1XLIhr5knVqNHntO4q3Pti6ZzgEynfrfcwqKOjAS9WXoh7whSuOEfKK9UZdHOoCCU%2BczlGLT4O4BjfPs1YTdb0auRTn0%2Bw%3D%3D
+Params:   {'matt_word': ['desconteca'], 'matt_tool': ['55765126'], 'forceInApp': ['true'], 'ref': ['BJeLUMqG6D47nBUhNICNqUuADa6Kx/RW5iEtz08pF6XVwPwt41y4gulWY6AboLNUUBwy9M8RpyZZI+8Zg7Ca7VMkLFZCJ+LTYdf+VUiC1XLIhr5knVqNHntO4q3Pti6ZzgEynfrfcwqKOjAS9WXoh7whSuOEfKK9UZdHOoCCU+czlGLT4O4BjfPs1YTdb0auRTn0+w==']}
+
+Original: https://divulgador.magalu.com/tynxmjPw
+Final:    https://www.magazineluiza.com.br/liquidificador-mondial-turbo-power-l-99-fb-preto-com-filtro-3-velocidades-550w/divulgador/oferta/021756700/ep/liqu/?promoter_id=5016483&partner_id=3440
+Params:   {'promoter_id': ['5016483'], 'partner_id': ['3440']}
+
+Original: https://click.linksynergy.com/deeplink?id=HoVlpQdPY*A&mid=43984&murl=https%3A%2F%2Fwww.netshoes.com.br%2Fpdp%2FFBA-83CJ-050-42%3Fcampaign%3Dgglepqpla%26utm_source%3Dwpp
+Final:    https://www.netshoes.com.br/p/tenis-adidas-response-runner-2-preto+laranja-FBA-83CJ-050?campaign=gglepqpla%2Cafil_rakuten&utm_source=wpp%2Cme-s_pgit__&af_sub1=43984&pid=rakuten_int&af_channel=Affiliates&af_media_type=web&af_adset_id=43984&af_sub_siteID=HoVlpQdPY.A-nXvGLx7BuYIfjQ4vdS1SgA&af_click_lookback=7d&clickid=HoVlpQdPY.A-nXvGLx7BuYIfjQ4vdS1SgA&is_retargeting=true&utm_medium=post&utm_campaign=me-s_pgit-_-tnfild__tca___-_-post-_-_var_me_pgit_%3A%3AN3T%3AAF-PG-00-00-00-TD-00-MAS-00%3AN3T%3A%3A_OliverShop%20Instagran_&utm_term=HoVlpQdPY.A-nXvGLx7BuYIfjQ4vdS1SgA&utm_content=HoVlpQdPY.A-nXvGLx7BuYIfjQ4vdS1SgA&ranMID=43984&ranU1=&ranEAID=HoVlpQdPY.A-nXvGLx7BuYIfjQ4vdS1SgA&ranSiteID=HoVlpQdPY.A-nXvGLx7BuYIfjQ4vdS1SgA
+Params:   {'campaign': ['gglepqpla,afil_rakuten'], 'utm_source': ['wpp,me-s_pgit__'], 'af_sub1': ['43984'], 'pid': ['rakuten_int'], 'af_channel': ['Affiliates'], 'af_media_type': ['web'], 'af_adset_id': ['43984'], 'af_sub_siteID': ['HoVlpQdPY.A-nXvGLx7BuYIfjQ4vdS1SgA'], 'af_click_lookback': ['7d'], 'clickid': ['HoVlpQdPY.A-nXvGLx7BuYIfjQ4vdS1SgA'], 'is_retargeting': ['true'], 'utm_medium': ['post'], 'utm_campaign': ['me-s_pgit-_-tnfild__tca___-_-post-_-_var_me_pgit_::N3T:AF-PG-00-00-00-TD-00-MAS-00:N3T::_OliverShop Instagran_'], 'utm_term': ['HoVlpQdPY.A-nXvGLx7BuYIfjQ4vdS1SgA'], 'utm_content': ['HoVlpQdPY.A-nXvGLx7BuYIfjQ4vdS1SgA'], 'ranMID': ['43984'], 'ranEAID': ['HoVlpQdPY.A-nXvGLx7BuYIfjQ4vdS1SgA'], 'ranSiteID': ['HoVlpQdPY.A-nXvGLx7BuYIfjQ4vdS1SgA']}
+

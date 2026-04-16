@@ -32,8 +32,8 @@ async def start_offer_manual(update: Update, context: ContextTypes.DEFAULT_TYPE)
     context.user_data.clear()
 
     await query.edit_message_text(
-        "📦 *Passo 1/6* — Qual é o *nome do produto*?",
-        parse_mode=ParseMode.MARKDOWN,
+        "📦 <b>Passo 1/6</b> — Qual é o <b>nome do produto</b>?",
+        parse_mode=ParseMode.HTML,
     )
     return NOME
 
@@ -41,8 +41,8 @@ async def receber_nome(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     nome = update.message.text.strip()
     context.user_data["nome"] = nome
     await update.message.reply_text(
-        f"✅ Produto: *{nome}*\n\n💰 *Passo 2/6* — Qual é o *preço*? (ex: R$ 49,90)",
-        parse_mode=ParseMode.MARKDOWN,
+        f"✅ Produto: <b>{nome}</b>\n\n💰 <b>Passo 2/6</b> — Qual é o <b>preço</b>? (ex: R$ 49,90)",
+        parse_mode=ParseMode.HTML,
     )
     return PRECO
 
@@ -51,8 +51,8 @@ async def receber_preco(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     context.user_data["preco"] = preco
     keyboard = [[InlineKeyboardButton(loja, callback_data=f"loja_{loja}")] for loja in LOJAS]
     await update.message.reply_text(
-        f"✅ Preço: *{preco}*\n\n🏪 *Passo 3/6* — Escolha a *loja*:",
-        parse_mode=ParseMode.MARKDOWN,
+        f"✅ Preço: <b>{preco}</b>\n\n🏪 <b>Passo 3/6</b> — Escolha a <b>loja</b>:",
+        parse_mode=ParseMode.HTML,
         reply_markup=InlineKeyboardMarkup(keyboard),
     )
     return LOJA
@@ -63,8 +63,8 @@ async def receber_loja(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     loja = query.data.replace("loja_", "")
     context.user_data["loja"] = loja
     await query.edit_message_text(
-        f"✅ Loja: *{loja}*\n\n🔗 *Passo 4/6* — Cole o *link do produto/afiliado*:",
-        parse_mode=ParseMode.MARKDOWN,
+        f"✅ Loja: <b>{loja}</b>\n\n🔗 <b>Passo 4/6</b> — Cole o <b>link do produto/afiliado</b>:",
+        parse_mode=ParseMode.HTML,
     )
     return LINK
 
@@ -72,8 +72,8 @@ async def receber_link(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     link = update.message.text.strip()
     context.user_data["link"] = link
     await update.message.reply_text(
-        "✅ Link salvo!\n\n📸 *Passo 5/6* — Envie uma *imagem* (ou envie /pular):",
-        parse_mode=ParseMode.MARKDOWN,
+        "✅ Link salvo!\n\n📸 <b>Passo 5/6</b> — Envie uma <b>imagem</b> (ou envie /pular):",
+        parse_mode=ParseMode.HTML,
     )
     return IMAGEM
 
@@ -90,8 +90,8 @@ async def pular_imagem(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
 
 async def _pedir_descricao(update: Update):
     await update.message.reply_text(
-        "📝 *Passo 6/6* — Alguma *descrição adicional*? (opcional — /pular para ignorar)",
-        parse_mode=ParseMode.MARKDOWN,
+        "📝 <b>Passo 6/6</b> — Alguma <b>descrição adicional</b>? (opcional — /pular para ignorar)",
+        parse_mode=ParseMode.HTML,
     )
 
 async def receber_descricao(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -133,13 +133,13 @@ async def _processar_e_exibir_previa(update: Update, context: ContextTypes.DEFAU
         await update.message.reply_photo(
             photo=dados["foto_id"],
             caption=build_preview_message(mensagem_final),
-            parse_mode=ParseMode.MARKDOWN,
+            parse_mode=ParseMode.HTML,
             reply_markup=InlineKeyboardMarkup(keyboard),
         )
     else:
         await update.message.reply_text(
             build_preview_message(mensagem_final),
-            parse_mode=ParseMode.MARKDOWN,
+            parse_mode=ParseMode.HTML,
             reply_markup=InlineKeyboardMarkup(keyboard),
             disable_web_page_preview=True,
         )
@@ -164,22 +164,28 @@ async def confirmar_envio(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     mensagem = context.user_data.get("mensagem_final", "")
     foto_id = context.user_data.get("foto_id")
 
+    # Garante que passamos um dict p/ o publisher_router
+    copies = {
+        "telegram": mensagem,
+        "whatsapp": mensagem  # Simplificado para manual
+    }
+
     try:
-        await publish_offer(context.bot, mensagem, foto_id)
-        msg_sucesso = "🎉 *Oferta manual publicada com sucesso!*"
+        await publish_offer(context.bot, copies, foto_id)
+        msg_sucesso = "🎉 <b>Oferta manual publicada com sucesso!</b>"
         try: # Try editing message if possible, else reply.
             if foto_id:
                 await query.message.delete()
                 await context.bot.send_message(
                     chat_id=update.effective_chat.id, 
                     text=msg_sucesso, 
-                    parse_mode=ParseMode.MARKDOWN,
+                    parse_mode=ParseMode.HTML,
                     reply_markup=back_keyboard
                 )
             else:
                 await query.edit_message_text(
                     msg_sucesso, 
-                    parse_mode=ParseMode.MARKDOWN,
+                    parse_mode=ParseMode.HTML,
                     reply_markup=back_keyboard
                 )
         except:

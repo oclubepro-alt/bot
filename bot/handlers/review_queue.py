@@ -60,9 +60,9 @@ async def handle_review_callback(
             mark_seen(product_url)  # Marca como visto apenas ao confirmar publicação
 
             success_text = (
-                f"✅ *Oferta publicada no canal!*\n\n"
-                f"🔹 *Produto:* {nome}\n"
-                f"🔹 *Fonte:* {source_name}"
+                f"✅ <b>Oferta publicada no canal!</b>\n\n"
+                f"🔹 <b>Produto:</b> {nome}\n"
+                f"🔹 <b>Fonte:</b> {source_name}"
             )
             back_keyboard = InlineKeyboardMarkup([[
                 InlineKeyboardButton("⬅️ Voltar ao Menu", callback_data=CB_MENU_PRINCIPAL)
@@ -73,13 +73,13 @@ async def handle_review_callback(
                     await context.bot.send_message(
                         chat_id=query.message.chat_id,
                         text=success_text,
-                        parse_mode=ParseMode.MARKDOWN,
+                        parse_mode=ParseMode.HTML,
                         reply_markup=back_keyboard
                     )
                 else:
                     await query.edit_message_text(
                         success_text, 
-                        parse_mode=ParseMode.MARKDOWN,
+                        parse_mode=ParseMode.HTML,
                         reply_markup=back_keyboard
                     )
             except Exception:
@@ -89,15 +89,15 @@ async def handle_review_callback(
             logger.error(f"[REVIEW] Erro ao publicar oferta aprovada: {e}")
             await context.bot.send_message(
                 chat_id=query.message.chat_id,
-                text=f"❌ Erro ao publicar: `{e}`",
-                parse_mode=ParseMode.MARKDOWN,
+                text=f"❌ Erro ao publicar: <code>{e}</code>",
+                parse_mode=ParseMode.HTML,
             )
 
     elif action == CB_REVIEW_REJECT:
         logger.info(f"[REVIEW] Admin {query.from_user.id} REJEITOU oferta: '{nome}' | fonte: {source_name}")
         mark_seen(product_url)  # Rejeitar também marca como visto para não reaparecer
         try:
-            reject_text = f"❌ *Oferta rejeitada.* `{nome}` não será publicada."
+            reject_text = f"❌ <b>Oferta rejeitada.</b> <code>{nome}</code> não será publicada."
             back_keyboard = InlineKeyboardMarkup([[
                 InlineKeyboardButton("⬅️ Voltar ao Menu", callback_data=CB_MENU_PRINCIPAL)
             ]])

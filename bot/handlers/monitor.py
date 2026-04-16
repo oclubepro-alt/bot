@@ -22,10 +22,10 @@ async def monitor_menu_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         await query.answer()
     
     active = is_monitor_active(context.application)
-    status_text = "🟢 *ATIVO*" if active else "🔴 *PARADO*"
+    status_text = "🟢 <b>ATIVO</b>" if active else "🔴 <b>PARADO</b>"
     
     texto = (
-        f"⚙️ *Controle de Monitoramento (Fase 3)*\n\n"
+        f"⚙️ <b>Controle de Monitoramento (Fase 3)</b>\n\n"
         f"Status atual: {status_text}\n\n"
         "O monitor varre as fontes em busca de novos produtos. "
         "Você receberá uma notificação para aprovar cada achado."
@@ -42,9 +42,9 @@ async def monitor_menu_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     if query:
-        await query.edit_message_text(texto, parse_mode=ParseMode.MARKDOWN, reply_markup=reply_markup)
+        await query.edit_message_text(texto, parse_mode=ParseMode.HTML, reply_markup=reply_markup)
     else:
-        await update.message.reply_text(texto, parse_mode=ParseMode.MARKDOWN, reply_markup=reply_markup)
+        await update.message.reply_text(texto, parse_mode=ParseMode.HTML, reply_markup=reply_markup)
 
 
 async def monitor_action_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

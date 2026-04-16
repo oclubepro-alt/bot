@@ -7,7 +7,7 @@ import sys
 
 from telegram.ext import ApplicationBuilder, CommandHandler, ConversationHandler, CallbackQueryHandler, MessageHandler, filters
 
-from bot.utils.config import TELEGRAM_BOT_TOKEN
+from bot.utils.config import TELEGRAM_BOT_TOKEN, HTTP_PROXY
 from bot.utils.constants import CB_MENU_PRINCIPAL
 from bot.handlers import build_main_handler, build_review_queue_handler
 from bot.services.scheduler_service import setup_scheduler
@@ -42,11 +42,12 @@ def main() -> None:
         logger.error("[ERRO] TELEGRAM_BOT_TOKEN não encontrado!")
         sys.exit(1)
 
-    app = (
-        ApplicationBuilder()
-        .token(TELEGRAM_BOT_TOKEN)
-        .build()
-    )
+    app_builder = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN)
+    if HTTP_PROXY:
+        logger.info(f"Usando proxy: {HTTP_PROXY}")
+        app_builder.proxy(HTTP_PROXY).get_updates_proxy(HTTP_PROXY)
+        
+    app = app_builder.build()
 
     logger.info("Bot iniciado com sucesso")
 
@@ -87,6 +88,10 @@ def main() -> None:
 
     # Registra o scheduler de varredura automática (Fase 3)
     setup_scheduler(app)
+
+    # AUTO-START: Inicia monitoramento na inicialização
+    from bot.services.scheduler_service import start_monitor
+    start_monitor(app)
 
     logger.info("[APP] Handlers e scheduler registrados. Bot em execução... (Ctrl+C para parar)")
     app.run_polling(drop_pending_updates=True)

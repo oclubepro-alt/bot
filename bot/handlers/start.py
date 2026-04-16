@@ -27,15 +27,15 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     ]
 
     texto = (
-        f"👋 Olá, *{user.first_name}*!\n\n"
-        "Eu sou o *Bot de Achadinhos* 🛍️\n\n"
+        f"👋 Olá, <b>{user.first_name}</b>!\n\n"
+        "Eu sou o <b>Bot de Achadinhos</b> 🛍️\n\n"
         "O que você deseja fazer?"
     )
 
     if update.message:
         await update.message.reply_text(
             texto,
-            parse_mode=ParseMode.MARKDOWN,
+            parse_mode=ParseMode.HTML,
             reply_markup=InlineKeyboardMarkup(keyboard),
         )
     elif update.callback_query:
@@ -43,13 +43,13 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         try:
             await update.callback_query.edit_message_text(
                 texto,
-                parse_mode=ParseMode.MARKDOWN,
+                parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup(keyboard),
             )
         except Exception:
             # Se não conseguir editar (ex: mensagem velha), envia nova
             await update.callback_query.message.reply_text(
                 texto,
-                parse_mode=ParseMode.MARKDOWN,
+                parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup(keyboard),
             )

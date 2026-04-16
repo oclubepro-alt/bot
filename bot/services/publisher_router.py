@@ -8,13 +8,17 @@ from bot.services.publisher_whatsapp import publish_to_whatsapp
 
 logger = logging.getLogger(__name__)
 
-async def publish_offer(bot: Bot, copies: dict, photo: str | None = None) -> None:
+async def publish_offer(bot: Bot, copies: str | dict, photo: str | None = None) -> None:
     """
     Roteador responsável por coordenar a publicação nas plataformas suportadas.
-    'copies' deve ser o dict retornado por build_copy: {"telegram": "...", "whatsapp": "..."}
+    'copies' pode ser um dict {"telegram": "...", "whatsapp": "..."} ou uma string (apenas Telegram).
     """
     logger.info("[PUBLISHER_ROUTER] Iniciando rotina de publicação...")
     
+    # Normaliza para dict se for string
+    if isinstance(copies, str):
+        copies = {"telegram": copies, "whatsapp": None}
+
     # 1. Publica no Telegram (pode enviar para múltiplos canais)
     text_telegram = copies.get("telegram")
     if text_telegram:

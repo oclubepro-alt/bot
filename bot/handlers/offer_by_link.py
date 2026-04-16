@@ -51,9 +51,9 @@ async def start_offer_by_link(update: Update, context: ContextTypes.DEFAULT_TYPE
     context.user_data.clear()
 
     await query.edit_message_text(
-        "🔗 *Passo 1* — Envie o *link* do produto:\n"
-        "_(Aceito links encurtados: amzn.to, tidd.ly, bit.ly, etc.)_",
-        parse_mode=ParseMode.MARKDOWN,
+        "🔗 <b>Passo 1</b> — Envie o <b>link</b> do produto:\n"
+        "<i>(Aceito links encurtados: amzn.to, tidd.ly, bit.ly, etc.)</i>",
+        parse_mode=ParseMode.HTML,
     )
     return LINK_PRODUTO
 
@@ -96,16 +96,16 @@ async def receber_link_produto(update: Update, context: ContextTypes.DEFAULT_TYP
     # Fallbacks manuais
     if not dados.get("nome"):
         await update.message.reply_text(
-            "📝 Não consegui extrair o nome. Por favor, digite o *nome do produto*:",
-            parse_mode=ParseMode.MARKDOWN
+            "📝 Não consegui extrair o nome. Por favor, digite o <b>nome do produto</b>:",
+            parse_mode=ParseMode.HTML
         )
         return PREENCHER_NOME_FALTANTE
 
     if not dados.get("preco"):
         await update.message.reply_text(
-            f"✅ Nome: *{dados['nome']}*\n\n"
-            "📝 Não consegui extrair o preço. Por favor, digite o *preço* (ex: R$ 49,90):",
-            parse_mode=ParseMode.MARKDOWN
+            f"✅ Nome: <b>{dados['nome']}</b>\n\n"
+            "📝 Não consegui extrair o preço. Por favor, digite o <b>preço</b> (ex: R$ 49,90):",
+            parse_mode=ParseMode.HTML
         )
         return PREENCHER_PRECO_FALTANTE
 
@@ -120,8 +120,8 @@ async def preencher_nome_faltante(update: Update, context: ContextTypes.DEFAULT_
 
     if not context.user_data["extracted"].get("preco"):
         await update.message.reply_text(
-            "📝 Agora, por favor, digite o *preço*:",
-            parse_mode=ParseMode.MARKDOWN
+            "📝 Agora, por favor, digite o <b>preço</b>:",
+            parse_mode=ParseMode.HTML
         )
         return PREENCHER_PRECO_FALTANTE
 
@@ -145,22 +145,22 @@ async def _pedir_link_afiliado(update: Update, context: ContextTypes.DEFAULT_TYP
     has_auto = auto_link != original_url  # mudou → tem afiliado auto
 
     auto_info = (
-        f"\n\n✅ *Afiliado automático detectado!* ({dados.get('loja', '')})\n"
+        f"\n\n✅ <b>Afiliado automático detectado!</b> ({dados.get('loja', '')})\n"
         "O bot já vai aplicar o link de afiliado configurado automaticamente."
         if has_auto else ""
     )
 
-    preco_original_txt = f"\n🔹 *Preço Original:* {dados.get('preco_original')}" if dados.get("preco_original") else ""
+    preco_original_txt = f"\n🔹 <b>Preço Original:</b> {dados.get('preco_original')}" if dados.get("preco_original") else ""
     await update.message.reply_text(
-        f"✅ *Extração Concluída*\n\n"
-        f"🔹 *Produto:* {dados['nome']}\n"
-        f"🔹 *Preço Atual:* {dados['preco']}"
+        f"✅ <b>Extração Concluída</b>\n\n"
+        f"🔹 <b>Produto:</b> {dados['nome']}\n"
+        f"🔹 <b>Preço Atual:</b> {dados['preco']}"
         f"{preco_original_txt}\n"
-        f"🔹 *Loja:* {dados.get('loja', 'Desconhecida')}\n"
+        f"🔹 <b>Loja:</b> {dados.get('loja', 'Desconhecida')}\n"
         f"{auto_info}\n\n"
-        "🔗 *Passo 2* — Envie o *Link de Afiliado* para usar na publicação!\n"
-        "_(Ou envie /pular para usar o link automático/original)_",
-        parse_mode=ParseMode.MARKDOWN
+        "🔗 <b>Passo 2</b> — Envie o <b>Link de Afiliado</b> para usar na publicação!\n"
+        "<i>(Ou envie /pular para usar o link automático/original)</i>",
+        parse_mode=ParseMode.HTML
     )
 
 
@@ -195,11 +195,11 @@ async def _gerar_previa_link(update: Update, context: ContextTypes.DEFAULT_TYPE)
     # Alerta de preço suspeito ao admin (não bloqueia publicação)
     if pipeline["status"] == "ERRO: PREÇO_SUSPEITO":
         await update.message.reply_text(
-            "⚠️ *ATENÇÃO: PREÇO SUSPEITO DETECTADO!*\n\n"
-            f"O preço `{pipeline['preco']}` está muito distante da média histórica "
-            "para este produto\\.\\n"
-            "Verifique se é um erro de scraping antes de publicar\\.",
-            parse_mode="MarkdownV2",
+            "⚠️ <b>ATENÇÃO: PREÇO SUSPEITO DETECTADO!</b>\n\n"
+            f"O preço <code>{pipeline['preco']}</code> está muito distante da média histórica "
+            "para este produto.\n"
+            "Verifique se é um erro de scraping antes de publicar.",
+            parse_mode=ParseMode.HTML,
         )
         logger.warning(
             f"[OFERTA LINK] PREÇO SUSPEITO para '{dados['nome'][:40]}' "
@@ -274,10 +274,10 @@ async def _gerar_previa_link(update: Update, context: ContextTypes.DEFAULT_TYPE)
     # ── 6. Prévia ao admin ───────────────────────────────────────────────────
     # Exibe ambas as versões para o admin avaliar
     preview_full = (
-        f"📱 *VERSÃO TELEGRAM:*\n\n"
+        f"📱 <b>VERSÃO TELEGRAM:</b>\n\n"
         f"{copies['telegram']}\n"
         f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"🟢 *VERSÃO WHATSAPP:*\n\n"
+        f"🟢 <b>VERSÃO WHATSAPP:</b>\n\n"
         f"{copies['whatsapp']}"
     )
 
@@ -296,13 +296,13 @@ async def _gerar_previa_link(update: Update, context: ContextTypes.DEFAULT_TYPE)
             await update.message.reply_photo(
                 photo=img_url,
                 caption=preview_full,
-                parse_mode=ParseMode.MARKDOWN,
+                parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup(keyboard),
             )
         else:
             await update.message.reply_text(
                 preview_full,
-                parse_mode=ParseMode.MARKDOWN,
+                parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup(keyboard),
                 disable_web_page_preview=True,
             )
@@ -339,20 +339,20 @@ async def confirmar_envio_link(update: Update, context: ContextTypes.DEFAULT_TYP
 
     try:
         await publish_offer(context.bot, copies, img_url)
-        msg_sucesso = "🎉 *Oferta via link publicada com sucesso!*"
+        msg_sucesso = "🎉 <b>Oferta via link publicada com sucesso!</b>"
         try:
             if img_url:
                 await query.message.delete()
                 await context.bot.send_message(
                     query.message.chat_id, 
                     text=msg_sucesso, 
-                    parse_mode=ParseMode.MARKDOWN,
+                    parse_mode=ParseMode.HTML,
                     reply_markup=back_keyboard
                 )
             else:
                 await query.edit_message_text(
                     msg_sucesso, 
-                    parse_mode=ParseMode.MARKDOWN,
+                    parse_mode=ParseMode.HTML,
                     reply_markup=back_keyboard
                 )
         except Exception:
@@ -381,8 +381,8 @@ async def btn_editar_oferta(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     ]
     
     await query.edit_message_text(
-        "🛠️ *O que você deseja corrigir?*",
-        parse_mode=ParseMode.MARKDOWN,
+        "🛠️ <b>O que você deseja corrigir?</b>",
+        parse_mode=ParseMode.HTML,
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
     return EDITAR_CAMPOS
@@ -405,7 +405,7 @@ async def escolher_campo_edicao(update: Update, context: ContextTypes.DEFAULT_TY
     
     await query.edit_message_text(
         f"✍️ {msgs.get(campo)}",
-        parse_mode=ParseMode.MARKDOWN
+        parse_mode=ParseMode.HTML
     )
     return EDITAR_CAMPOS # Reutilizamos o estado para receber a msg de texto
 

@@ -30,13 +30,13 @@ async def publish_to_telegram(bot: Bot, message_text: str, photo_url_or_id: str 
                     chat_id=chat_id,
                     photo=photo_url_or_id,
                     caption=message_text,
-                    parse_mode=ParseMode.MARKDOWN
+                    parse_mode=ParseMode.HTML
                 )
             else:
                 await bot.send_message(
                     chat_id=chat_id,
                     text=message_text,
-                    parse_mode=ParseMode.MARKDOWN,
+                    parse_mode=ParseMode.HTML,
                     disable_web_page_preview=True
                 )
             logger.info(f"[PUBLISHER_TELEGRAM] Oferta enviada ao canal {chat_id} com sucesso.")

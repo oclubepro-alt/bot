@@ -97,9 +97,11 @@ def _category_emoji(nome: str, loja: str) -> str:
 _MDV2_ESCAPE_RE = re.compile(r"([_*\[\]()~`>#+=|{}.!\-\\])")
 
 
-def _escape_mdv2(text: str) -> str:
-    """Escapa texto para uso seguro no MarkdownV2 do Telegram."""
-    return _MDV2_ESCAPE_RE.sub(r"\\\1", text)
+def _escape_html(text: str) -> str:
+    """Escapa texto para uso seguro no HTML do Telegram."""
+    if not text:
+        return ""
+    return str(text).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
 # ---------------------------------------------------------------------------
@@ -144,41 +146,31 @@ def _build_telegram(
     desconto: str | None,
 ) -> str:
     """
-    Monta copy para Telegram em MarkdownV2.
-
-    Estrutura:
-        EMOJI *NOME LIMPO*
-
-        💰 Preço: *R$ XX,XX* [~De R$ YY,YY~] (↓ ZZ%)
-        🏪 Loja: LOJA
-
-        LEGENDA_IA (se disponível)
-
-        👉 [VER OFERTA](SHORT_URL)
+    Monta copy para Telegram em HTML.
     """
-    nome_e  = _escape_mdv2(nome)
-    preco_e = _escape_mdv2(preco)
-    loja_e  = _escape_mdv2(loja)
+    nome_e  = _escape_html(nome)
+    preco_e = _escape_html(preco)
+    loja_e  = _escape_html(loja)
 
-    linhas = [f"{emoji} *{nome_e}*", ""]
+    linhas = [f"{emoji} <b>{nome_e}</b>", ""]
 
     # Linha de preço
-    preco_line = f"💰 Preço: *{preco_e}*"
+    preco_line = f"💰 Preço: <b>{preco_e}</b>"
     if preco_original:
-        orig_e = _escape_mdv2(preco_original)
-        preco_line += f" ~{orig_e}~"
+        orig_e = _escape_html(preco_original)
+        preco_line += f" <s>{orig_e}</s>"
     if desconto:
-        desc_e = _escape_mdv2(desconto)
-        preco_line += f" \\({desc_e}\\)"
+        desc_e = _escape_html(desconto)
+        preco_line += f" ({desc_e})"
     linhas.append(preco_line)
-    linhas.append(f"🏪 *Loja:* {loja_e}")
+    linhas.append(f"🏪 <b>Loja:</b> {loja_e}")
 
     if legenda_ia and legenda_ia.strip():
         linhas.append("")
-        linhas.append(_escape_mdv2(legenda_ia.strip()))
+        linhas.append(_escape_html(legenda_ia.strip()))
 
     linhas.append("")
-    linhas.append(f"👉 [VER OFERTA]({short_url})")
+    linhas.append(f"👉 <a href='{short_url}'>VER OFERTA</a>")
 
     return "\n".join(linhas)
 
