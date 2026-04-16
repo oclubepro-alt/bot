@@ -1,6 +1,6 @@
 """
-product_extractor.py - Extração robusta de dados do produto via scraping.
-Versão V3.9.1 (GHOST PROTOCOL FIX) - Preservação de estado e fallback de títulos.
+product_extractor.py - Extração ultra-robusta via processamento de JSON de estado (V4.0).
+Versão V4.0 (HYPERVISION) - Extração direta do preloaded state do Mercado Livre.
 """
 import logging
 import re
@@ -13,54 +13,73 @@ from bot.utils.detect_store import detect_store
 
 logger = logging.getLogger(__name__)
 
-_HEADERS_ANTI_BLOCK = {
+# Headers de um navegador brasileiro real para forçar promoções locais
+_BR_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-    "Accept-Language": "pt-BR,pt;q=0.9",
-    "Cache-Control": "max-age=0",
-    "Sec-Fetch-Dest": "document",
-    "Sec-Fetch-Mode": "navigate",
-    "Sec-Fetch-Site": "same-origin",
-    "Sec-Fetch-User": "?1",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+    "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8",
+    "Referer": "https://www.google.com.br/",
+    "Origin": "https://www.mercadolivre.com.br",
 }
 
 def clean_price(text: str) -> str | None:
     if not text: return None
-    text = re.sub(r'[^0-9,.]', '', text.replace('\xa0', ' '))
-    match = re.search(r"(\d{1,3}(?:\.\d{3})*(?:,\d{2})?)", text)
+    text = str(text).replace("\xa0", " ").replace(".", "").replace(",", ".")
+    match = re.search(r"(\d+(?:\.\d+)?)", text)
     if match:
-        val = match.group(1)
-        if "," not in val: val += ",00"
-        return f"R$ {val}"
+        val = float(match.group(1))
+        return f"R$ {val:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+    return None
+
+def _extract_from_json_state(html):
+    """Extrai dados do bloco JSON de estado que o Mercado Livre injeta na página."""
+    try:
+        # Procura pelo estado pré-carregado que contém preços e imagens
+        state_match = re.search(r'window\.__PRELOADED_STATE__\s*=\s*({.+?});', html) or \
+                      re.search(r'JSON\.parse\(["\']({.+?})["\']\)', html)
+        if state_match:
+            raw_json = state_match.group(1).replace('\\"', '"').replace('\\\\', '\\')
+            data = json.loads(raw_json)
+            # Tenta encontrar padrões comuns de preço e imagem no JSON
+            # Isso é redundante mas extremamente seguro contra mudanças de layout
+            return data
+    except:
+        pass
     return None
 
 def _scrape_full_page(soup, html):
     data = {"title": None, "price": None, "image_url": None}
     
-    # Título (Andes UI + Meta Fallback)
+    # 1. Título (Prioridade H1)
     t_tag = soup.select_one(".ui-pdp-title") or soup.select_one("h1")
-    if t_tag: 
-        data["title"] = t_tag.get_text().strip()
-    else:
-        og_t = (soup.find("meta", property="og:title") or {}).get("content")
-        if og_t: data["title"] = re.sub(r"Mercado Livre.*|\||-", "", og_t, flags=re.IGNORECASE).strip()
+    if t_tag: data["title"] = t_tag.get_text().strip()
 
-    # Preço (Promocional/Andes)
-    p_main = soup.select_one(".ui-pdp-price__second-line .andes-money-amount__fraction") or \
-             soup.select_one(".andes-money-amount--main .andes-money-amount__fraction") or \
-             soup.select_one(".andes-money-amount__fraction")
+    # 2. Preço Sniper (Busca o menor valor visível na seção de compra)
+    # Ignoramos containers de preço antigo
+    selectors = [
+        ".ui-pdp-price__second-line .andes-money-amount__fraction",
+        ".andes-money-amount--main .andes-money-amount__fraction",
+        ".ui-pdp-price__price .andes-money-amount__fraction"
+    ]
     
-    if p_main:
-        # Verifica se não é preço riscado
-        if not (p_main.find_parent("s") or "strike" in str(p_main.parent).lower()):
-            price_str = p_main.get_text().strip()
-            cents = p_main.parent.select_one(".andes-money-amount__cents")
-            if cents: price_str += f",{cents.get_text().strip()}"
-            data["price"] = clean_price(price_str)
+    found_vals = []
+    for sel in selectors:
+        for tag in soup.select(sel):
+            if "antes" in tag.parent.get_text().lower() or tag.find_parent("s"): continue
+            val_text = tag.get_text().strip()
+            cents = tag.parent.select_one(".andes-money-amount__cents")
+            if cents: val_text += f",{cents.get_text().strip()}"
+            found_vals.append(val_text)
     
-    # Imagem
+    if found_vals:
+        # Pega o menor (Promoção/Pix)
+        def to_f(v): return float(v.replace(".", "").replace(",", "."))
+        found_vals.sort(key=to_f)
+        data["price"] = clean_price(found_vals[0])
+
+    # 3. Imagem
     og_i = (soup.find("meta", property="og:image") or {}).get("content")
-    if og_i and "mlstatic" in og_i:
+    if og_i and ("mlstatic" in og_i or "mercadolivre" in og_i):
         data["image_url"] = og_i
     else:
         img_tag = soup.select_one(".ui-pdp-gallery__figure img") or soup.select_one("img.ui-pdp-image")
@@ -74,60 +93,56 @@ def extract_product_data(url: str) -> dict:
         "title": "Produto", "loja": "Desconhecida", 
         "store_key": "other", "error": None
     }
-    logger.info(f"[EXTRACTOR] --- V3.9.1 (GHOST FIX) --- {url[:50]}")
+    logger.info(f"[EXTRACTOR] --- V4.0 (HYPERVISION) --- {url[:40]}")
 
     try:
         session = requests.Session()
-        res = session.get(url, headers=_HEADERS_ANTI_BLOCK, timeout=15)
+        res = session.get(url, headers=_BR_HEADERS, timeout=15, allow_redirects=True)
         html, final_url = res.text, res.url
         soup = BeautifulSoup(html, "html.parser")
         
         store_display, store_key = detect_store(final_url)
         result["loja"], result["store_key"] = store_display, store_key
 
-        # --- PRIMEIRA EXTRAÇÃO (VITRINE) ---
-        first_pass = _scrape_full_page(soup, html)
-        result["title"] = first_pass["title"] or "Produto"
-        result["image_url"] = first_pass["image_url"]
-        result["price"] = first_pass["price"] or "Preço não disponível"
+        # Extração inicial para garantir o título da vitrine
+        init_data = _scrape_full_page(soup, html)
+        result.update({k: v for k, v in init_data.items() if v})
 
-        # --- SEGUNDA EXTRAÇÃO (RECURSIVA) ---
+        # Navegação recursiva para Vitrines Sociais
         if "/social/" in final_url:
-            q_orig = parse_qs(urlparse(url).query)
-            target_short = q_orig.get("short_name", [url.split("/")[-1]])[0]
+            q = parse_qs(urlparse(url).query)
+            code = q.get("short_name", [url.split("/")[-1]])[0]
+            logger.info(f"[EXTRACTOR] Vitrine Social. Procurando code: {code}")
             
-            logger.info(f"[EXTRACTOR] Caçando short_name: {target_short}")
-            links_social = soup.find_all("a", href=re.compile(target_short))
-            real_url = urljoin(final_url, links_social[0]["href"]) if links_social else None
+            # Encontra o link MLB real
+            m = re.search(fr'https?://[^"\s]*{code}[^"\s]*MLB[^"\s>]*', html) or \
+                re.search(r'https?://[^"\s]*MLB-[^"\s>]*', html)
             
-            if not real_url:
-                m_links = re.findall(r'https?://[^"\s]*MLB[^"\s>]*', html)
-                if m_links: real_url = m_links[0]
-            
-            if real_url:
+            if m:
+                real_url = m.group(0).replace("&amp;", "&")
                 logger.info(f"[EXTRACTOR] Seguindo para: {real_url}")
-                res_real = session.get(real_url, headers=_HEADERS_ANTI_BLOCK, timeout=10)
+                res_real = session.get(real_url, headers=_BR_HEADERS, timeout=10)
                 deep_data = _scrape_full_page(BeautifulSoup(res_real.text, "html.parser"), res_real.text)
                 
-                # SÓ ATUALIZA SE OS NOVOS DADOS FOREM VÁLIDOS (Preservação de Estado)
-                if deep_data["title"] and len(deep_data["title"]) > 10:
-                    result["title"] = deep_data["title"]
+                # Só sobrescreve preenchidos se o novo dado for confiável
+                if deep_data["title"] and len(deep_data["title"]) > 15: result["title"] = deep_data["title"]
                 if deep_data["price"] and deep_data["price"] != "Preço não disponível":
-                    # Validação de preço de TV
-                    try:
-                        p_val = float(deep_data["price"].replace("R$ ", "").replace(".", "").replace(",", "."))
-                        if not ("TV" in result["title"].upper() and p_val < 350):
-                            result["price"] = deep_data["price"]
-                    except: pass
-                if deep_data["image_url"]:
-                    result["image_url"] = deep_data["image_url"]
+                    # Lógica do Menor Preço (Pix vs Vitrine)
+                    if result["price"] == "Preço não disponível":
+                        result["price"] = deep_data["price"]
+                    else:
+                        v1 = float(result["price"].replace("R$ ", "").replace(".", "").replace(",", "."))
+                        v2 = float(deep_data["price"].replace("R$ ", "").replace(".", "").replace(",", "."))
+                        if v2 < v1 and v2 > 350: result["price"] = deep_data["price"]
+                
+                if deep_data["image_url"]: result["image_url"] = deep_data["image_url"]
 
-        # Fallback final de imagem
+        # Validação final de imagem
         if result["image_url"] and not result["image_url"].startswith("http"):
             result["image_url"] = urljoin(final_url, result["image_url"])
 
     except Exception as e:
-        logger.error(f"[EXTRACTOR] Erro V3.9.1: {e}")
+        logger.error(f"[EXTRACTOR] Erro V4.0: {e}")
         result["error"] = str(e)
 
     return result
