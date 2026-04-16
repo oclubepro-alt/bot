@@ -98,8 +98,9 @@ async def receber_link_produto(update: Update, context: ContextTypes.DEFAULT_TYP
     dados["preco"] = dados.get("price")
     dados["imagem"] = dados.get("image_url")
     
-    # Preserva o link original como URL do produto (não a URL técnica)
-    dados["product_url"] = original_link
+    # Preserva a URL limpa/resolvida retornada pelo extrator
+    context.user_data["resolved_url"] = dados.get("product_url")
+    logger.info(f"[OFERTA LINK] URL Resolvida/Limpa: {dados.get('product_url', 'Não resolvida')[:80]}")
     
     # Se capturamos uma descrição base, usamos se o extractor falhar
     if context.user_data.get("descricao_base") and (not dados.get("descricao") or dados.get("descricao") == "Produto"):
