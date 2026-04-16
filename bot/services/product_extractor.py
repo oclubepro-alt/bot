@@ -180,7 +180,7 @@ def extract_product_data(url: str) -> dict:
         "error":     None
     }
 
-    logger.info(f"[EXTRACTOR] --- V2.6 --- Iniciando para: {url[:60]}")
+    logger.info(f"[EXTRACTOR] --- V2.7 --- Iniciando para: {url[:60]}")
 
     try:
         # Etapa 1 — Resolução de Redirecionamentos
@@ -264,20 +264,33 @@ def extract_product_data(url: str) -> dict:
             h1 = soup.find("h1")
             if h1: result["title"] = h1.text.strip()
             
+        # Se AINDA não tem preço, busca bruta no HTML (V2.7)
         if result["price"] == "Preço não disponível":
-            # Procura por "price":989 ou similar no HTML bruto (último recurso)
+            # 1. Procura por "price":989 no JSON
             raw_match = re.search(r'"price":\s*(\d+(?:\.\d{1,2})?)', res.text)
             if raw_match:
                 result["price"] = clean_price(raw_match.group(1)) or result["price"]
+            
+            # 2. Procura por padrão de R$ XX,XX no HTML bruto (Regex BR)
+            if result["price"] == "Preço não disponível":
+                br_price = re.search(r'R\$\s?(\d{1,3}(?:\.\d{3})*,\d{2})', res.text)
+                if br_price:
+                    result["price"] = f"R$ {br_price.group(1)}"
 
         # --- Estratégia 3: Seletores CSS Específicos ---
         if store_key == "amazon":
-            # Preço Amazon
-            for sel in ["span.a-price .a-offscreen", "#priceblock_ourprice", "#priceblock_dealprice"]:
+            # Preço Amazon (Atualizado V2.7)
+            for sel in ["span.a-price .a-offscreen", "span.a-price-whole", "#priceblock_ourprice", ".a-color-price"]:
                 tag = soup.select_one(sel)
                 if tag:
-                    result["price"] = clean_price(tag.text) or result["price"]
-                    break
+                    p_text = tag.text.strip()
+                    if sel == "span.a-price-whole":
+                        # Junta com os centavos se existirem
+                        cents = soup.select_one("span.a-price-fraction")
+                        p_text += f",{cents.text.strip()}" if cents else ",00"
+                    
+                    result["price"] = clean_price(p_text) or result["price"]
+                    if result["price"] != "Preço não disponível": break
             # Imagem Amazon
             for sel in ["#landingImage", "#imgBlkFront", "#main-image"]:
                 tag = soup.select_one(sel)
