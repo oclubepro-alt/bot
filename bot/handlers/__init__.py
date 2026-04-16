@@ -16,7 +16,7 @@ from bot.handlers.offer_by_link import (
     LINK_PRODUTO, PREENCHER_NOME_FALTANTE, PREENCHER_PRECO_FALTANTE, LINK_AFILIADO, CONFIRMAR_LINK,
     EDITAR_CAMPOS, CB_CONFIRMAR_LINK
 )
-from bot.handlers.review_queue import handle_review_callback
+from bot.handlers.review_queue import handle_review_callback, handle_review_bulk_callback
 from bot.handlers.monitor import monitor_menu_handler, monitor_action_handler, voltar_menu_handler
 from bot.utils.constants import (
     CB_PUBLICAR_MANUAL, CB_PUBLICAR_LINK, CB_CANCELAR_MENU, CB_CANCELAR_OFERTA,
@@ -108,8 +108,8 @@ def build_main_handler() -> ConversationHandler:
 
 
 def build_review_queue_handler() -> CallbackQueryHandler:
-    """Handler separado para callbacks da fila de aprovação — fora do ConversationHandler."""
+    """Handler único para callbacks da fila de aprovação."""
     return CallbackQueryHandler(
         handle_review_callback,
-        pattern=r"^(review_aprovar|review_rejeitar):"
+        pattern=r"^review_(aprovar|rejeitar|bulk):"
     )

@@ -174,10 +174,31 @@ async def _run_scan(context, limit: int = 10, manual: bool = False, trigger_user
             logger.error(f"[SCHEDULER] Falha crítica ao processar item {product_url}: {e}", exc_info=True)
 
     if manual and trigger_user_id:
-        status_msg = f"✅ <b>Varredura concluída!</b>\nProcessados: {count} novos itens."
-        if count == 0:
-            status_msg = "ℹ️ A varredura não encontrou novos itens ou todos já foram publicados."
-        await context.bot.send_message(chat_id=trigger_user_id, text=status_msg, parse_mode=ParseMode.HTML)
+        pending_count = len(context.bot_data.get("pending_offers", {}))
+        keyboard = None
+        
+        if AUTO_APPROVE:
+            status_msg = f"✅ <b>Varredura concluída!</b>\n{count} ofertas publicadas automaticamente."
+        else:
+            status_msg = f"✅ <b>Varredura concluída!</b>\n{count} novas ofertas aguardando aprovação."
+            if pending_count > 0:
+                status_msg += f"\n\nTotal na fila de revisão: <b>{pending_count}</b>"
+                keyboard = InlineKeyboardMarkup([
+                    [InlineKeyboardButton("✅ Aprovar Todas", callback_data="review_bulk:approve_all")],
+                    [InlineKeyboardButton("🚫 Limpar Fila", callback_data="review_bulk:clear_all")],
+                    [InlineKeyboardButton("⬅️ Voltar ao Menu", callback_data="monitor_voltar")]
+                ])
+
+        if count == 0 and pending_count == 0:
+            status_msg = "ℹ️ A varredura não encontrou novos itens ou todos já foram processados."
+            keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Voltar ao Menu", callback_data="monitor_voltar")]])
+            
+        await context.bot.send_message(
+            chat_id=trigger_user_id, 
+            text=status_msg, 
+            parse_mode=ParseMode.HTML,
+            reply_markup=keyboard
+        )
 
     logger.info(f"[SCHEDULER] Varredura finalizada. Total processado: {count}/{limit}")
     return count

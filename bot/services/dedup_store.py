@@ -5,6 +5,7 @@ Armazena em data/seen_links.json (lista de URLs).
 import json
 import logging
 import os
+import re
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -35,21 +36,41 @@ def _save(seen: set[str]) -> None:
         logger.error(f"[DEDUP] Erro ao salvar seen_links.json: {e}")
 
 
+def normalize_url(url: str) -> str:
+    """Normaliza a URL para comparação (remove UTMs, mobile prefixes, etc)."""
+    if not url: return ""
+    try:
+        # Lowercase, remove excesso de espaços
+        url = url.strip().lower()
+        # Remove prefixos mobile conhecidos
+        url = url.replace("https://m.", "https://").replace("https://mobile.", "https://")
+        # Remove fragmentos (#...)
+        url = url.split("#")[0]
+        # Remove query strings comuns de rastreio (utm, gclid, fbclid, etc)
+        url = re.sub(r"[?&](utm_[^&]+|fbclid|gclid|aff_id|clickid|ref|linkcode|linkid)=[^&]*", "", url)
+        # Limpa '?' ou '&' sobrando no final
+        url = url.rstrip("?&")
+        return url
+    except Exception:
+        return url
+
 def is_seen(url: str) -> bool:
-    """Retorna True se o link já foi processado antes."""
-    return url in _load()
+    """Retorna True se o link (normalizado) já foi processado antes."""
+    norm = normalize_url(url)
+    return norm in _load()
 
 
 def mark_seen(url: str) -> None:
-    """Marca um link como já visto."""
+    """Marca um link como já visto (usando forma normalizada)."""
+    norm = normalize_url(url)
     seen = _load()
-    if url not in seen:
-        seen.add(url)
+    if norm not in seen:
+        seen.add(norm)
         _save(seen)
-        logger.info(f"[DEDUP] Link marcado como visto: {url[:80]}")
+        logger.info(f"[DEDUP] Link marcado como visto (norm): {norm[:80]}")
 
 
 def clear_all() -> None:
-    """Limpa todos os links vistos. Útil para manutenção/reset."""
+    """Limpa todos os links vistos."""
     _save(set())
     logger.warning("[DEDUP] Todos os links vistos foram limpos.")
