@@ -167,11 +167,14 @@ def extract_product_data(url: str) -> dict:
         "error":     None
     }
 
+    logger.info(f"[EXTRACTOR] --- V2.1 --- Iniciando para: {url[:60]}")
+
     try:
         # Etapa 1 — Resolução de Redirecionamentos
-        logger.info(f"[EXTRACTOR] Resolvendo URL: {url[:60]}")
         session = requests.Session()
         res = session.get(url, headers=_HEADERS_ANTI_BLOCK, timeout=15, allow_redirects=True)
+        # Força UTF-8 para evitar problemas com R$ e acentos
+        res.encoding = 'utf-8' 
         final_url = res.url
         logger.info(f"[EXTRACTOR] URL Final: {final_url[:60]}")
 
@@ -207,17 +210,20 @@ def extract_product_data(url: str) -> dict:
 
         if og_img:   result["image_url"] = urljoin(final_url, og_img)
         if og_price: result["price"]     = clean_price(og_price) or result["price"]
-        if og_title: result["title"]     = og_title
-
-        # EXTRA: Se preço falhou mas está no Título (Comum no Mercado Livre)
-        if result["price"] == "Preço não disponível" and og_title:
-            price_match = re.search(r"R\$\s?(\d{1,3}(?:\.\d{3})*(?:,\d{2})?)", og_title)
-            if price_match:
-                result["price"] = f"R$ {price_match.group(1)}"
-                logger.info(f"[EXTRACTOR] Preço extraído do og:title: {result['price']}")
+        if og_title: 
+            # EXTRA: Se preço falhou mas está no Título (Comum no Mercado Livre)
+            if result["price"] == "Preço não disponível":
+                price_match = re.search(r"R\$\s?(\d{1,3}(?:\.\d{3})*(?:,\d{2})?)", og_title)
+                if price_match:
+                    result["price"] = f"R$ {price_match.group(1)}"
+            
+            # Limpa " - R$ ..." e " no Mercado Livre" do título
+            clean_t = re.sub(r"\s-\sR\$.*", "", og_title)
+            clean_t = re.sub(r"\sno\sMercado\sLivre.*", "", clean_t, flags=re.IGNORECASE)
+            result["title"] = clean_t.strip()
 
         # --- Estratégia 2: JSON-LD ---
-        if result["price"] == "Preço não disponível" or not result["image_url"]:
+        if result["price"] == "Preço não disponível" or not result["image_url"] or result["title"] == "Produto":
             jld = extract_json_ld(soup)
             if jld:
                 if not result["image_url"] and jld.get("image"):
@@ -234,8 +240,9 @@ def extract_product_data(url: str) -> dict:
                     elif isinstance(offers, list) and offers[0].get("price"):
                         result["price"] = clean_price(str(offers[0]["price"])) or result["price"]
                 
-                if (result["title"] == "Produto" or result["title"] == "Mercado Livre") and jld.get("name"):
-                    result["title"] = jld["name"]
+                # JSON-LD costuma ter o nome limpo do produto
+                if jld.get("name"):
+                    result["title"] = str(jld["name"]).strip()
 
         # --- Estratégia 3: Seletores CSS Específicos ---
         if store_key == "amazon":
