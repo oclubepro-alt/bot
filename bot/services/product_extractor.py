@@ -177,7 +177,7 @@ def extract_product_data(url: str) -> dict:
         "error":     None
     }
 
-    logger.info(f"[EXTRACTOR] --- V2.1 --- Iniciando para: {url[:60]}")
+    logger.info(f"[EXTRACTOR] --- V2.5 --- Iniciando para: {url[:60]}")
 
     try:
         # Etapa 1 — Resolução de Redirecionamentos
@@ -231,10 +231,11 @@ def extract_product_data(url: str) -> dict:
             clean_t = re.sub(r"\s-\sR\$.*", "", og_title)
             clean_t = re.sub(r"\s-\sMercado\sLivre.*", "", clean_t, flags=re.IGNORECASE)
             clean_t = re.sub(r"\sno\sMercado\sLivre.*", "", clean_t, flags=re.IGNORECASE)
+            clean_t = re.sub(r"\| Mercado Livre", "", clean_t, flags=re.IGNORECASE)
             result["title"] = clean_t.strip()
 
         # --- Estratégia 2: JSON-LD ---
-        if result["price"] == "Preço não disponível" or not result["image_url"] or result["title"] == "Produto":
+        if result["price"] == "Preço não disponível" or not result["image_url"] or result["title"].lower() in ["produto", "mercado livre"]:
             jld = extract_json_ld(soup)
             if jld:
                 if not result["image_url"] and jld.get("image"):
@@ -255,10 +256,16 @@ def extract_product_data(url: str) -> dict:
                 if jld.get("name") and str(jld["name"]).strip().lower() != "mercado livre":
                     result["title"] = str(jld["name"]).strip()
         
-        # --- Estratégia Adicional: H1 (Último recurso de scraping) ---
-        if result["title"] == "Produto" or result["title"].lower() == "mercado livre":
+        # --- Estratégia Adicional: H1 e Busca Bruta ---
+        if result["title"].lower() in ["produto", "mercado livre"]:
             h1 = soup.find("h1")
             if h1: result["title"] = h1.text.strip()
+            
+        if result["price"] == "Preço não disponível":
+            # Procura por "price":989 ou similar no HTML bruto (último recurso)
+            raw_match = re.search(r'"price":\s*(\d+(?:\.\d{1,2})?)', res.text)
+            if raw_match:
+                result["price"] = clean_price(raw_match.group(1)) or result["price"]
 
         # --- Estratégia 3: Seletores CSS Específicos ---
         if store_key == "amazon":
