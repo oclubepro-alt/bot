@@ -1,6 +1,6 @@
 """
 product_extractor.py - Extração robusta de dados do produto via scraping.
-Versão V3.1 (GHOST MODE) - Refatorada para máxima performance e contorno de vitrines.
+Versão V3.2 (THE VISIONARY) - Foco em extração de imagem e preço em páginas sociais.
 """
 import logging
 import re
@@ -13,11 +13,14 @@ from bot.utils.detect_store import detect_store
 
 logger = logging.getLogger(__name__)
 
+# Headers completos para evitar bloqueio de imagem
 _HEADERS_ANTI_BLOCK = {
     "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1",
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
     "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
-    "Referer": "https://www.google.com/",
+    "Accept-Encoding": "gzip, deflate, br",
+    "Cache-Control": "no-cache",
+    "Pragma": "no-cache",
     "Connection": "keep-alive",
 }
 
@@ -65,7 +68,7 @@ def _extract_mercadolivre_api(url):
 
 def extract_product_data(url: str) -> dict:
     result = {"image_url": None, "price": "Preço não disponível", "title": "Produto", "loja": "Desconhecida", "error": None}
-    logger.info(f"[EXTRACTOR] --- GHOST MODE V3.1 --- {url[:50]}")
+    logger.info(f"[EXTRACTOR] --- VISIONARY V3.2 --- {url[:50]}")
 
     try:
         res = requests.get(url, headers=_HEADERS_ANTI_BLOCK, timeout=15, allow_redirects=True)
@@ -79,19 +82,29 @@ def extract_product_data(url: str) -> dict:
             if ml_data:
                 result["title"], result["image_url"] = ml_data["nome"], ml_data["imagem"]
                 result["price"] = clean_price(ml_data["preco"])
-                if result["image_url"] and result["price"]: return result
+                if result["image_url"] and result["price"] != "Preço não disponível": return result
 
         # 2. Scraping Agressivo
         soup = BeautifulSoup(res.text, "html.parser")
+        
+        # Meta Tags
         og_t = _meta(soup, "og:title", "twitter:title")
         og_d = _meta(soup, "og:description", "twitter:description")
-        og_i = _meta(soup, "og:image", "twitter:image")
-        og_p = _meta(soup, "product:price:amount", "og:price:amount")
+        og_i = _meta(soup, "og:image", "twitter:image", "og:image:secure_url")
+        og_p = _meta(soup, "product:price:amount", "og:price:amount", "og:price")
 
-        if og_i: result["image_url"] = urljoin(final_url, og_i)
-        if og_p: result["price"]     = clean_price(og_p)
+        # Imagem - Fallback Especial para ML Vitrines
+        if og_i: 
+            result["image_url"] = urljoin(final_url, og_i)
+        else:
+            # Procura a primeira imagem com "MLB" ou em galerias
+            m_img = soup.select_one("img[src*='MLB']") or soup.select_one(".ui-pdp-gallery__figure img")
+            if m_img: result["image_url"] = urljoin(final_url, m_img.get("data-src") or m_img.get("src"))
 
-        # Seleção de Título Inteligente (Foco em Vitrines)
+        # Preço - Fallback de metadados
+        if og_p: result["price"] = clean_price(og_p)
+
+        # Título - Lógica de Vitrine (Vesta em V3.1)
         candidates = [og_t, og_d]
         for c in candidates:
             if not c: continue
@@ -100,23 +113,24 @@ def extract_product_data(url: str) -> dict:
                 result["title"] = clean
                 break
 
-        # Fallback JSON-LD
-        if result["price"] == "Preço não disponível" or result["title"] == "Produto":
-            jld = extract_json_ld(soup)
-            if jld:
-                if result["title"] == "Produto": result["title"] = jld.get("name", result["title"])
-                off = jld.get("offers")
-                if isinstance(off, dict):
-                    p = off.get("price") or off.get("lowPrice")
-                    if p: result["price"] = clean_price(str(p))
-
-        # Scan Final Bruto (Preço)
+        # Fallback de Preço (Scan Bruto em JSON ou HTML)
         if result["price"] == "Preço não disponível":
-            raw_p = re.search(r'R\$\s?(\d{1,3}(?:\.\d{3})*,\d{2})', res.text)
-            if raw_p: result["price"] = f"R$ {raw_p.group(1)}"
+            # Procura em scripts
+            price_match = re.search(r'"price":\s*(\d+(?:\.\d{1,2})?)', res.text)
+            if price_match: 
+                result["price"] = clean_price(price_match.group(1))
+            else:
+                # Procura R$ XX,XX no texto visível
+                raw_p = re.search(r'R\$\s?(\d{1,3}(?:\.\d{3})*,\d{2})', res.text)
+                if raw_p: result["price"] = f"R$ {raw_p.group(1)}"
+
+        # Finalização Amazon
+        if store_key == "amazon" and result["price"] == "Preço não disponível":
+            tag_p = soup.select_one("span.a-price .a-offscreen") or soup.select_one(".a-price-whole")
+            if tag_p: result["price"] = clean_price(tag_p.text)
 
     except Exception as e:
-        logger.error(f"[EXTRACTOR] Erro V3.1: {e}")
+        logger.error(f"[EXTRACTOR] Erro V3.2: {e}")
         result["error"] = str(e)
 
     return result
