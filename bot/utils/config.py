@@ -35,7 +35,16 @@ def _parse_admin_ids(raw: str) -> list[int]:
 
 # ── Variáveis públicas ──────────────────────────────────────────────────────
 
-TELEGRAM_BOT_TOKEN: str = _require("TELEGRAM_BOT_TOKEN")
+_raw_token = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
+# Remove aspas se o usuário colou com aspas por engano no Railway
+if (_raw_token.startswith('"') and _raw_token.endswith('"')) or \
+   (_raw_token.startswith("'") and _raw_token.endswith("'")):
+    TELEGRAM_BOT_TOKEN = _raw_token[1:-1].strip()
+else:
+    TELEGRAM_BOT_TOKEN = _raw_token
+
+if not TELEGRAM_BOT_TOKEN:
+    raise EnvironmentError("[CONFIG] TELEGRAM_BOT_TOKEN não encontrado!")
 TELEGRAM_CHANNEL_ID: str = _require("TELEGRAM_CHANNEL_ID")
 OPENAI_API_KEY: str = _require("OPENAI_API_KEY")
 OPENAI_MODEL: str = os.getenv("OPENAI_MODEL", "gpt-4o-mini").strip()
