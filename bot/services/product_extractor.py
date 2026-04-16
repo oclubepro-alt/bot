@@ -1,6 +1,6 @@
 """
 product_extractor.py - Extração robusta de dados do produto via scraping.
-Versão V3.7 (THE ORACLE) - Sensors para Andes UI e Metadados Twitter.
+Versão V3.8 (PRICE MASTER) - Prioridade para menor preço (Pix/Oferta) e filtragem de preço antigo.
 """
 import logging
 import re
@@ -22,6 +22,7 @@ _HEADERS_ANTI_BLOCK = {
 
 def clean_price(text: str) -> str | None:
     if not text: return None
+    # Remove tudo que não é número, vírgula ou ponto
     text = re.sub(r'[^0-9,.]', '', text.replace('\xa0', ' '))
     match = re.search(r"(\d{1,3}(?:\.\d{3})*(?:,\d{2})?)", text)
     if match:
@@ -31,23 +32,44 @@ def clean_price(text: str) -> str | None:
     return None
 
 def _scrape_full_page(soup, html):
-    """Extração profunda usando seletores conhecidos do Mercado Livre (Andes UI)."""
+    """Extração profunda focada em capturar o preço promocional real."""
     data = {"title": None, "price": None, "image_url": None}
     
     # 1. Título
-    t_tag = soup.select_one(".ui-pdp-title") or soup.select_one("h1")
+    t_tag = soup.select_one(".ui-pdp-title") or soup.select_one("h1") or soup.select_one(".social-vitrine-item__title")
     if t_tag: data["title"] = t_tag.get_text().strip()
 
-    # 2. Preço (Andes UI)
-    p_tag = soup.select_one(".andes-money-amount__fraction") or soup.select_one(".ui-pdp-price__price .andes-money-amount__fraction")
-    if p_tag:
-        decimals = soup.select_one(".andes-money-amount__cents")
-        price_str = p_tag.get_text().strip()
-        if decimals: price_str += f",{decimals.get_text().strip()}"
-        data["price"] = clean_price(price_str)
+    # 2. Preço (Priorizando promoção)
+    # Procuramos por andes-money-amount que NÃO estejam dentro de containers de "preço antigo"
+    # O Mercado Livre costuma usar .ui-pdp-price__second-line para o preço principal
+    price_containers = soup.select(".ui-pdp-price__second-line .andes-money-amount__fraction") or \
+                       soup.select(".andes-money-amount--main .andes-money-amount__fraction") or \
+                       soup.select(".andes-money-amount__fraction")
+    
+    prices_found = []
+    for p in price_containers:
+        # Ignora se for preço riscado (antigo)
+        parent_text = p.parent.get_text().lower() if p.parent else ""
+        if "antes" in parent_text or "<s>" in str(p.parent):
+            continue
+            
+        digits = p.get_text().strip()
+        cents_tag = p.parent.select_one(".andes-money-amount__cents")
+        if cents_tag:
+            digits += f",{cents_tag.get_text().strip()}"
+        
+        prices_found.append(digits)
+
+    if prices_found:
+        # Pega o menor preço encontrado (geralmente o do Pix ou Promocional)
+        def to_float(s): return float(s.replace(".", "").replace(",", "."))
+        prices_found.sort(key=to_float)
+        data["price"] = clean_price(prices_found[0])
 
     # 3. Imagem
-    img_tag = soup.select_one(".ui-pdp-gallery__figure img") or soup.select_one("img.ui-pdp-image")
+    img_tag = soup.select_one(".ui-pdp-gallery__figure img") or \
+              soup.select_one("img.ui-pdp-image") or \
+              soup.select_one(".social-vitrine-item__image img")
     if img_tag:
         data["image_url"] = img_tag.get("data-zoom") or img_tag.get("data-src") or img_tag.get("src")
 
@@ -59,7 +81,7 @@ def extract_product_data(url: str) -> dict:
         "title": "Produto", "loja": "Desconhecida", 
         "store_key": "other", "error": None
     }
-    logger.info(f"[EXTRACTOR] --- THE ORACLE V3.7 --- {url[:50]}")
+    logger.info(f"[EXTRACTOR] --- PRICE MASTER V3.8 --- {url[:50]}")
 
     try:
         session = requests.Session()
@@ -70,48 +92,28 @@ def extract_product_data(url: str) -> dict:
         store_display, store_key = detect_store(final_url)
         result["loja"], result["store_key"] = store_display, store_key
 
-        # --- FASE 1: Metadados Estruturados (Confiáveis para Redes Sociais) ---
-        og_t = (soup.find("meta", property="og:title") or {}).get("content")
-        og_d = (soup.find("meta", property="og:description") or {}).get("content")
-        og_i = (soup.find("meta", property="og:image") or {}).get("content")
-        
-        # Detecção de Preço via Twitter Tags (Truque ML Vitrines)
-        tw_label1 = (soup.find("meta", {"name": "twitter:label1"}) or {}).get("content", "").lower()
-        tw_data1  = (soup.find("meta", {"name": "twitter:data1"}) or {}).get("content")
-        
-        if "preço" in tw_label1 and tw_data1:
-            result["price"] = clean_price(tw_data1)
-
-        # --- FASE 2: Recursividade em Vitrines ---
-        if "/social/" in final_url and result["price"] == "Preço não disponível":
-            logger.info("[EXTRACTOR] Vitrine Social sem preço. Buscando link MLB...")
+        # Tentar recursividade se for vitrine social
+        if "/social/" in final_url:
             links = re.findall(r'https?://(?:www\.|produto\.)?mercadolivre\.com\.br/[^"\s]*MLB-?[^"\s>]*', html)
             if links:
-                logger.info(f"[EXTRACTOR] Seguindo link: {links[0]}")
                 inner_res = session.get(links[0], headers=_HEADERS_ANTI_BLOCK, timeout=10)
-                inner_data = _scrape_full_page(BeautifulSoup(inner_res.text, "html.parser"), inner_res.text)
-                result.update({k: v for k, v in inner_data.items() if v})
+                deep_data = _scrape_full_page(BeautifulSoup(inner_res.text, "html.parser"), inner_res.text)
+                result.update({k: v for k, v in deep_data.items() if v})
+                if result["price"] != "Preço não disponível": return result
 
-        # --- FASE 3: Scraping Direto (Andes UI) ---
+        # Extração Direta
         direct_data = _scrape_full_page(soup, html)
-        if not result["image_url"]: result["image_url"] = direct_data["image_url"] or og_i
-        if not result["title"] or result["title"] == "Produto": 
-            result["title"] = direct_data["title"] or re.sub(r"Mercado Livre.*|\||-", "", og_t, flags=re.IGNORECASE).strip() if og_t else "Produto"
-        if result["price"] == "Preço não disponível": result["price"] = direct_data["price"]
+        result["title"] = direct_data["title"] or result["title"]
+        result["image_url"] = direct_data["image_url"] or result["image_url"]
+        result["price"] = direct_data["price"] or result["price"]
 
-        # --- FASE 4: Heurísticas Finais ---
-        if result["image_url"] and not result["image_url"].startswith("http"):
-            result["image_url"] = urljoin(final_url, result["image_url"])
-            
-        # Filtro de TV barato (acessórios)
-        if "TV" in result["title"].upper() and result["price"] != "Preço não disponível":
-            try:
-                p_val = float(result["price"].replace("R$ ", "").replace(".", "").replace(",", "."))
-                if p_val < 350: result["price"] = "Preço não disponível"
-            except: pass
+        # Se ainda falhar, tenta metadados básicos como último recurso
+        if result["price"] == "Preço não disponível":
+            tw_data1 = (soup.find("meta", {"name": "twitter:data1"}) or {}).get("content")
+            if tw_data1: result["price"] = clean_price(tw_data1)
 
     except Exception as e:
-        logger.error(f"[EXTRACTOR] Erro V3.7: {e}")
+        logger.error(f"[EXTRACTOR] Erro V3.8: {e}")
         result["error"] = str(e)
 
     return result
