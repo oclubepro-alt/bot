@@ -58,33 +58,56 @@ async def start_offer_by_link(update: Update, context: ContextTypes.DEFAULT_TYPE
     return LINK_PRODUTO
 
 
+from bot.services.link_converter import extract_first_url, convert_links_in_text
+
 async def receber_link_produto(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    original_link = update.message.text.strip()
+    raw_text = update.message.text.strip()
+    
+    # Extrai o link principal do texto (pode ser uma mensagem completa)
+    original_link = extract_first_url(raw_text)
+    
+    if not original_link:
+        await update.message.reply_text("❌ Não encontrei nenhum link válido na sua mensagem. Tente novamente.")
+        return LINK_PRODUTO
+
     logger.info(
-        f"[OFERTA LINK] ── Link recebido ────────────────────────────\n"
-        f"[OFERTA LINK] Original : {original_link}"
+        f"[OFERTA LINK] ── Promoção recebida ────────────────────────────\n"
+        f"[OFERTA LINK] Texto Bruto: {raw_text[:100]}...\n"
+        f"[OFERTA LINK] Link Extraído: {original_link}"
     )
+
+    # Se a mensagem for maior que o link, guardamos o resto como descrição/base
+    if len(raw_text) > len(original_link) + 10:
+        context.user_data["descricao_base"] = raw_text
+        logger.info("[OFERTA LINK] Texto adicional detectado, será usado como descrição.")
 
     # Guarda link ORIGINAL (será usado na publicação como fallback)
     context.user_data["original_url"] = original_link
-    context.user_data["product_url"] = original_link  # compat
+    context.user_data["product_url"] = original_link
 
     msg = await update.message.reply_text(
         "⏳ Resolvendo link e extraindo dados do produto... Aguarde."
     )
 
     # Resolve a URL final — usada APENAS para extração e detecção de loja
-    resolved = resolve_url(original_link)
-    context.user_data["resolved_url"] = resolved
-
-    logger.info(
-        f"[OFERTA LINK] Resolvida: {resolved[:100]}"
-    )
+    try:
+        resolved = resolve_url(original_link)
+        context.user_data["resolved_url"] = resolved
+    except Exception as e:
+        logger.error(f"[OFERTA LINK] Erro ao resolver URL: {e}")
+        resolved = original_link
+        context.user_data["resolved_url"] = resolved
 
     # Extração sempre na URL resolvida
     dados = extract_product_data(resolved)
+    
     # Preserva o link original como URL do produto (não a URL técnica)
     dados["product_url"] = original_link
+    
+    # Se capturamos uma descrição base, usamos se o extractor falhar
+    if context.user_data.get("descricao_base") and not dados.get("descricao"):
+        dados["descricao"] = context.user_data["descricao_base"]
+
     context.user_data["extracted"] = dados
 
     await msg.delete()
@@ -110,7 +133,6 @@ async def receber_link_produto(update: Update, context: ContextTypes.DEFAULT_TYP
         return PREENCHER_PRECO_FALTANTE
 
     # Agora, em vez de pedir link de afiliado, vamos direto para a prévia completa
-    # (O sistema de injeção automática já vai cuidar de aplicar as tags do .env)
     return await _gerar_previa_link(update, context)
 
 

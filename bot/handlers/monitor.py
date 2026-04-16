@@ -10,10 +10,7 @@ from telegram.constants import ParseMode
 from bot.utils.constants import (
     CB_MONITOR_MENU, CB_MONITOR_START, CB_MONITOR_STOP, CB_VOLTAR_MENU, CB_MENU_PRINCIPAL
 )
-from bot.services.scheduler_service import is_monitor_active, start_monitor, stop_monitor
-
-logger = logging.getLogger(__name__)
-
+from bot.services.scheduler_service import is_monitor_active, start_monitor, stop_monitor, _run_scan
 
 async def monitor_menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Exibe o menu de controle do monitoramento automático."""
@@ -28,14 +25,17 @@ async def monitor_menu_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         f"⚙️ <b>Controle de Monitoramento (Fase 3)</b>\n\n"
         f"Status atual: {status_text}\n\n"
         "O monitor varre as fontes em busca de novos produtos. "
-        "Você receberá uma notificação para aprovar cada achado."
+        "Você pode iniciar o monitoramento cíclico ou buscar 10 ofertas agora."
     )
     
     keyboard = []
+    # Botão de Varredura Imediata (Problema 3)
+    keyboard.append([InlineKeyboardButton("🔍 Buscar 10 Ofertas Agora", callback_data="monitor_scrape_now")])
+
     if not active:
-        keyboard.append([InlineKeyboardButton("🚀 Iniciar Monitoramento", callback_data=CB_MONITOR_START)])
+        keyboard.append([InlineKeyboardButton("🚀 Iniciar Ciclo Automático", callback_data=CB_MONITOR_START)])
     else:
-        keyboard.append([InlineKeyboardButton("🛑 Parar Monitoramento", callback_data=CB_MONITOR_STOP)])
+        keyboard.append([InlineKeyboardButton("🛑 Parar Ciclo Automático", callback_data=CB_MONITOR_STOP)])
         
     keyboard.append([InlineKeyboardButton("🔙 Voltar ao Menu Principal", callback_data=CB_MENU_PRINCIPAL)])
     
@@ -48,11 +48,17 @@ async def monitor_menu_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 
 
 async def monitor_action_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Executa a ação de ligar ou desligar o monitor."""
+    """Executa a ação de ligar, desligar ou varrer agora."""
     query = update.callback_query
-    await query.answer()
-    
     action = query.data
+    
+    if action == "monitor_scrape_now":
+        await query.answer("🚀 Iniciando busca de 10 ofertas... Veja o canal em instantes!", show_alert=True)
+        # Executa a varredura manual (manual=True publica direto)
+        await _run_scan(context, limit=10, manual=True)
+        return
+
+    await query.answer()
     
     if action == CB_MONITOR_START:
         start_monitor(context.application)

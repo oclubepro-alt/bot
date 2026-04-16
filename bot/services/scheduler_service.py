@@ -23,132 +23,125 @@ from bot.utils.formatter import build_offer_message, build_preview_message, esca
 
 logger = logging.getLogger(__name__)
 
-async def _run_scan(context) -> None:
+import asyncio
+from bot.services.affiliate_injector import get_affiliate_url
+from bot.services.link_shortener import shorten_for_publication
+from bot.services.publisher_router import publish_offer
+
+async def _run_scan(context, limit: int = 10, manual: bool = False) -> int:
     """
-    Job executado pelo scheduler: varre fontes, extrai dados,
-    gera copy e envia prévias aos admins para aprovação.
+    Job executado pelo scheduler ou manualmente via botão: varre fontes, extrai dados,
+    gera copy e publica ou envia prévias.
+    Retorna o total de itens publicados/enviados.
     """
-    logger.info("[SCHEDULER] Iniciando varredura das fontes...")
+    logger.info(f"[SCHEDULER] Iniciando varredura das fontes (limite: {limit})...")
     
     if not ADMIN_IDS:
         logger.warning("[SCHEDULER] ADMIN_IDS vazio — ninguém receberá prévias.")
-        return
+        if not manual: return 0
 
     new_items = scan_sources()
 
     if not new_items:
         logger.info("[SCHEDULER] Nenhum item novo encontrado nesta rodada.")
-        return
+        return 0
 
-    # Limita a exatamente 5 itens por rodada para evitar excesso (Requisito do Usuário)
-    new_items = new_items[:5]
-    logger.info(f"[SCHEDULER] Processando top {len(new_items)} item(ns) novo(s).")
+    # Limita rigorosamente ao pedido (10 itens)
+    items_to_process = new_items[:limit]
+    logger.info(f"[SCHEDULER] Processando {len(items_to_process)} novos itens.")
 
-    for item in new_items:
+    count = 0
+    for item in items_to_process:
         product_url: str = item["url"]
         source_name: str = item.get("source_name", "—")
 
-        # Dupla checagem de dedup antes de extrair
         if is_seen(product_url):
-            logger.debug(f"[SCHEDULER] Ignorado (visto): {product_url[:80]}")
             continue
 
-        logger.info(f"[SCHEDULER] Extraindo dados de: {product_url[:60]}")
-        # Resolve redirects — URL final usada para extração, original mantida para publicação
-        resolved_url = resolve_final_url(product_url)
-        dados = extract_product_data(resolved_url)
+        try:
+            logger.info(f"[SCHEDULER] [{count+1}/{len(items_to_process)}] Extraindo: {product_url[:60]}")
+            
+            # Resolve URL e extrai dados
+            resolved_url = resolve_final_url(product_url)
+            dados = extract_product_data(resolved_url)
 
-        # Se não tiver nem nome, pula (dados insuficientes)
-        if not dados.get("nome"):
-            logger.warning(f"[SCHEDULER] Dados insuficientes para {product_url[:80]}, pulando.")
-            mark_seen(product_url)  # Marca para não tentar de novo
-            continue
-
-        nome = dados["nome"]
-        preco = dados.get("preco") or "Preço não informado"
-        loja = dados.get("loja") or "Desconhecida"
-        imagem = dados.get("imagem")
-
-        # Gera copy com IA
-        logger.info(f"[SCHEDULER] Gerando copy para: '{nome[:40]}'")
-        copy_ia = await generate_caption(
-            nome=nome, preco=preco, loja=loja, descricao=dados.get("descricao")
-        )
-
-        # Link final: sem afiliado automático na Fase 3, usa o original
-        final_link = get_final_link(product_url)
-
-        mensagem = build_offer_message(
-            nome=nome, preco=preco, loja=loja, link=final_link, legenda_ia=copy_ia
-        )
-
-        # Modo AUTO_APPROVE: publica direto (Fase 4 preparada)
-        if AUTO_APPROVE:
-            logger.info(f"[SCHEDULER] AUTO_APPROVE ativo — publicando direto: '{nome[:40]}'")
-            from bot.services.publisher_router import publish_offer
-            try:
-                await publish_offer(context.bot, mensagem, imagem)
+            if not dados.get("nome"):
                 mark_seen(product_url)
-            except Exception as e:
-                logger.error(f"[SCHEDULER] Erro ao publicar automaticamente: {e}")
-            continue
+                continue
 
-        # Modo manual: envia prévia para cada admin e armazena na fila
-        offer_id = uuid.uuid4().hex[:12]
+            # 1. Injeção de Afiliado e Encurtamento (RESOLVE PROBLEMA 2 NO SCRAPER)
+            store_key = dados.get("store_key", "other")
+            affiliate_url = get_affiliate_url(
+                original_url=product_url,
+                resolved_url=resolved_url,
+                store_key=store_key
+            )
+            final_link = shorten_for_publication(affiliate_url)
 
-        if "pending_offers" not in context.bot_data:
-            context.bot_data["pending_offers"] = {}
+            # 2. Geração de Copy
+            copy_ia = await generate_caption(
+                nome=dados["nome"], 
+                preco=dados.get("preco", "Consulte"), 
+                loja=dados.get("loja", "Loja"), 
+                descricao=dados.get("descricao")
+            )
 
-        context.bot_data["pending_offers"][offer_id] = {
-            "product_url": product_url,
-            "mensagem": mensagem,
-            "imagem": imagem,
-            "nome": nome,
-            "source_name": source_name,
-        }
+            mensagem = build_offer_message(
+                nome=dados["nome"], 
+                preco=dados.get("preco", "Consulte"), 
+                loja=dados.get("loja", "Loja"), 
+                link=final_link, 
+                legenda_ia=copy_ia
+            )
 
-        keyboard = InlineKeyboardMarkup([
-            [
-                InlineKeyboardButton(
-                    "✅ Aprovar e Publicar",
-                    callback_data=f"review_aprovar:{offer_id}"
-                ),
-                InlineKeyboardButton(
-                    "❌ Rejeitar",
-                    callback_data=f"review_rejeitar:{offer_id}"
-                ),
-            ]
-        ])
+            # 3. DESTINO: Se manual ou AUTO_APPROVE, vai direto pro canal (RESOLVE PROBLEMA 3)
+            if manual or AUTO_APPROVE:
+                logger.info(f"[SCHEDULER] Publicando direto no canal: '{dados['nome'][:40]}'")
+                # Formata para o router (Telegram/WhatsApp)
+                copies = {"telegram": mensagem, "whatsapp": mensagem}
+                await publish_offer(context.bot, copies, dados.get("imagem"))
+                mark_seen(product_url)
+                count += 1
+                
+                # SLEEP PARA EVITAR RATE LIMIT (Requisito Problema 3)
+                if count < len(items_to_process):
+                    await asyncio.sleep(3) 
+                continue
 
-        preview_text = (
-            f"🔍 <b>Nova oferta encontrada automaticamente!</b>\n"
-            f"📌 Fonte: <i>{escape_html(source_name)}</i>\n\n"
-            + build_preview_message(mensagem)
-        )
+            # Modo de Aprovação Manual (Padrão do Scheduler)
+            offer_id = uuid.uuid4().hex[:12]
+            if "pending_offers" not in context.bot_data:
+                context.bot_data["pending_offers"] = {}
 
-        for admin_id in ADMIN_IDS:
-            try:
-                if imagem:
-                    await context.bot.send_photo(
-                        chat_id=admin_id,
-                        photo=imagem,
-                        caption=preview_text,
-                        parse_mode=ParseMode.HTML,
-                        reply_markup=keyboard,
-                    )
-                else:
-                    await context.bot.send_message(
-                        chat_id=admin_id,
-                        text=preview_text,
-                        parse_mode=ParseMode.HTML,
-                        reply_markup=keyboard,
-                        disable_web_page_preview=True,
-                    )
-                logger.info(
-                    f"[SCHEDULER] Prévia enviada ao admin {admin_id} — oferta: '{nome[:40]}'"
-                )
-            except Exception as e:
-                logger.error(f"[SCHEDULER] Erro ao notificar admin {admin_id}: {e}")
+            context.bot_data["pending_offers"][offer_id] = {
+                "product_url": product_url,
+                "mensagem": mensagem,
+                "imagem": dados.get("imagem"),
+                "nome": dados["nome"],
+            }
+
+            keyboard = InlineKeyboardMarkup([
+                [InlineKeyboardButton("✅ Aprovar", callback_data=f"review_aprovar:{offer_id}"),
+                 InlineKeyboardButton("❌ Rejeitar", callback_data=f"review_rejeitar:{offer_id}")]
+            ])
+
+            preview_text = f"🔍 <b>Oferta Automática ({source_name})</b>\n\n" + build_preview_message(mensagem)
+
+            for admin_id in ADMIN_IDS:
+                try:
+                    if dados.get("imagem"):
+                        await context.bot.send_photo(chat_id=admin_id, photo=dados["imagem"], caption=preview_text, parse_mode=ParseMode.HTML, reply_markup=keyboard)
+                    else:
+                        await context.bot.send_message(chat_id=admin_id, text=preview_text, parse_mode=ParseMode.HTML, reply_markup=keyboard)
+                except Exception: pass
+            
+            count += 1
+            await asyncio.sleep(1) # Delay menor para prévias aos admins
+
+        except Exception as e:
+            logger.error(f"[SCHEDULER] Falha ao processar item {product_url}: {e}")
+
+    return count
 
 
 def is_monitor_active(app: Application) -> bool:
