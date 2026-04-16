@@ -43,13 +43,20 @@ def main() -> None:
         sys.exit(1)
 
     app_builder = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN)
+    
     if HTTP_PROXY:
-        logger.info(f"Usando proxy: {HTTP_PROXY}")
-        app_builder.proxy(HTTP_PROXY).get_updates_proxy(HTTP_PROXY)
+        try:
+            logger.info(f"[PROXY] Configurando proxy: {HTTP_PROXY}")
+            # Cortesia para evitar erros de conexão se o proxy for inválido
+            app_builder.proxy(HTTP_PROXY).get_updates_proxy(HTTP_PROXY)
+        except Exception as e:
+            logger.error(f"[PROXY] Erro ao configurar proxy: {e}")
+    else:
+        logger.info("[PROXY] Nenhum proxy configurado. Usando conexão direta.")
         
     app = app_builder.build()
 
-    logger.info("Bot iniciado com sucesso")
+    logger.info("Bot construído com sucesso. Registrando handlers...")
 
     # Handlers básicos explícitos para garantir resposta (Requisito de Estabilidade)
     from bot.handlers.start import start_command

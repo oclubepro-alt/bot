@@ -40,7 +40,11 @@ TELEGRAM_CHANNEL_ID: str = _require("TELEGRAM_CHANNEL_ID")
 OPENAI_API_KEY: str = _require("OPENAI_API_KEY")
 OPENAI_MODEL: str = os.getenv("OPENAI_MODEL", "gpt-4o-mini").strip()
 OPENAI_BASE_URL: str = os.getenv("OPENAI_BASE_URL", "").strip()
-HTTP_PROXY: str = os.getenv("HTTP_PROXY", "").strip()
+_raw_proxy = os.getenv("HTTP_PROXY", "").strip()
+if _raw_proxy.lower() in ("none", "null", "undefined", ""):
+    HTTP_PROXY = ""
+else:
+    HTTP_PROXY = _raw_proxy
 
 
 _raw_admins = os.getenv("ADMIN_IDS", "").strip()
