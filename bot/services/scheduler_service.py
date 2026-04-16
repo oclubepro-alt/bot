@@ -41,7 +41,7 @@ async def _run_scan(context, limit: int = 10, manual: bool = False, trigger_user
         try:
             await context.bot.send_message(
                 chat_id=trigger_user_id,
-                text="🔎 <b>Iniciando varredura...</b>\nIsso pode levar alguns instantes dependendo da resposta das fontes.",
+                text="🔎 <b>Iniciando varredura (V6.5 Sniper)...</b>\nIsso pode levar alguns instantes dependendo da resposta das fontes.",
                 parse_mode=ParseMode.HTML
             )
         except Exception: pass
