@@ -41,19 +41,29 @@ def clean_price(text: str) -> str | None:
     """Extrai e limpa o formato de preço do texto bruto."""
     if not text:
         return None
+    
     # Remove espaços invisíveis e ruídos
     text = text.replace("\xa0", " ").replace("&nbsp;", " ").strip()
     
-    # Procura formato numérico (ex: 1.299,90 ou 89.90)
-    match = re.search(r"(\d{1,3}(?:[.,]\d{3})*(?:[.,]\d{2}))", text)
+    # Caso 1: Formato JSON-LD puro (ex: 989.1 ou 1099)
+    # Procura um número puro com opcionalmente um ponto e 1-2 casas decimais
+    match_pure = re.match(r"^(\d+(?:\.\d{1,2})?)$", text)
+    if match_pure:
+        val = float(match_pure.group(1))
+        return f"R$ {val:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+    # Caso 2: Formato com texto/símbolo (ex: R$ 1.299,90 ou 89.90)
+    match = re.search(r"(\d{1,3}(?:[.,]\d{3})*(?:[.,]\d{1,2}))", text)
     if match:
         val = match.group(1)
-        # Normaliza para R$ XX,XX
+        # Normaliza: se tem ponto simples tipo "89.9", vira "89,90"
         if "." in val and "," not in val and val.count(".") == 1:
             val = val.replace(".", ",")
+        if "," in val and len(val.split(",")[1]) == 1:
+            val += "0"
         return f"R$ {val}"
     
-    # Procura inteiro simples
+    # Caso 3: Inteiro simples
     match_int = re.search(r"(?:R\$|USD)\s*(\d+)", text, re.IGNORECASE)
     if match_int:
         return f"R$ {match_int.group(1)},00"
