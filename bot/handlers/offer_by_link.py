@@ -126,7 +126,7 @@ async def receber_link_produto(update: Update, context: ContextTypes.DEFAULT_TYP
         await update.message.reply_text(
             f"✅ Nome: <b>{nome_extraido}</b>\n"
             f"🏪 Loja: <b>{dados.get('loja', 'Desconhecida')}</b>\n"
-            f"⚠️ <i>(Debug V3.8.1)</i>\n\n"
+            f"⚠️ <i>(Debug V3.9)</i>\n\n"
             "📝 Não consegui extrair o preço automaticamente. Por favor, digite o <b>preço</b> (ex: R$ 49,90):",
             parse_mode=ParseMode.HTML
         )
