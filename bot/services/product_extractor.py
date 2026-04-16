@@ -605,13 +605,13 @@ def extract_product_data(url: str) -> dict:
             pt = soup.select_one("#productTitle")
             if pt:
                 data["nome"] = pt.get_text(strip=True)
-        logger.info(f"[EXTRACTOR] Nome           : {'OK → ' + data['nome'][:50] if data['nome'] else 'FALHA'}")
+        logger.info(f"[EXTRACTOR] Nome detectado: {data['nome'][:50] if data['nome'] else 'NÃO ENCONTRADO'}")
 
         # --- DESCRIÇÃO (genérica) ---
         data["descricao"] = _extract_generic_desc(soup)
 
         # --- PREÇO e IMAGEM por loja ---
-        store_data: dict = {}
+        store_data = {}
         if store_key == "amazon":
             store_data = _extract_amazon(soup, final_url)
         elif store_key == "mercadolivre":
@@ -629,14 +629,13 @@ def extract_product_data(url: str) -> dict:
 
         # Aplica resultados específicos (prioridade sobre genérico)
         if store_data.get("preco"):
-            price = clean_price(store_data["preco"]) or store_data["preco"]
-            data["preco"] = price
+            data["preco"] = clean_price(store_data["preco"]) or store_data["preco"]
         if store_data.get("preco_original"):
-            orig = clean_price(store_data["preco_original"]) or store_data["preco_original"]
-            data["preco_original"] = orig
+            data["preco_original"] = clean_price(store_data["preco_original"]) or store_data["preco_original"]
         if store_data.get("imagem"):
             data["imagem"] = store_data["imagem"]
         if store_data.get("nome"):
+            # Apenas se não achou nome no genérico ou se o da loja for mais específico
             data["nome"] = store_data["nome"]
 
         # Fallback preço genérico se loja específica falhou
@@ -645,12 +644,16 @@ def extract_product_data(url: str) -> dict:
 
         # Fallback imagem genérica se loja específica falhou
         if not data["imagem"]:
-            data["imagem"] = _extract_generic_image(soup, final_url)
+            # Tenta tags meta adicionais
+            img_fb = _meta(soup, "og:image:secure_url", "og:image", "twitter:image", "image")
+            if img_fb:
+                data["imagem"] = urljoin(final_url, img_fb)
 
         logger.info(
-            f"[EXTRACTOR] Preço          : {'OK → ' + data['preco'] if data['preco'] else 'FALHA'}\n"
-            f"[EXTRACTOR] Imagem         : {'OK' if data['imagem'] else 'FALHA'}\n"
-            f"[EXTRACTOR] ────────────────────────────────────────────────"
+            f"[EXTRACTOR] Resultado Final:\n"
+            f"  - Preço  : {data['preco'] or 'N/A'}\n"
+            f"  - Imagem : {data['imagem'][:60] + '...' if data['imagem'] else 'N/A'}\n"
+            f"  - Loja   : {data['loja']}\n"
         )
 
     except requests.Timeout:

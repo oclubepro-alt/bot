@@ -33,6 +33,7 @@ _IDS: dict[str, str] = {
     "mercadolivre": os.getenv("AFFILIATE_ID_ML", "").strip(),
     "magalu":       os.getenv("AFFILIATE_ID_MAGALU", "").strip(),
     "netshoes":     os.getenv("AFFILIATE_ID_NETSHOES", "").strip(),
+    "shopee":       os.getenv("AFFILIATE_ID_SHOPEE", "").strip(),
 }
 
 
@@ -139,6 +140,21 @@ def _inject_netshoes(url: str, ns_id: str) -> str:
     return result
 
 
+def _inject_shopee(url: str, shopee_id: str) -> str:
+    """
+    Shopee: injeta parâmetros de rastreamento.
+    Nota: Shopee geralmente requer o portal de afiliados para links curtos, 
+    mas parâmetros de rastreamento ajudam na atribuição de links diretos.
+    """
+    params = {
+        "utm_campaign": shopee_id,
+        "utm_source": "telegram_bot"
+    }
+    result = _append_params(url, params)
+    logger.info(f"[INJECTOR][Shopee] Parâmetros injetados (id='{shopee_id}').")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Ponto de entrada público
 # ---------------------------------------------------------------------------
@@ -151,15 +167,6 @@ def inject_affiliate(
 ) -> str | None:
     """
     Aplica a transformação de afiliado conforme a loja.
-
-    Args:
-        url:          URL resolvida do produto.
-        store_key:    Chave da loja ('amazon', 'mercadolivre', 'magalu', 'netshoes').
-        override_ids: Sobrescreve os IDs padrão do .env (útil para testes).
-
-    Returns:
-        URL com parâmetros de afiliado injetados, ou None se loja não suportada
-        ou ID não configurado.
     """
     ids = {**_IDS, **(override_ids or {})}
 
@@ -169,31 +176,28 @@ def inject_affiliate(
 
     if store_key == "amazon":
         tag = ids.get("amazon", "")
-        if not tag:
-            logger.info("[INJECTOR][Amazon] AFFILIATE_ID_AMAZON não configurado.")
-            return None
+        if not tag: return None
         return _inject_amazon(url, tag)
 
     if store_key == "mercadolivre":
         ml_id = ids.get("mercadolivre", "")
-        if not ml_id:
-            logger.info("[INJECTOR][ML] AFFILIATE_ID_ML não configurado.")
-            return None
+        if not ml_id: return None
         return _inject_mercadolivre(url, ml_id)
 
     if store_key == "magalu":
         mgl_id = ids.get("magalu", "")
-        if not mgl_id:
-            logger.info("[INJECTOR][Magalu] AFFILIATE_ID_MAGALU não configurado.")
-            return None
+        if not mgl_id: return None
         return _inject_magalu(url, mgl_id)
 
     if store_key == "netshoes":
         ns_id = ids.get("netshoes", "")
-        if not ns_id:
-            logger.info("[INJECTOR][Netshoes] AFFILIATE_ID_NETSHOES não configurado.")
-            return None
+        if not ns_id: return None
         return _inject_netshoes(url, ns_id)
+
+    if store_key == "shopee":
+        shp_id = ids.get("shopee", "")
+        if not shp_id: return None
+        return _inject_shopee(url, shp_id)
 
     logger.info(f"[INJECTOR] Loja '{store_key}' sem regra de afiliado.")
     return None

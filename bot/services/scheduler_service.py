@@ -32,26 +32,28 @@ async def _run_scan(context, limit: int = 10, manual: bool = False) -> int:
     """
     Job executado pelo scheduler ou manualmente via botão: varre fontes, extrai dados,
     gera copy e publica ou envia prévias.
-    Retorna o total de itens publicados/enviados.
+    Retorna o total de itens processados com sucesso.
     """
-    logger.info(f"[SCHEDULER] Iniciando varredura das fontes (limite: {limit})...")
+    logger.info(f"[SCHEDULER] Iniciando varredura das fontes (limite pedido: {limit})...")
     
-    if not ADMIN_IDS:
+    if not ADMIN_IDS and not manual:
         logger.warning("[SCHEDULER] ADMIN_IDS vazio — ninguém receberá prévias.")
-        if not manual: return 0
+        return 0
 
-    new_items = scan_sources()
+    all_found_items = scan_sources()
 
-    if not new_items:
+    if not all_found_items:
         logger.info("[SCHEDULER] Nenhum item novo encontrado nesta rodada.")
         return 0
 
-    # Limita rigorosamente ao pedido (10 itens)
-    items_to_process = new_items[:limit]
-    logger.info(f"[SCHEDULER] Processando {len(items_to_process)} novos itens.")
+    logger.info(f"[SCHEDULER] {len(all_found_items)} novos itens encontrados. Aplicando limite de {limit} e processando.")
 
     count = 0
-    for item in items_to_process:
+    for item in all_found_items:
+        if count >= limit:
+            logger.info(f"[SCHEDULER] Limite de {limit} itens atingido. Parando loop.")
+            break
+
         product_url: str = item["url"]
         source_name: str = item.get("source_name", "—")
 
@@ -59,13 +61,15 @@ async def _run_scan(context, limit: int = 10, manual: bool = False) -> int:
             continue
 
         try:
-            logger.info(f"[SCHEDULER] [{count+1}/{len(items_to_process)}] Extraindo: {product_url[:60]}")
+            logger.info(f"--- [PROCESSO {count+1}/{limit}] ---")
+            logger.info(f"[SCHEDULER] Extraindo: {product_url[:60]}")
             
-            # Resolve URL e extrai dados
+            # Resolve URL e extrai dados (Problem 2)
             resolved_url = resolve_final_url(product_url)
             dados = extract_product_data(resolved_url)
 
-            if not dados.get("nome"):
+            if not dados or not dados.get("nome"):
+                logger.warning(f"[SCHEDULER] Falha ao extrair nome do produto. Ignorando: {product_url[:60]}")
                 mark_seen(product_url)
                 continue
 
@@ -78,7 +82,7 @@ async def _run_scan(context, limit: int = 10, manual: bool = False) -> int:
             )
             final_link = shorten_for_publication(affiliate_url)
 
-            # 2. Geração de Copy
+            # 2. Geração de Copy IA
             copy_ia = await generate_caption(
                 nome=dados["nome"], 
                 preco=dados.get("preco", "Consulte"), 
@@ -86,61 +90,76 @@ async def _run_scan(context, limit: int = 10, manual: bool = False) -> int:
                 descricao=dados.get("descricao")
             )
 
-            mensagem = build_offer_message(
-                nome=dados["nome"], 
-                preco=dados.get("preco", "Consulte"), 
-                loja=dados.get("loja", "Loja"), 
-                link=final_link, 
-                legenda_ia=copy_ia
-            )
-
             # 3. DESTINO: Se manual ou AUTO_APPROVE, vai direto pro canal (RESOLVE PROBLEMA 3)
             if manual or AUTO_APPROVE:
-                logger.info(f"[SCHEDULER] Publicando direto no canal: '{dados['nome'][:40]}'")
-                # Formata para o router (Telegram/WhatsApp)
-                copies = {"telegram": mensagem, "whatsapp": mensagem}
+                logger.info(f"[SCHEDULER] Publicando direto no CANAL: '{dados['nome'][:40]}'")
+                
+                # Monta copies multi-plataforma
+                from bot.services.copy_builder import build_copy
+                copies = build_copy(
+                    nome=dados["nome"],
+                    preco=dados.get("preco", "Consulte"),
+                    loja=dados.get("loja", "Loja"),
+                    store_key=store_key,
+                    short_url=final_link,
+                    legenda_ia=copy_ia,
+                    preco_original=dados.get("preco_original")
+                )
+
+                # Publicar (Router garante Telegram canal + WhatsApp)
                 await publish_offer(context.bot, copies, dados.get("imagem"))
                 mark_seen(product_url)
                 count += 1
                 
                 # SLEEP PARA EVITAR RATE LIMIT (Requisito Problema 3)
-                if count < len(items_to_process):
-                    await asyncio.sleep(3) 
-                continue
+                logger.info("[SCHEDULER] Aguardando 3s para evitar rate limit...")
+                await asyncio.sleep(3) 
 
-            # Modo de Aprovação Manual (Padrão do Scheduler)
-            offer_id = uuid.uuid4().hex[:12]
-            if "pending_offers" not in context.bot_data:
-                context.bot_data["pending_offers"] = {}
+            else:
+                # Modo de Aprovação Manual (Padrão do Scheduler Normal)
+                offer_id = uuid.uuid4().hex[:12]
+                if "pending_offers" not in context.bot_data:
+                    context.bot_data["pending_offers"] = {}
 
-            context.bot_data["pending_offers"][offer_id] = {
-                "product_url": product_url,
-                "mensagem": mensagem,
-                "imagem": dados.get("imagem"),
-                "nome": dados["nome"],
-            }
+                # Monta msg simples para prévia
+                mensagem_prev = build_offer_message(
+                    nome=dados["nome"], 
+                    preco=dados.get("preco", "Consulte"), 
+                    loja=dados.get("loja", "Loja"), 
+                    link=final_link, 
+                    legenda_ia=copy_ia
+                )
 
-            keyboard = InlineKeyboardMarkup([
-                [InlineKeyboardButton("✅ Aprovar", callback_data=f"review_aprovar:{offer_id}"),
-                 InlineKeyboardButton("❌ Rejeitar", callback_data=f"review_rejeitar:{offer_id}")]
-            ])
+                context.bot_data["pending_offers"][offer_id] = {
+                    "product_url": product_url,
+                    "mensagem": mensagem_prev,
+                    "imagem": dados.get("imagem"),
+                    "nome": dados["nome"],
+                }
 
-            preview_text = f"🔍 <b>Oferta Automática ({source_name})</b>\n\n" + build_preview_message(mensagem)
+                keyboard = InlineKeyboardMarkup([
+                    [InlineKeyboardButton("✅ Aprovar", callback_data=f"review_aprovar:{offer_id}"),
+                     InlineKeyboardButton("❌ Rejeitar", callback_data=f"review_rejeitar:{offer_id}")]
+                ])
 
-            for admin_id in ADMIN_IDS:
-                try:
-                    if dados.get("imagem"):
-                        await context.bot.send_photo(chat_id=admin_id, photo=dados["imagem"], caption=preview_text, parse_mode=ParseMode.HTML, reply_markup=keyboard)
-                    else:
-                        await context.bot.send_message(chat_id=admin_id, text=preview_text, parse_mode=ParseMode.HTML, reply_markup=keyboard)
-                except Exception: pass
-            
-            count += 1
-            await asyncio.sleep(1) # Delay menor para prévias aos admins
+                preview_text = f"🔍 <b>Oferta Automática ({source_name})</b>\n\n" + build_preview_message(mensagem_prev)
+
+                for admin_id in ADMIN_IDS:
+                    try:
+                        if dados.get("imagem"):
+                            await context.bot.send_photo(chat_id=admin_id, photo=dados["imagem"], caption=preview_text, parse_mode=ParseMode.HTML, reply_markup=keyboard)
+                        else:
+                            await context.bot.send_message(chat_id=admin_id, text=preview_text, parse_mode=ParseMode.HTML, reply_markup=keyboard)
+                    except Exception: pass
+                
+                mark_seen(product_url) # Marca como visto após enviar prévia
+                count += 1
+                await asyncio.sleep(1) 
 
         except Exception as e:
-            logger.error(f"[SCHEDULER] Falha ao processar item {product_url}: {e}")
+            logger.error(f"[SCHEDULER] Falha crítica ao processar item {product_url}: {e}", exc_info=True)
 
+    logger.info(f"[SCHEDULER] Varredura finalizada. Total processado: {count}/{limit}")
     return count
 
 
