@@ -287,7 +287,7 @@ async def _gerar_e_enviar_previa(update: Update, context: ContextTypes.DEFAULT_T
         preco_display = f"💰 <b>{preco}</b>"
 
     preview_text = (
-        f"🔍 <b>PRÉVIA — Confirme antes de publicar</b>\n\n"
+        f"💎 <b>PRÉVIA — Confirme antes de publicar</b>\n\n"
         f"🏷️ <b>{titulo}</b>\n"
         f"{preco_display}\n"
         f"🏪 Loja: <b>{dados.get('store', store_key)}</b>\n"
@@ -386,32 +386,17 @@ async def confirmar_envio_link(update: Update, context: ContextTypes.DEFAULT_TYP
         logger.info(f"[OFERTA_LINK] Chamando publish_offer (imagem={'sim' if img_url else 'não'})...")
         await publish_offer(query.bot, copies, img_url)
 
-        msg_sucesso = "🎉 <b>Oferta publicada no canal com sucesso!</b>"
+        msg_sucesso = "✅ <b>Publicado com sucesso no canal!</b>"
+        await query.message.reply_text(
+            msg_sucesso,
+            parse_mode=ParseMode.HTML,
+            reply_markup=back_keyboard,
+        )
         try:
-            if img_url:
-                # Se era uma foto com legenda, deleta e manda aviso limpo
-                await query.message.delete()
-                await query.bot.send_message(
-                    chat_id=query.message.chat_id,
-                    text=msg_sucesso,
-                    parse_mode=ParseMode.HTML,
-                    reply_markup=back_keyboard,
-                )
-            else:
-                # Se era texto, apenas edita
-                await query.edit_message_text(
-                    msg_sucesso,
-                    parse_mode=ParseMode.HTML,
-                    reply_markup=back_keyboard,
-                )
-        except Exception:
-            # Fallback se a mensagem original já sumiu
-            await query.bot.send_message(
-                chat_id=query.message.chat_id,
-                text=msg_sucesso,
-                parse_mode=ParseMode.HTML,
-                reply_markup=back_keyboard,
-            )
+            await query.message.delete()
+        except:
+            pass
+
 
     except Exception as e:
         logger.error(f"[OFERTA_LINK] Erro ao publicar: {e}")

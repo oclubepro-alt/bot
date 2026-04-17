@@ -30,7 +30,7 @@ async def publish_to_telegram(bot: Bot, message_text: str, photo_url_or_id: str 
 
     for chat_id in canais_destino:
         try:
-            logger.info(f"[PUBLISHER_TELEGRAM] Tentando enviar para: {chat_id}")
+            logger.info(f"[PUBLISHER_TELEGRAM] 📡 DISPARANDO PARA: {chat_id}")
             
             # Tenta enviar com foto se houver URL
             if photo_url_or_id:
