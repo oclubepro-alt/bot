@@ -17,12 +17,10 @@ async def publish_offer(bot: Bot, copies: str | dict, photo: str | None = None) 
     if isinstance(copies, str):
         copies = {"telegram": copies, "whatsapp": None}
 
-    # 1. Aplicação Final de Link de Afiliado (Rede de Segurança Sniper)
-    if copies.get("telegram"):
-        copies["telegram"] = aplicar_link_afiliado(copies["telegram"])
-    
-    if copies.get("whatsapp"):
-        copies["whatsapp"] = aplicar_link_afiliado(copies["whatsapp"])
+    # 1. Normalização (Rede de Segurança Sniper)
+    # Removido aplicar_link_afiliado aqui pois ele pode quebrar tags HTML <a href>
+    # Os handlers (offer.py / offer_by_link.py) já cuidam disso.
+    logger.info(f"[PUBLISHER_ROUTER] Preparando envio...")
 
     # 2. Publica no Telegram
     text_telegram = copies.get("telegram")
