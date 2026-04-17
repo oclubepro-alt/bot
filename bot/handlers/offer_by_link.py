@@ -367,8 +367,8 @@ async def confirmar_envio_link(update: Update, context: ContextTypes.DEFAULT_TYP
         await query.answer()
         return CONFIRMAR_LINK
 
-    await query.answer("📤 Publicando no canal...")
-    logger.info(f"[OFERTA_LINK] PUBLICACAO_CONFIRMADA por admin {query.from_user.id}.")
+    # Loga o início, mas não responde a query ainda para não bloquear a resposta final de sucesso
+    logger.info(f"[OFERTA_LINK] Iniciando processamento de publicação para admin {query.from_user.id}...")
 
     copies  = context.user_data.get("copies")
     img_url = context.user_data.get("dados_produto", {}).get("imagem")
@@ -380,6 +380,7 @@ async def confirmar_envio_link(update: Update, context: ContextTypes.DEFAULT_TYP
 
     try:
         from bot.services.publisher_router import publish_offer
+        logger.info(f"[OFERTA_LINK] Chamando publish_offer (imagem={'sim' if img_url else 'não'})...")
         await publish_offer(query.bot, copies, img_url)
 
         # Resposta de confirmação solicitada pelo usuário
