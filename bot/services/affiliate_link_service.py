@@ -1,10 +1,8 @@
 """
 affiliate_link_service.py — Serviço centralizado de geração de links de afiliado.
 
-Lê IDs do .env, detecta a loja pela URL e injeta os parâmetros corretos.
-Nunca quebra o fluxo: se a loja não for suportada, retorna URL original.
-
-Logs obrigatórios em cada etapa.
+Injeção via urllib.parse (à prova de falha).
+Logs obrigatórios: LINK_AFILIADO_GERADO, LOJA_NAO_SUPORTADA, LOJA_NAO_CONFIGURADA.
 """
 import logging
 import os
@@ -17,7 +15,7 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Carregamento de IDs — com validação
+# IDs de afiliado lidos do .env — com validação no startup
 # ---------------------------------------------------------------------------
 
 _AFFILIATE_IDS = {
@@ -28,12 +26,11 @@ _AFFILIATE_IDS = {
     "shopee":       os.getenv("AFFILIATE_ID_SHOPEE", "").strip(),
 }
 
-# Log de configuração no startup
 for store, aid in _AFFILIATE_IDS.items():
     if aid:
-        logger.info(f"[AFFILIATE_SERVICE] ✅ {store}: configurado (ID={aid[:6]}...)")
+        logger.info(f"[AFFILIATE_SERVICE] ✅ {store}: ID configurado ({aid[:8]}...)")
     else:
-        logger.warning(f"[AFFILIATE_SERVICE] ⚠️  {store}: AFFILIATE_ID não configurado no .env")
+        logger.warning(f"[AFFILIATE_SERVICE] ⚠️  {store}: AFFILIATE_ID ausente no .env")
 
 
 # ---------------------------------------------------------------------------
@@ -41,24 +38,23 @@ for store, aid in _AFFILIATE_IDS.items():
 # ---------------------------------------------------------------------------
 
 _STORE_DOMAINS = [
-    ("amazon.com.br",         "amazon"),
-    ("amazon.com",            "amazon"),
-    ("amzn.to",               "amazon"),
-    ("amzn.com",              "amazon"),
-    ("mercadolivre.com.br",   "mercadolivre"),
-    ("mercadolibre.com",      "mercadolivre"),
-    ("produto.mercadolivre",  "mercadolivre"),
-    ("ml.tidd.ly",            "mercadolivre"),
-    ("magazineluiza.com.br",  "magalu"),
-    ("magalu.com",            "magalu"),
-    ("netshoes.com.br",       "netshoes"),
-    ("shopee.com.br",         "shopee"),
-    ("shp.ee",                "shopee"),
+    ("amazon.com.br",        "amazon"),
+    ("amazon.com",           "amazon"),
+    ("amzn.to",              "amazon"),
+    ("amzn.com",             "amazon"),
+    ("mercadolivre.com.br",  "mercadolivre"),
+    ("mercadolibre.com",     "mercadolivre"),
+    ("produto.mercadolivre", "mercadolivre"),
+    ("ml.tidd.ly",           "mercadolivre"),
+    ("magazineluiza.com.br", "magalu"),
+    ("magalu.com",           "magalu"),
+    ("netshoes.com.br",      "netshoes"),
+    ("shopee.com.br",        "shopee"),
+    ("shp.ee",               "shopee"),
 ]
 
 
 def _detectar_loja(url: str) -> str:
-    """Retorna a store_key pela URL."""
     url_lower = url.lower()
     for fragment, key in _STORE_DOMAINS:
         if fragment in url_lower:
@@ -67,55 +63,67 @@ def _detectar_loja(url: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Injetores por loja
+# Injetores por loja — usando urllib.parse
 # ---------------------------------------------------------------------------
 
 def _injetar_amazon(url: str, tag: str) -> str:
-    """Substitui ou adiciona tag= na URL da Amazon."""
-    # Remove tag existente (de qualquer afiliado)
-    url = re.sub(r"[?&]tag=[^&]*", "", url)
-    url = re.sub(r"\?&", "?", url).rstrip("?&")
-    sep = "&" if "?" in url else "?"
-    resultado = f"{url}{sep}tag={tag}"
-    logger.info(f"[AFFILIATE_SERVICE] Amazon → tag={tag} injetada")
+    """
+    Substitui ou adiciona tag= usando urllib.parse.
+    Garante que a tag correta sempre esteja presente.
+    """
+    parsed = urlparse(url)
+    params = parse_qs(parsed.query, keep_blank_values=True)
+    params["tag"] = [tag]  # Substitui qualquer tag existente
+    nova_query = urlencode(params, doseq=True)
+    resultado = urlunparse(parsed._replace(query=nova_query))
+    logger.info(f"[AFFILIATE_SERVICE] Amazon | tag={tag} | URL={resultado[:100]}")
     return resultado
 
 
 def _injetar_mercadolivre(url: str, id_ml: str) -> str:
     """Adiciona matt_from= para o programa de afiliados do ML."""
-    url = re.sub(r"[?&](matt_from|matt_tool|matt_word)=[^&]*", "", url)
-    url = re.sub(r"\?&", "?", url).rstrip("?&")
-    sep = "&" if "?" in url else "?"
-    resultado = f"{url}{sep}matt_from={id_ml}"
-    logger.info(f"[AFFILIATE_SERVICE] Mercado Livre → matt_from={id_ml} injetado")
+    parsed = urlparse(url)
+    params = parse_qs(parsed.query, keep_blank_values=True)
+    # Remove parâmetros anteriores do ML
+    for key in list(params.keys()):
+        if key.startswith("matt_"):
+            del params[key]
+    params["matt_from"] = [id_ml]
+    nova_query = urlencode(params, doseq=True)
+    resultado = urlunparse(parsed._replace(query=nova_query))
+    logger.info(f"[AFFILIATE_SERVICE] Mercado Livre | matt_from={id_ml} | URL={resultado[:100]}")
     return resultado
 
 
 def _injetar_magalu(url: str, id_magalu: str) -> str:
     """Adiciona utm_medium=affiliate&utm_source= para Magalu."""
-    url = re.sub(r"[?&]utm_(source|medium|campaign)=[^&]*", "", url)
-    url = re.sub(r"\?&", "?", url).rstrip("?&")
-    sep = "&" if "?" in url else "?"
-    resultado = f"{url}{sep}utm_medium=affiliate&utm_source={id_magalu}"
-    logger.info(f"[AFFILIATE_SERVICE] Magalu → utm_source={id_magalu} injetado")
+    parsed = urlparse(url)
+    params = parse_qs(parsed.query, keep_blank_values=True)
+    params["utm_medium"] = ["affiliate"]
+    params["utm_source"]  = [id_magalu]
+    nova_query = urlencode(params, doseq=True)
+    resultado = urlunparse(parsed._replace(query=nova_query))
+    logger.info(f"[AFFILIATE_SERVICE] Magalu | utm_source={id_magalu} | URL={resultado[:100]}")
     return resultado
 
 
 def _injetar_shopee(url: str, shopee_id: str) -> str:
     """Adiciona af_id= para Shopee."""
-    url = re.sub(r"[?&]af_id=[^&]*", "", url)
-    sep = "&" if "?" in url else "?"
-    resultado = f"{url}{sep}af_id={shopee_id}"
-    logger.info(f"[AFFILIATE_SERVICE] Shopee → af_id={shopee_id} injetado")
+    parsed = urlparse(url)
+    params = parse_qs(parsed.query, keep_blank_values=True)
+    params["af_id"] = [shopee_id]
+    nova_query = urlencode(params, doseq=True)
+    resultado = urlunparse(parsed._replace(query=nova_query))
+    logger.info(f"[AFFILIATE_SERVICE] Shopee | af_id={shopee_id} | URL={resultado[:100]}")
     return resultado
 
 
 def _injetar_netshoes(url: str, ns_id: str) -> str:
-    """Netshoes via Rakuten LinkSynergy (suporta caracteres especiais no ID)."""
+    """Netshoes via Rakuten. O * no ID é URL-encoded como %2A."""
     encoded_url = quote(url, safe="")
-    encoded_id = quote(ns_id, safe="")
+    encoded_id  = quote(ns_id, safe="")  # Codifica o * → %2A
     resultado = f"https://click.linksynergy.com/deeplink?id={encoded_id}&mid=43984&murl={encoded_url}"
-    logger.info(f"[AFFILIATE_SERVICE] Netshoes → gateway Rakuten construído")
+    logger.info(f"[AFFILIATE_SERVICE] Netshoes | gateway Rakuten | ID={ns_id[:8]}...")
     return resultado
 
 
@@ -125,50 +133,61 @@ def _injetar_netshoes(url: str, ns_id: str) -> str:
 
 def injetar_link_afiliado(url: str, store_key: str | None = None) -> str:
     """
-    Função central de injeção de afiliado.
-    
+    Injeta o link de afiliado correto por loja.
+
+    IMPORTANTE: Deve ser chamada DEPOIS de resolve_url(), nunca antes.
+
     Args:
-        url:        URL do produto (já resolvida/final).
-        store_key:  Loja detectada (opcional — será detectado automaticamente se ausente).
-    
+        url:        URL final/resolvida do produto.
+        store_key:  Loja (detectada automaticamente se None).
+
     Returns:
-        URL com parâmetros de afiliado injetados.
-        Se a loja não for suportada, retorna a URL original sem erro.
+        URL com parâmetros de afiliado corretos.
+        Se loja não suportada: retorna URL original sem erro.
     """
     if not url or not isinstance(url, str):
-        logger.warning("[AFFILIATE_SERVICE] ERRO_GERANDO_LINK_AFILIADO: URL inválida ou vazia.")
-        return url
+        logger.warning("[AFFILIATE_SERVICE] ERRO_GERANDO_LINK_AFILIADO: URL inválida.")
+        return url or ""
 
-    # Limpeza preventiva de parâmetros de rastreio de terceiros
-    url = re.sub(r"[?&](fbclid|gclid|aff_id|clickid|ref)=[^&]*", "", url)
+    # Limpeza preventiva de rastreadores de terceiros
+    for param in ["fbclid", "gclid", "aff_id", "clickid"]:
+        url = re.sub(rf"[?&]{param}=[^&]*", "", url)
     url = re.sub(r"\?&", "?", url).rstrip("?&")
 
     if not store_key:
         store_key = _detectar_loja(url)
 
-    logger.info(f"[AFFILIATE_SERVICE] LOJA_DETECTADA={store_key} | URL={url[:80]}")
+    logger.info(f"[AFFILIATE_SERVICE] Iniciando injeção | loja={store_key} | url={url[:80]}")
 
     affiliate_id = _AFFILIATE_IDS.get(store_key, "").strip()
 
     if not affiliate_id:
         if store_key != "other":
-            logger.warning(f"[AFFILIATE_SERVICE] LOJA_NAO_CONFIGURADA: {store_key} — ID ausente no .env")
+            logger.warning(
+                f"[AFFILIATE_SERVICE] LOJA_NAO_CONFIGURADA: {store_key} "
+                f"— verifique AFFILIATE_ID_{store_key.upper()} no .env"
+            )
         else:
-            logger.info(f"[AFFILIATE_SERVICE] LOJA_NAO_SUPORTADA para URL: {url[:60]}")
+            logger.info(f"[AFFILIATE_SERVICE] LOJA_NAO_SUPORTADA | url={url[:60]}")
         return url
 
     try:
         if store_key == "amazon":
-            return _injetar_amazon(url, affiliate_id)
-        if store_key == "mercadolivre":
-            return _injetar_mercadolivre(url, affiliate_id)
-        if store_key == "magalu":
-            return _injetar_magalu(url, affiliate_id)
-        if store_key == "shopee":
-            return _injetar_shopee(url, affiliate_id)
-        if store_key == "netshoes":
-            return _injetar_netshoes(url, affiliate_id)
-    except Exception as e:
-        logger.error(f"[AFFILIATE_SERVICE] ERRO_GERANDO_LINK_AFILIADO: {e} | loja={store_key} | url={url[:60]}")
+            resultado = _injetar_amazon(url, affiliate_id)
+        elif store_key == "mercadolivre":
+            resultado = _injetar_mercadolivre(url, affiliate_id)
+        elif store_key == "magalu":
+            resultado = _injetar_magalu(url, affiliate_id)
+        elif store_key == "shopee":
+            resultado = _injetar_shopee(url, affiliate_id)
+        elif store_key == "netshoes":
+            resultado = _injetar_netshoes(url, affiliate_id)
+        else:
+            return url
 
-    return url
+        print(f"[LINK_AFILIADO_GERADO] Loja: {store_key} | URL: {resultado}")
+        return resultado
+
+    except Exception as e:
+        logger.error(f"[AFFILIATE_SERVICE] ERRO_GERANDO_LINK_AFILIADO: {e} | loja={store_key}")
+        return url

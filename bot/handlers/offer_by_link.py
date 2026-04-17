@@ -294,14 +294,21 @@ async def _gerar_e_enviar_previa(update: Update, context: ContextTypes.DEFAULT_T
     context.user_data["copy_canal"] = copy_canal
 
     # ── Monta a mensagem de PRÉVIA para o admin ──────────────────────────────
-    preco_orig_txt = f"\n<s>{preco_original}</s>" if preco_original else ""
+    # Bloco de preço: mostra "De X por Y" se hover preço original
+    if preco_original and preco_original != preco:
+        preco_display = f"💰 <b>De <s>{preco_original}</s> por <b>{preco}</b>"
+    else:
+        preco_display = f"💰 <b>{preco}</b>"
+
     preview_text = (
         f"🔍 <b>PRÉVIA — Confirme antes de publicar</b>\n\n"
         f"🏷️ <b>{titulo}</b>\n"
-        f"💰 <b>{preco}</b>{preco_orig_txt}\n"
+        f"{preco_display}\n"
         f"🏪 Loja: <b>{dados.get('store', store_key)}</b>\n"
-        f"🔗 Link: <code>{short_url}</code>\n"
         f"📡 Método: <i>{source_method}</i>\n\n"
+        f"🔗 <b>Link de afiliado:</b>\n"
+        f"<code>{affiliate_url}</code>\n\n"
+        f"🔗 <b>Link encurtado:</b> <code>{short_url}</code>\n\n"
         f"━━━━━━━━━━━━━━━\n"
         f"<b>Texto que será publicado no canal:</b>\n\n"
         f"{copy_canal}"
