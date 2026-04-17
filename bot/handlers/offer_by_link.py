@@ -296,7 +296,7 @@ async def _gerar_e_enviar_previa(update: Update, context: ContextTypes.DEFAULT_T
     # ── Monta a mensagem de PRÉVIA para o admin ──────────────────────────────
     # Bloco de preço: mostra "De X por Y" se hover preço original
     if preco_original and preco_original != preco:
-        preco_display = f"💰 <b>De <s>{preco_original}</s> por <b>{preco}</b>"
+        preco_display = f"💰 <b>De <s>{preco_original}</s> por {preco}</b>"
     else:
         preco_display = f"💰 <b>{preco}</b>"
 

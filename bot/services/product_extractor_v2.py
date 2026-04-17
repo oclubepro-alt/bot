@@ -94,6 +94,20 @@ def _choose_lower_price(p1: str | None, p2: str | None) -> tuple[str | None, str
 # Extração de preço por loja — seletores com prioridade por tipo
 # ---------------------------------------------------------------------------
 
+def _is_valid_price_tag(tag) -> bool:
+    """Verifica se a tag não pertence a um preço unitário (ex: R$ 0,26 / unidade)."""
+    if not tag: return False
+    # Pega o texto da tag e do elemento pai para garantir contexto
+    text_context = ""
+    if tag.parent:
+        text_context += tag.parent.get_text(strip=True).lower()
+    text_context += " " + tag.get_text(strip=True).lower()
+    
+    # Palavras-chave que indicam preço unitário
+    unit_keywords = ["unidade", "contagem", "/", "cada", " ml", " kg", " g", " l"]
+    return not any(k in text_context for k in unit_keywords)
+
+
 def _extract_price_amazon(soup: BeautifulSoup) -> tuple[str | None, str | None]:
     """Amazon: promocional < original."""
     preco_promo = None
@@ -109,23 +123,28 @@ def _extract_price_amazon(soup: BeautifulSoup) -> tuple[str | None, str | None]:
         ".a-price-whole",
     ]
     for sel in promo_selectors:
-        tag = soup.select_one(sel)
-        if tag:
-            preco_promo = tag.get_text(strip=True)
-            if _parse_price_to_float(preco_promo):
-                logger.info(f"[EXTRACTOR_V2] Amazon preço promo via '{sel}': {preco_promo}")
-                break
-            preco_promo = None
+        # Pega todos os matches e filtra os de 'unidade'
+        for tag in soup.select(sel):
+            if _is_valid_price_tag(tag):
+                val = tag.get_text(strip=True)
+                if _parse_price_to_float(val):
+                    preco_promo = val
+                    logger.info(f"[EXTRACTOR_V2] Amazon preço promo via '{sel}': {preco_promo}")
+                    break
+        if preco_promo:
+            break
 
     # Preço original/riscado
     orig_selectors = [".a-text-price .a-offscreen", "#listPrice", ".basisPrice .a-offscreen"]
     for sel in orig_selectors:
-        tag = soup.select_one(sel)
-        if tag:
-            preco_orig = tag.get_text(strip=True)
-            if _parse_price_to_float(preco_orig):
-                break
-            preco_orig = None
+        for tag in soup.select(sel):
+             if _is_valid_price_tag(tag):
+                val = tag.get_text(strip=True)
+                if _parse_price_to_float(val):
+                    preco_orig = val
+                    break
+        if preco_orig:
+            break
 
     return _choose_lower_price(preco_promo, preco_orig)
 
