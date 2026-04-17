@@ -4,3 +4,5 @@ python-dotenv
 requests
 httpx
 beautifulsoup4
+lxml
+playwright

@@ -14,16 +14,17 @@ from bot.handlers.offer_by_link import (
     receber_link_afiliado, pular_link_afiliado, confirmar_envio_link,
     btn_editar_oferta, escolher_campo_edicao, salvar_edicao,
     LINK_PRODUTO, PREENCHER_NOME_FALTANTE, PREENCHER_PRECO_FALTANTE, LINK_AFILIADO, CONFIRMAR_LINK,
-    EDITAR_CAMPOS, CB_CONFIRMAR_LINK
+    EDITAR_CAMPOS, CB_CONFIRMAR_LINK, CB_CANCELAR_OFERTA
 )
 from bot.handlers.review_queue import handle_review_callback, handle_review_bulk_callback
 from bot.handlers.monitor import monitor_menu_handler, monitor_action_handler, voltar_menu_handler
 from bot.utils.constants import (
-    CB_PUBLICAR_MANUAL, CB_PUBLICAR_LINK, CB_CANCELAR_MENU, CB_CANCELAR_OFERTA,
+    CB_PUBLICAR_MANUAL, CB_PUBLICAR_LINK, CB_CANCELAR_MENU,
     CB_CONFIRMAR, CB_REVIEW_APPROVE, CB_REVIEW_REJECT,
     CB_MONITOR_MENU, CB_MONITOR_START, CB_MONITOR_STOP, CB_VOLTAR_MENU, CB_GERENCIAR_CANAIS,
     CB_GERENCIAR_WHATS, CB_MENU_PRINCIPAL
 )
+from bot.utils.constants import CB_CANCELAR_OFERTA as CB_CANCELAR_OFERTA_MANUAL
 
 from bot.handlers.channels import (
     menu_canais, btn_add_canal, btn_remover_canal, receber_novo_canal, AGUARDAR_NOVO_CANAL
@@ -76,7 +77,7 @@ def build_main_handler() -> ConversationHandler:
             ],
             CONFIRMAR: [
                 CallbackQueryHandler(confirmar_envio, pattern=f"^{CB_CONFIRMAR}$"),
-                CallbackQueryHandler(confirmar_envio, pattern=f"^{CB_CANCELAR_OFERTA}$"),
+                CallbackQueryHandler(confirmar_envio, pattern=f"^{CB_CANCELAR_OFERTA_MANUAL}$"),
                 CallbackQueryHandler(start_command, pattern=f"^({CB_VOLTAR_MENU}|{CB_MENU_PRINCIPAL})$"),
             ],
             
@@ -90,7 +91,7 @@ def build_main_handler() -> ConversationHandler:
             ],
             CONFIRMAR_LINK: [
                 CallbackQueryHandler(confirmar_envio_link, pattern=f"^{CB_CONFIRMAR_LINK}$"),
-                CallbackQueryHandler(confirmar_envio_link, pattern=f"^{CB_CANCELAR_OFERTA}$"),
+                CallbackQueryHandler(confirmar_envio_link, pattern=f"^{CB_CANCELAR_OFERTA}$"),  # from offer_by_link
                 CallbackQueryHandler(btn_editar_oferta, pattern=f"^editar_oferta$"),
                 CallbackQueryHandler(start_command, pattern=f"^({CB_VOLTAR_MENU}|{CB_MENU_PRINCIPAL})$"),
             ],
