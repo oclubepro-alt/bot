@@ -116,44 +116,30 @@ async def receber_link_produto(update: Update, context: ContextTypes.DEFAULT_TYP
         parse_mode=ParseMode.HTML
     )
 
-    # ── 1. Resolve URL final ─────────────────────────────────────────────────
+    # ── 1. Extração de Produto e Resolução (Playwright) ──────────────────────
+    logger.info(f"[OFERTA_LINK] EXTRACAO_INICIADA para: {original_link[:80]}")
     try:
-        from bot.utils.url_resolver import resolve_url
-        import asyncio
-        final_url = await asyncio.to_thread(resolve_url, original_link)
-        logger.info(f"[OFERTA_LINK] URL_RESOLVIDA: {final_url}")
+        from bot.services.product_extractor_v2 import extract_product_data_v2
+        dados = await extract_product_data_v2(original_link)
+        final_url = dados.get("final_url", original_link)
     except Exception as e:
+        logger.error(f"[OFERTA_LINK] Erro crítico na extração: {e}")
         final_url = original_link
-        logger.warning(f"[OFERTA_LINK] Falha ao resolver URL: {e}. Usando original.")
-
-    context.user_data["final_url"] = final_url
-
-    # ── 2. Detecta loja e injeta afiliado ───────────────────────────────────
+        dados = {
+            "titulo": "Produto", "preco": "Preço não disponível", "imagem": None,
+            "preco_original": None, "source_method": "FALLBACK_SEM_PRECO", "erro": str(e),
+        }
+    
+    # ── 2. Injeta afiliado (baseado na URL final real) ──────────────────────
     from bot.services.affiliate_link_service import injetar_link_afiliado, _detectar_loja
     store_key  = _detectar_loja(final_url)
     affiliate_url = injetar_link_afiliado(final_url, store_key)
 
+    context.user_data["final_url"]     = final_url
     context.user_data["store_key"]     = store_key
     context.user_data["affiliate_url"] = affiliate_url
 
     logger.info(f"[OFERTA_LINK] LINK_AFILIADO_GERADO: {affiliate_url[:100]}")
-
-    # ── 3. Extrai dados do produto (camadas: Playwright → HTML → mínimo) ────
-    logger.info(f"[OFERTA_LINK] EXTRACAO_INICIADA para: {final_url[:80]}")
-    try:
-        from bot.services.product_extractor_v2 import extract_product_data_v2
-        dados = await extract_product_data_v2(final_url)
-    except Exception as e:
-        logger.error(f"[OFERTA_LINK] Erro crítico na extração: {e}")
-        dados = {
-            "titulo": "Produto",
-            "preco": "Preço não disponível",
-            "imagem": None,
-            "preco_original": None,
-            "source_method": "FALLBACK_SEM_PRECO",
-            "erro": str(e),
-        }
-
     logger.info(
         f"[OFERTA_LINK] EXTRACAO_SUCESSO | METODO_USADO={dados.get('source_method')} | "
         f"titulo={dados.get('titulo', '')[:40]} | preco={dados.get('preco')}"

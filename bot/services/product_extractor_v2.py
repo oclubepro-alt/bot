@@ -414,14 +414,19 @@ async def extract_product_data_v2(url: str) -> dict:
         "source_method": "FALLBACK_SEM_PRECO", "erro": None,
     }
 
-    # Resolve URL final
-    try:
-        final_url = await asyncio.to_thread(resolve_url, url)
-        result["final_url"] = final_url
-        logger.info(f"[EXTRACTOR_V2] URL_RESOLVIDA: {final_url[:100]}")
-    except Exception as e:
+    # Resolve URL final: Se for Amazon, não usa `requests` porque a Amazon bloqueia o bot.
+    # O Playwright resolverá o redirecionamento com integridade depois.
+    if "amzn.to" not in url and "amazon.com" not in url:
+        try:
+            final_url = await asyncio.to_thread(resolve_url, url)
+            result["final_url"] = final_url
+            logger.info(f"[EXTRACTOR_V2] URL_RESOLVIDA: {final_url[:100]}")
+        except Exception as e:
+            final_url = url
+            logger.warning(f"[EXTRACTOR_V2] Falha ao resolver URL: {e}")
+    else:
         final_url = url
-        logger.warning(f"[EXTRACTOR_V2] Falha ao resolver URL: {e}")
+        logger.info(f"[EXTRACTOR_V2] URL amazon será resolvida no Playwright: {final_url}")
 
     # Detecta loja
     store_display, store_key = detect_store(final_url)
