@@ -343,16 +343,26 @@ def _extract_from_soup(soup: BeautifulSoup, base_url: str, store_key: str = "oth
 async def _extract_with_playwright(url: str, store_key: str = "other") -> dict | None:
     try:
         from playwright.async_api import async_playwright
+        import os
 
         logger.info(f"[EXTRACTOR_V2] PLAYWRIGHT iniciando | loja={store_key} | url={url[:80]}")
         async with async_playwright() as pw:
+            proxy_config = None
+            http_proxy = os.getenv("HTTP_PROXY", "").strip()
+            if http_proxy and http_proxy.lower() not in ("none", "null", "undefined"):
+                proxy_config = {"server": http_proxy}
+
             browser = await pw.chromium.launch(
                 headless=True,
-                args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"],
+                proxy=proxy_config,
+                args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--disable-gpu", "--single-process"],
             )
             page = await browser.new_page(user_agent=_HEADERS["User-Agent"], locale="pt-BR")
-            await page.goto(url, wait_until="domcontentloaded", timeout=_TIMEOUT_PLAYWRIGHT * 1000)
-            await page.wait_for_timeout(2500)
+            
+            # Timeout aumentado para ambiente de cloud (Railway)
+            await page.goto(url, wait_until="domcontentloaded", timeout=45000)
+            await page.wait_for_timeout(3000)
+            
             html = await page.content()
             final_url = page.url
             await browser.close()
