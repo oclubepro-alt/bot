@@ -384,7 +384,7 @@ async def confirmar_envio_link(update: Update, context: ContextTypes.DEFAULT_TYP
         
         from bot.services.publisher_router import publish_offer
         logger.info(f"[OFERTA_LINK] Chamando publish_offer (imagem={'sim' if img_url else 'não'})...")
-        await publish_offer(query.bot, copies, img_url)
+        await publish_offer(context.bot, copies, img_url)
 
         msg_sucesso = "✅ <b>Publicado com sucesso no canal!</b>"
         await query.message.reply_text(
@@ -401,7 +401,7 @@ async def confirmar_envio_link(update: Update, context: ContextTypes.DEFAULT_TYP
     except Exception as e:
         logger.error(f"[OFERTA_LINK] Erro ao publicar: {e}")
         try:
-            await query.bot.send_message(
+            await context.bot.send_message(
                 chat_id=query.message.chat_id,
                 text=f"❌ Erro ao publicar no canal:\n\n<code>{e}</code>",
                 parse_mode=ParseMode.HTML,
