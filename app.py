@@ -59,9 +59,10 @@ def main() -> None:
     logger.info("Bot construído com sucesso. Registrando handlers...")
 
     # Handlers básicos explícitos para garantir resposta (Requisito de Estabilidade)
-    from bot.handlers.start import start_command
+    from bot.handlers.start import start_command, test_id_command
     from bot.handlers.cancel import cancel_command
     app.add_handler(CommandHandler("start", start_command))
+    app.add_handler(CommandHandler("test_config", test_id_command))
     app.add_handler(CommandHandler("cancel", cancel_command))
 
     # Handler de conversão principal (Fases 1 e 2)

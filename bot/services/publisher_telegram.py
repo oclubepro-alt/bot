@@ -59,7 +59,11 @@ async def publish_to_telegram(bot: Bot, message_text: str, photo_url_or_id: str 
             sucesso_algum = True
             
         except Exception as e:
-            logger.error(f"[PUBLISHER_TELEGRAM] Falha crítica ao enviar para o canal {chat_id}: {e}")
+            err_msg = f"Falha crítica ao enviar para o canal {chat_id}: {str(e)}"
+            logger.error(f"[PUBLISHER_TELEGRAM] {err_msg}")
+            # Não engole o erro se for o único destino
+            if len(canais_destino) == 1:
+                raise Exception(err_msg)
             
     if not sucesso_algum:
         raise Exception(f"Falha ao publicar no Telegram em todos os destinos: {canais_destino}")

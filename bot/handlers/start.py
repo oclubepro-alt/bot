@@ -53,3 +53,26 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup(keyboard),
             )
+
+async def test_id_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    from bot.utils.config import TELEGRAM_CHANNEL_ID
+    from bot.utils.telegram_utils import normalize_chat_id
+    from bot.permissions import is_admin
+    
+    if not is_admin(update.effective_user.id):
+        return
+        
+    norm = normalize_chat_id(TELEGRAM_CHANNEL_ID)
+    msg = (
+        f"🛠️ <b>DEBUG CONFIG</b>\n\n"
+        f"📌 ID Bruto: <code>{TELEGRAM_CHANNEL_ID}</code>\n"
+        f"📌 ID Normalizado: <code>{norm}</code>\n\n"
+        f"Tentando enviar mensagem de teste para o canal..."
+    )
+    await update.message.reply_text(msg, parse_mode=ParseMode.HTML)
+    
+    try:
+        await context.bot.send_message(chat_id=norm, text="✅ Teste de conexão do Bot!")
+        await update.message.reply_text("✅ Mensagem enviada com sucesso ao canal!")
+    except Exception as e:
+        await update.message.reply_text(f"❌ Erro ao enviar: <code>{e}</code>", parse_mode=ParseMode.HTML)
