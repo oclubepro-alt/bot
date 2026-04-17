@@ -93,12 +93,12 @@ def main() -> None:
     )
     app.add_handler(config_handler)
 
-    # Registra o scheduler de varredura automática (Fase 3)
-    setup_scheduler(app)
+    # Registra o scheduler de varredura automática (Fase 3) - PAUSADO TEMPORARIAMENTE
+    # setup_scheduler(app)
 
-    # AUTO-START: Inicia monitoramento na inicialização
-    from bot.services.scheduler_service import start_monitor
-    start_monitor(app)
+    # AUTO-START: Inicia monitoramento na inicialização - PAUSADO TEMPORARIAMENTE
+    # from bot.services.scheduler_service import start_monitor
+    # start_monitor(app)
 
     logger.info("[APP] Handlers e scheduler registrados. Bot em execução... (Ctrl+C para parar)")
     app.run_polling(drop_pending_updates=True)

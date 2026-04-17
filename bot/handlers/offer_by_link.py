@@ -370,16 +370,25 @@ async def confirmar_envio_link(update: Update, context: ContextTypes.DEFAULT_TYP
     await query.answer("📤 Publicando no canal...")
     logger.info(f"[OFERTA_LINK] PUBLICACAO_CONFIRMADA por admin {query.from_user.id}.")
 
-    copies  = context.user_data.get("copies", {})
+    copies  = context.user_data.get("copies")
     img_url = context.user_data.get("dados_produto", {}).get("imagem")
+
+    if not copies:
+        logger.error("[OFERTA_LINK] Erro: 'copies' não encontrado no user_data.")
+        await query.answer("❌ Erro: Dados da oferta perdidos.", show_alert=True)
+        return ConversationHandler.END
 
     try:
         from bot.services.publisher_router import publish_offer
         await publish_offer(query.bot, copies, img_url)
 
+        # Resposta de confirmação solicitada pelo usuário
+        await query.answer("✅ Publicado!", show_alert=False)
+
         msg_sucesso = "🎉 <b>Oferta publicada no canal com sucesso!</b>"
         try:
             if img_url:
+                # Se era uma foto com legenda, deleta e manda aviso limpo
                 await query.message.delete()
                 await query.bot.send_message(
                     chat_id=query.message.chat_id,
@@ -388,16 +397,24 @@ async def confirmar_envio_link(update: Update, context: ContextTypes.DEFAULT_TYP
                     reply_markup=back_keyboard,
                 )
             else:
+                # Se era texto, apenas edita
                 await query.edit_message_text(
                     msg_sucesso,
                     parse_mode=ParseMode.HTML,
                     reply_markup=back_keyboard,
                 )
         except Exception:
-            pass
+            # Fallback se a mensagem original já sumiu
+            await query.bot.send_message(
+                chat_id=query.message.chat_id,
+                text=msg_sucesso,
+                parse_mode=ParseMode.HTML,
+                reply_markup=back_keyboard,
+            )
 
     except Exception as e:
         logger.error(f"[OFERTA_LINK] Erro ao publicar: {e}")
+        await query.answer("❌ Erro na publicação.", show_alert=True)
         await query.bot.send_message(
             chat_id=query.message.chat_id,
             text=f"❌ Erro ao publicar no canal: <code>{e}</code>",
