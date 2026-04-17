@@ -31,6 +31,7 @@ async def publish_offer(bot: Bot, copies: str | dict, photo: str | None = None) 
             await publish_to_telegram(bot, text_telegram, photo)
         except Exception as e:
             logger.error(f"[PUBLISHER_ROUTER] Erro Telegram: {e}")
+            raise e
 
     # 3. Publica no WhatsApp
     text_whatsapp = copies.get("whatsapp")
