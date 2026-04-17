@@ -44,6 +44,7 @@ async def publish_to_telegram(bot: Bot, message_text: str, photo_url_or_id: str 
                         photo_bytes = resp.content
 
                     logger.info(f"[PUBLISHER_TELEGRAM] Enviando foto baixada ao Telegram...")
+                    logger.info(f"[PUBLISHER_TELEGRAM] Iniciando bot.send_photo para canal {chat_id}...")
                     await bot.send_photo(
                         chat_id=chat_id,
                         photo=photo_bytes,
@@ -53,6 +54,7 @@ async def publish_to_telegram(bot: Bot, message_text: str, photo_url_or_id: str 
                         write_timeout=15,
                         connect_timeout=15
                     )
+                    logger.info(f"[PUBLISHER_TELEGRAM] Sucesso absoluto no send_photo!")
                     logger.info(f"[PUBLISHER_TELEGRAM] Foto enviada ao canal {chat_id} com sucesso.")
                     sucesso_algum = True
                     continue # Próximo canal

@@ -355,7 +355,7 @@ async def _extract_with_playwright(url: str, store_key: str = "other") -> dict |
             browser = await pw.chromium.launch(
                 headless=True,
                 proxy=proxy_config,
-                args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--disable-gpu", "--single-process"],
+                args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--disable-gpu"],
             )
             page = await browser.new_page(user_agent=_HEADERS["User-Agent"], locale="pt-BR")
             
@@ -367,7 +367,7 @@ async def _extract_with_playwright(url: str, store_key: str = "other") -> dict |
             final_url = page.url
             await browser.close()
 
-        soup = BeautifulSoup(html, "lxml")
+        soup = BeautifulSoup(html, "html.parser")
         data = _extract_from_soup(soup, final_url, store_key)
         data["source_method"] = "PLAYWRIGHT"
         data["final_url"] = final_url
@@ -392,7 +392,7 @@ def _extract_with_requests(url: str, store_key: str = "other") -> dict | None:
         resp = session.get(url, headers=_HEADERS, timeout=_TIMEOUT_HTTP, allow_redirects=True)
         resp.raise_for_status()
         final_url = resp.url
-        soup = BeautifulSoup(resp.text, "lxml")
+        soup = BeautifulSoup(resp.text, "html.parser")
         data = _extract_from_soup(soup, final_url, store_key)
         data["source_method"] = "HTML_FALLBACK"
         data["final_url"] = final_url
