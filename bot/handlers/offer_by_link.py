@@ -400,13 +400,15 @@ async def confirmar_envio_link(update: Update, context: ContextTypes.DEFAULT_TYP
 
     except Exception as e:
         logger.error(f"[OFERTA_LINK] Erro ao publicar: {e}")
-        await query.answer("❌ Erro na publicação.", show_alert=True)
-        await query.bot.send_message(
-            chat_id=query.message.chat_id,
-            text=f"❌ Erro ao publicar no canal: <code>{e}</code>",
-            parse_mode=ParseMode.HTML,
-            reply_markup=back_keyboard,
-        )
+        try:
+            await query.bot.send_message(
+                chat_id=query.message.chat_id,
+                text=f"❌ Erro ao publicar no canal:\n\n<code>{e}</code>",
+                parse_mode=ParseMode.HTML,
+                reply_markup=back_keyboard,
+            )
+        except Exception as fallback_err:
+            logger.error(f"[OFERTA_LINK] Falha dupla ao tentar enviar o erro: {fallback_err}")
 
     context.user_data.clear()
     return ConversationHandler.END
