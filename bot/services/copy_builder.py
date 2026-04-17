@@ -153,7 +153,7 @@ def _build_telegram(
 
     # Preço principal
     p_line = f"💰 <b>Preço:</b> {preco_e}"
-    if preco_original:
+    if preco_original and preco_original != preco:
         orig_e = _escape_html(preco_original)
         p_line += f" <s>{orig_e}</s>"
     if desconto:
@@ -200,8 +200,8 @@ def _build_whatsapp(
     linhas = [f"{emoji} *{nome_curto}*"]
 
     preco_line = f"💰 *{preco}*"
-    if preco_original:
-        preco_line += f" ~~De: {preco_original}~~"
+    if preco_original and preco_original != preco:
+        preco_line += f" ~De: {preco_original}~"
     if desconto:
         preco_line += f" ({desconto})"
     linhas.append(preco_line)

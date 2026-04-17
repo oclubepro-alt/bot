@@ -60,7 +60,10 @@ async def publish_to_whatsapp(message_text: str, photo_url: str | None = None) -
                 "apikey": WPP_API_KEY
             }
 
-            resp = requests.post(endpoint, json=payload, headers=headers, timeout=15)
+            import asyncio
+            resp = await asyncio.to_thread(
+                requests.post, endpoint, json=payload, headers=headers, timeout=15
+            )
             
             if resp.status_code in (200, 201):
                 logger.info(f"[PUBLISHER_WPP] Sucesso ao enviar para {jid}")

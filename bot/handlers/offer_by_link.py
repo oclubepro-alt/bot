@@ -379,12 +379,12 @@ async def confirmar_envio_link(update: Update, context: ContextTypes.DEFAULT_TYP
         return ConversationHandler.END
 
     try:
+        # Responde o Telegram IMEDIATAMENTE para o botão não travar
+        await query.answer("🚀 Publicando...")
+        
         from bot.services.publisher_router import publish_offer
         logger.info(f"[OFERTA_LINK] Chamando publish_offer (imagem={'sim' if img_url else 'não'})...")
         await publish_offer(query.bot, copies, img_url)
-
-        # Resposta de confirmação solicitada pelo usuário
-        await query.answer("✅ Publicado!", show_alert=False)
 
         msg_sucesso = "🎉 <b>Oferta publicada no canal com sucesso!</b>"
         try:
