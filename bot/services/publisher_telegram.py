@@ -35,17 +35,29 @@ async def publish_to_telegram(bot: Bot, message_text: str, photo_url_or_id: str 
             # Tenta enviar com foto se houver URL
             if photo_url_or_id:
                 try:
+                    import httpx
+                    # Baixa a imagem localmente para evitar que a API do Telegram trave (timeout)
+                    logger.info(f"[PUBLISHER_TELEGRAM] Baixando imagem da URL (timeout=8s): {photo_url_or_id[:60]}...")
+                    async with httpx.AsyncClient() as client:
+                        resp = await client.get(photo_url_or_id, timeout=8.0)
+                        resp.raise_for_status()
+                        photo_bytes = resp.content
+
+                    logger.info(f"[PUBLISHER_TELEGRAM] Enviando foto baixada ao Telegram...")
                     await bot.send_photo(
                         chat_id=chat_id,
-                        photo=photo_url_or_id,
+                        photo=photo_bytes,
                         caption=message_text,
-                        parse_mode=ParseMode.HTML
+                        parse_mode=ParseMode.HTML,
+                        read_timeout=15,
+                        write_timeout=15,
+                        connect_timeout=15
                     )
                     logger.info(f"[PUBLISHER_TELEGRAM] Foto enviada ao canal {chat_id} com sucesso.")
                     sucesso_algum = True
                     continue # Próximo canal
                 except Exception as photo_err:
-                    logger.warning(f"[PUBLISHER_TELEGRAM] Falha ao enviar foto para {chat_id}: {photo_err}. Tentando fallback de texto...")
+                    logger.warning(f"[PUBLISHER_TELEGRAM] Falha ao processar foto para {chat_id}: {photo_err}. Tentando fallback de texto...")
                     # Fallback para texto abaixo
             
             # Envio de Texto (ou fallback se a foto falhou)

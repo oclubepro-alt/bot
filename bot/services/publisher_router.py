@@ -32,11 +32,12 @@ async def publish_offer(bot: Bot, copies: str | dict, photo: str | None = None) 
             raise e
 
     # 3. Publica no WhatsApp
-    text_whatsapp = copies.get("whatsapp")
-    if text_whatsapp:
-        try:
-            await publish_to_whatsapp(text_whatsapp, photo)
-        except Exception as e:
-            logger.error(f"[PUBLISHER_ROUTER] Erro WhatsApp: {e}")
-    
+    # text_whatsapp = copies.get("whatsapp")
+    # if text_whatsapp:
+    #     try:
+    #         # await publish_to_whatsapp(text_whatsapp, photo)
+    #         pass
+    #     except Exception as e:
+    #         logger.error(f"[PUBLISHER_ROUTER] Erro WhatsApp: {e}")
+    # 
     logger.info("[PUBLISHER_ROUTER] Rotina de publicação concluída.")
