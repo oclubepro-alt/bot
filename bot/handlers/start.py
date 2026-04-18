@@ -147,8 +147,12 @@ async def test_link_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     # 3. Resultado
     logs.append(f"\n✅ <b>Link Final Gerado:</b>\n<code>{final_affiliate}</code>")
     
-    # Verificar TAG
-    if "tag=" in final_affiliate or "matt_from=" in final_affiliate or "utm_source=" in final_affiliate or "af_id=" in final_affiliate:
+    # Verificar TAG (ajustado para detectar Netshoes/Rakuten e Shopee tbm)
+    has_tag = any(x in final_affiliate.lower() for x in [
+        "tag=", "matt_from=", "utm_source=", "af_id=", "id=", "subid="
+    ])
+    
+    if has_tag:
         logs.append("\n🎯 <b>Status:</b> Tag de afiliado injetada com sucesso!")
     else:
         logs.append("\n⚠️ <b>Status:</b> Nenhuma tag detectada no link final.")
