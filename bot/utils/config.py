@@ -9,6 +9,14 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
+# ID Único desta execução para detectar conflitos de instâncias duplicadas
+import random
+import string
+from datetime import datetime
+_rand = ''.join(random.choices(string.ascii_uppercase + string.digits, k=4))
+INSTANCE_ID = f"BOT-{_rand}-{datetime.now().strftime('%H%M')}"
+BOOT_TIME = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+
 
 def _require(var: str) -> str:
     """Lê variável obrigatória ou lança erro claro."""

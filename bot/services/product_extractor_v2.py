@@ -163,6 +163,23 @@ def _extract_pix_price_ml(soup: BeautifulSoup) -> str | None:
     return None
 
 
+def _extract_price_from_body_regex(soup: BeautifulSoup) -> str | None:
+    """
+    ULTIMATO: Busca qualquer padrão de R$ no corpo da página.
+    Ideal para quando a Amazon bloqueia seletores mas deixa o texto.
+    """
+    text = soup.get_text()
+    # Padrão: R$ seguido de números, pontos e vírgulas
+    matches = re.findall(r"R\$\s*(\d{1,3}(?:\.\d{3})*,\d{2})", text)
+    if matches:
+        # Pega o primeiro que não seja 0,00
+        for m in matches:
+            if m != "0,00":
+                logger.info(f"[EXTRACTOR_V2] Preço minerado via Regex Body: R$ {m}")
+                return f"R$ {m}"
+    return None
+
+
 def _extract_pix_price_magalu(soup: BeautifulSoup) -> str | None:
     """Magalu: busca preço 'no Pix' próximo ao label PIX."""
     price_selectors = [
@@ -424,15 +441,29 @@ def _extract_from_soup(soup: BeautifulSoup, base_url: str, store_key: str = "oth
             tipo = "PROMOCIONAL" if preco_orig else "ORIGINAL"
             logger.info(f"[EXTRACTOR_V2] PRECO_TIPO={tipo} | promo={preco} | orig={preco_orig}")
         else:
-            # ── ULTIMATO: TENTA EXTRAIR PREÇO DO TÍTULO ───────────────────────
-            if data.get("titulo"):
-                # Busca padrões como R$ 99,90 ou 99.90
-                price_match = re.search(r"R\$\s*(\d+[.,]\d{2})", data["titulo"])
+            # ── ULTIMATO 1: Tenta extrair do <title> ─────────────────────────
+            html_title = soup.title.string if soup.title else ""
+            if html_title:
+                title_match = re.search(r"R\$\s*(\d{1,3}(?:\.\d{3})*,\d{2})", html_title)
+                if title_match:
+                    found_title_p = f"R$ {title_match.group(1)}"
+                    data["preco"] = found_title_p
+                    logger.info(f"[EXTRACTOR_V2] Salva-vidas: Preço extraído do <title> -> {found_title_p}")
+
+            # ── ULTIMATO 2: Tenta extrair do Título do Produto ───────────────
+            if not data.get("preco") and data.get("titulo"):
+                price_match = re.search(r"R\$\s*(\d{1,3}(?:\.\d{3})*,\d{2})", data["titulo"])
                 if price_match:
                     found_p = f"R$ {price_match.group(1)}"
                     data["preco"] = found_p
-                    logger.info(f"[EXTRACTOR_V2] Salva-vidas: Preço extraído do título -> {found_p}")
-            
+                    logger.info(f"[EXTRACTOR_V2] Salva-vidas: Preço extraído do h1/titulo -> {found_p}")
+
+            # ── ULTIMATO 3: Mineração Regex no Body ──────────────────────────
+            if not data.get("preco"):
+                regex_p = _extract_price_from_body_regex(soup)
+                if regex_p:
+                    data["preco"] = regex_p
+
             if not data.get("preco"):
                 logger.warning(f"[EXTRACTOR_V2] ERRO_EXTRAINDO_PRECO para store_key={store_key}")
 

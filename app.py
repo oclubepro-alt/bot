@@ -34,8 +34,9 @@ logger = logging.getLogger(__name__)
 
 
 def main() -> None:
+    from bot.utils.config import INSTANCE_ID
     logger.info("=" * 60)
-    logger.info(" 🛒 BOT DE ACHADINHOS — Iniciando (Fase 3)...")
+    logger.info(f" 🛒 BOT DE ACHADINHOS — #{INSTANCE_ID}")
     logger.info("=" * 60)
 
     if not TELEGRAM_BOT_TOKEN:

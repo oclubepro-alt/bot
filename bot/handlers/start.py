@@ -162,22 +162,22 @@ async def test_link_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Verifica a saúde do bot e a versão atual para detectar conflitos (Apenas Admin)."""
     from bot.permissions import is_admin
+    from bot.utils.config import INSTANCE_ID, BOOT_TIME, TELEGRAM_CHANNEL_ID
     import os
     import sys
-    from datetime import datetime
     
     if not is_admin(update.effective_user.id):
         return
 
-    # ID Único desta instância para detectar conflitos
-    instance_id = f"{os.getpid()}-{datetime.now().strftime('%H:%M:%S')}"
-    
     msg = (
         "📊 <b>STATUS DO SISTEMA</b>\n\n"
-        f"🕒 <b>Iniciado em:</b> <code>{instance_id}</code>\n"
+        f"🆔 <b>Instância ID:</b> <code>{INSTANCE_ID}</code>\n"
+        f"🕒 <b>Ligado em:</b> <code>{BOOT_TIME}</code>\n"
         f"🐍 <b>Python:</b> <code>{sys.version.split()[0]}</code>\n"
         f"🖥️ <b>Plataforma:</b> <code>{sys.platform}</code>\n"
-        f"🛠️ <b>Modo:</b> <code>{'PRODUÇÃO (Railway)' if os.getenv('RAILWAY_STATIC_URL') else 'DESENVOLVIMENTO'}</code>\n\n"
-        "✅ Se você ver DUAS mensagens de status com horários diferentes simultâneas, há um <b>CONFLITO</b> de instâncias!"
+        f"📡 <b>Canal:</b> <code>{TELEGRAM_CHANNEL_ID}</code>\n"
+        f"🛠️ <b>Modo:</b> <code>{'PRODUÇÃO' if os.getenv('RAILWAY_STATIC_URL') else 'DESENVOLVIMENTO'}</code>\n\n"
+        "⚠️ <b>COMO DETECTAR CONFLITO:</b>\n"
+        "Se você digitar <code>/status</code> e receber **DUAS** respostas com IDs diferentes ao mesmo tempo, significa que existem dois bots rodando. Você deve deletar o deploy antigo no Railway!"
     )
     await update.message.reply_text(msg, parse_mode=ParseMode.HTML)
