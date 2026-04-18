@@ -160,6 +160,32 @@ def _extract_pix_price_ml(soup: BeautifulSoup) -> str | None:
     if val:
         logger.info(f"[EXTRACTOR_V2] ML PIX price (texto): {val}")
         return _clean_price(val)
+        return _clean_price(val)
+    return None
+
+
+def _extract_price_from_schema(soup: BeautifulSoup) -> str | None:
+    """Busca universal de preço usando JSON-LD Schema.org (Funciona na Netshoes)."""
+    scripts = soup.find_all('script', type='application/ld+json')
+    for s in scripts:
+        if not s.string: continue
+        try:
+            data = json.loads(s.string)
+            if not isinstance(data, dict): continue
+            graph = data.get('@graph', [data])
+            for item in graph:
+                if item.get('@type') == 'Product' and 'offers' in item:
+                    offers = item['offers']
+                    if 'price' in offers:
+                        return _clean_price(offers['price'])
+                    elif 'lowPrice' in offers:
+                        return _clean_price(offers['lowPrice'])
+                    elif 'offers' in offers and len(offers['offers']) > 0:
+                        inner = offers['offers'][0]
+                        if 'price' in inner:
+                            return _clean_price(inner['price'])
+        except Exception:
+            pass
     return None
 
 
@@ -441,14 +467,21 @@ def _extract_from_soup(soup: BeautifulSoup, base_url: str, store_key: str = "oth
             tipo = "PROMOCIONAL" if preco_orig else "ORIGINAL"
             logger.info(f"[EXTRACTOR_V2] PRECO_TIPO={tipo} | promo={preco} | orig={preco_orig}")
         else:
+            # ── ULTIMATO 0: Tenta extrair via JSON-LD Schema.org ──────────────
+            schema_p = _extract_price_from_schema(soup)
+            if schema_p:
+                data["preco"] = schema_p
+                logger.info(f"[EXTRACTOR_V2] Salva-vidas: Preço extraído via Schema.org -> {schema_p}")
+
             # ── ULTIMATO 1: Tenta extrair do <title> ─────────────────────────
-            html_title = soup.title.string if soup.title else ""
-            if html_title:
-                title_match = re.search(r"R\$\s*(\d{1,3}(?:\.\d{3})*,\d{2})", html_title)
-                if title_match:
-                    found_title_p = f"R$ {title_match.group(1)}"
-                    data["preco"] = found_title_p
-                    logger.info(f"[EXTRACTOR_V2] Salva-vidas: Preço extraído do <title> -> {found_title_p}")
+            if not data.get("preco"):
+                html_title = soup.title.string if soup.title else ""
+                if html_title:
+                    title_match = re.search(r"R\$\s*(\d{1,3}(?:\.\d{3})*,\d{2})", html_title)
+                    if title_match:
+                        found_title_p = f"R$ {title_match.group(1)}"
+                        data["preco"] = found_title_p
+                        logger.info(f"[EXTRACTOR_V2] Salva-vidas: Preço extraído do <title> -> {found_title_p}")
 
             # ── ULTIMATO 2: Tenta extrair do Título do Produto ───────────────
             if not data.get("preco") and data.get("titulo"):
@@ -484,6 +517,12 @@ def _extract_from_soup(soup: BeautifulSoup, base_url: str, store_key: str = "oth
             src = img_tag.get("src") or img_tag.get("data-src")
             if src:
                 data["imagem"] = src if src.startswith("http") else urljoin(base_url, src)
+
+    # ── HIGIENIZAÇÃO DA IMAGEM ──────────────────────────────────────────────
+    # Se a URL da imagem tiver variáveis de template "{...}", o Telegram recusa (ex: Mercado Livre)
+    if data["imagem"] and ("{" in data["imagem"] or "}" in data["imagem"]):
+        logger.warning(f"[EXTRACTOR_V2] Imagem ignorada por conter template inválido: {data['imagem']}")
+        data["imagem"] = None
 
     return data
 
