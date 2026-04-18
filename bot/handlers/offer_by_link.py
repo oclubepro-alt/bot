@@ -55,6 +55,39 @@ _URL_RE = re.compile(r"https?://[^\s<>\"]+", re.IGNORECASE)
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
+def _parse_fallback_text(raw_text: str, url: str) -> dict:
+    """
+    Extrator de salva-vidas: tenta encontrar Título e Preço 
+    no texto cru colado pelo admin (útil para compartilhamentos de Apps).
+    """
+    fallback_data = {"titulo": None, "preco": None}
+    
+    # 1. Tentar achar o título: 
+    # as primeiras linhas que não são URLs nem o nome genérico da loja
+    linhas = [linha.strip() for linha in raw_text.split('\n') if linha.strip()]
+    candidatos_titulo = []
+    lojas_ignoradas = ["amazon", "mercado livre", "magalu", "shopee", "netshoes"]
+    
+    for linha in linhas:
+        if url in linha or linha.startswith("http"):
+            continue
+        if linha.lower() in lojas_ignoradas:
+            continue
+        if len(linha) > 5:
+            candidatos_titulo.append(linha)
+            
+    if candidatos_titulo:
+        # A primeira linha substancial costuma ser o título do produto
+        fallback_data["titulo"] = candidatos_titulo[0]
+        
+    # 2. Tentar achar o preço com um Regex agressivo
+    match = re.search(r"R\$\s*(\d{1,3}(?:\.\d{3})*,\d{2})", raw_text)
+    if match:
+        fallback_data["preco"] = f"R$ {match.group(1)}"
+        
+    return fallback_data
+
+
 def _extrair_primeira_url(texto: str) -> str | None:
     match = _URL_RE.search(texto)
     return match.group(0).rstrip(".)],;") if match else None
@@ -361,6 +394,20 @@ async def receber_link_produto(update: Update, context: ContextTypes.DEFAULT_TYP
         f"  MÉTODO={dados.get('source_method')} | título={dados.get('titulo', '')[:40]} "
         f"| preço={dados.get('preco')} | PIX={dados.get('is_pix_price', False)}"
     )
+
+    # ── TENTATIVA DE SALVA-VIDAS VIA TEXTO DO USUÁRIO ───────────────────────
+    # Se a extração falhou mas o admin mandou o nome junto com o link, usamos o da mensagem!
+    fallback_dados = _parse_fallback_text(raw_text, original_link)
+
+    if not dados.get("titulo") or dados["titulo"] == "Produto":
+        if fallback_dados["titulo"]:
+            dados["titulo"] = fallback_dados["titulo"]
+            logger.info(f"[OFERTA_LINK] Fallback texto salvo a vida para TITULO: {dados['titulo'][:40]}")
+
+    if not dados.get("preco") or dados["preco"] == "Preço não disponível":
+        if fallback_dados["preco"]:
+            dados["preco"] = fallback_dados["preco"]
+            logger.info(f"[OFERTA_LINK] Fallback texto salvo a vida para PRECO: {dados['preco']}")
 
     try:
         await msg_aguardo.delete()
