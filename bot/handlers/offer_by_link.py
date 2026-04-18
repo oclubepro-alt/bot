@@ -25,7 +25,12 @@ from telegram.ext import ContextTypes, ConversationHandler
 from telegram.constants import ParseMode
 
 from bot.permissions import is_admin
-from bot.utils.constants import CB_MENU_PRINCIPAL
+from bot.utils.constants import (
+    CB_MENU_PRINCIPAL, CB_PUBLICAR_LINK, CB_CANCELAR_OFERTA
+)
+
+# Adicionamos aqui a constante local caso não esteja no constants.py
+CB_CONFIRMAR_LINK = "confirmar_envio_link"
 
 logger = logging.getLogger(__name__)
 
@@ -271,9 +276,16 @@ async def _send_previa(message, context: ContextTypes.DEFAULT_TYPE) -> int:
     )
 
     # Telegram: caption ≤ 1024, texto ≤ 4096
-    limite = 950 if imagem else 3800
+    limite = 900 if imagem else 3500
     if len(preview_text) > limite:
-        preview_text = preview_text[:limite] + "\n\n<i>... (texto truncado na prévia)</i>"
+        # Busca o último espaço antes do limite para não quebrar uma TAG ou palavra no meio
+        split_idx = preview_text.rfind(" ", 0, limite)
+        if split_idx == -1: split_idx = limite
+        preview_text = preview_text[:split_idx] + "\n\n<i>... (texto truncado)</i>"
+        # Garante que não deixamos tags abertas (simplificado)
+        if "<b>" in preview_text and "</b>" not in preview_text: preview_text += "</b>"
+        if "<i>" in preview_text and "</i>" not in preview_text: preview_text += "</i>"
+        if "<code>" in preview_text and "</code>" not in preview_text: preview_text += "</code>"
 
     from bot.utils.config import OPENAI_API_KEY
     keyboard = _build_previa_keyboard(show_ai_button=bool(OPENAI_API_KEY))
