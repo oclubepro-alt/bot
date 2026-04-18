@@ -76,3 +76,38 @@ async def test_id_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await update.message.reply_text("✅ Mensagem enviada com sucesso ao canal!")
     except Exception as e:
         await update.message.reply_text(f"❌ Erro ao enviar: <code>{e}</code>", parse_mode=ParseMode.HTML)
+
+
+async def check_config_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Comando de diagnóstico para verificar IDs de afiliado (Apenas Admin)."""
+    from bot.permissions import is_admin
+    from bot.services.affiliate_link_service import _AFFILIATE_IDS
+
+    if not is_admin(update.effective_user.id):
+        return
+
+    msg = ["🛠️ <b>DIAGNÓSTICO DE CONFIGURAÇÃO</b>\n"]
+    
+    # 1. Verificar IDs de Afiliado
+    msg.append("<b>🔗 Afiliados:</b>")
+    for store, aid in _AFFILIATE_IDS.items():
+        if aid:
+            # Mascarar por segurança (mostra só as pontas)
+            masked = aid[:4] + "*" * (len(aid)-6) + aid[-2:] if len(aid) > 6 else aid
+            msg.append(f"✅ {store.upper()}: <code>{masked}</code>")
+        else:
+            msg.append(f"❌ {store.upper()}: <i>Não configurado</i>")
+
+    # 2. Outras Configurações
+    import os
+    from bot.utils.config import TELEGRAM_CHANNEL_ID
+    
+    msg.append("\n<b>📡 Sistema:</b>")
+    msg.append(f"📌 Canal: <code>{TELEGRAM_CHANNEL_ID}</code>")
+    msg.append(f"✂️ Encurtador: <code>{os.getenv('SHORTENER_BACKEND', 'tinyurl')}</code>")
+    
+    # 3. Verificação de Arquivo .env (no cloud ele costuma não existir)
+    has_env = os.path.exists(".env")
+    msg.append(f"📄 Arquivo .env existe: {'✅' if has_env else '❌ (Railway usa Variables tab)'}")
+
+    await update.message.reply_text("\n".join(msg), parse_mode=ParseMode.HTML)

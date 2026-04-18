@@ -14,10 +14,7 @@ from dotenv import load_dotenv
 load_dotenv()
 logger = logging.getLogger(__name__)
 
-# ---------------------------------------------------------------------------
-# IDs de afiliado lidos do .env — com validação no startup
-# ---------------------------------------------------------------------------
-
+# Global para fácil acesso e exportação
 _AFFILIATE_IDS = {
     "amazon":       os.getenv("AFFILIATE_ID_AMAZON", "").strip(),
     "mercadolivre": os.getenv("AFFILIATE_ID_ML", "").strip(),
@@ -26,11 +23,18 @@ _AFFILIATE_IDS = {
     "shopee":       os.getenv("AFFILIATE_ID_SHOPEE", "").strip(),
 }
 
-for store, aid in _AFFILIATE_IDS.items():
-    if aid:
-        logger.info(f"[AFFILIATE_SERVICE] ✅ {store}: ID configurado ({aid[:8]}...)")
-    else:
-        logger.warning(f"[AFFILIATE_SERVICE] ⚠️  {store}: AFFILIATE_ID ausente no .env")
+def log_config_status():
+    """Útil para diagnóstico no console."""
+    logger.info("─── AFILIADOS: STATUS DA CONFIGURAÇÃO ───")
+    for store, aid in _AFFILIATE_IDS.items():
+        if aid:
+            masked = aid[:4] + "***" + aid[-4:] if len(aid) > 8 else aid
+            logger.info(f"✅ {store.upper()}: Conectado ({masked})")
+        else:
+            logger.warning(f"❌ {store.upper()}: ID ausente no .env (não funcionará)")
+
+# Executa log no startup
+log_config_status()
 
 
 # ---------------------------------------------------------------------------

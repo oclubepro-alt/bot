@@ -2,7 +2,7 @@ from telegram.ext import (
     ConversationHandler, CommandHandler, MessageHandler, CallbackQueryHandler, filters
 )
 
-from bot.handlers.start import start_command
+from bot.handlers.start import start_command, check_config_command
 from bot.handlers.cancel import cancel_command, cancel_menu_callback
 from bot.handlers.offer import (
     start_offer_manual, receber_nome, receber_preco, receber_loja, receber_link, receber_imagem,
@@ -74,6 +74,7 @@ def build_main_handler() -> ConversationHandler:
     return ConversationHandler(
         entry_points=[
             CommandHandler("start", start_command),
+            CommandHandler("check_config", check_config_command),
             CallbackQueryHandler(start_command, pattern=f"^({CB_VOLTAR_MENU}|{CB_MENU_PRINCIPAL})$"),
             CallbackQueryHandler(start_offer_manual,   pattern=f"^{CB_PUBLICAR_MANUAL}$"),
             CallbackQueryHandler(start_offer_by_link,  pattern=f"^{CB_PUBLICAR_LINK}$"),

@@ -363,15 +363,24 @@ async def receber_link_produto(update: Update, context: ContextTypes.DEFAULT_TYP
         parse_mode=ParseMode.HTML,
     )
 
-    # ── 1. Extração + resolução da URL final (Playwright faz o redirect) ─────
-    logger.info(f"[OFERTA_LINK] EXTRACAO_INICIADA: {original_link[:80]}")
+    # ── 1. Resolução forçada de links curtos via Playwright (se necessário) ──
+    final_url = original_link
+    if "amzn.to" in original_link or "shope.ee" in original_link:
+        try:
+            from bot.services.affiliate_link_service import resolve_url_playwright
+            logger.info(f"[OFERTA_LINK] Resolvendo shortener via Playwright: {original_link}")
+            final_url = await resolve_url_playwright(original_link)
+        except Exception as e:
+            logger.warning(f"[OFERTA_LINK] Playwright falhou ao resolver: {e}")
+
+    # ── 2. Extração + resolução adicional ────────────────────────────────────
+    logger.info(f"[OFERTA_LINK] EXTRACAO_INICIADA: {final_url[:80]}")
     try:
         from bot.services.product_extractor_v2 import extract_product_data_v2
-        dados = await extract_product_data_v2(original_link)
-        final_url = dados.get("final_url", original_link)
+        dados = await extract_product_data_v2(final_url)
+        final_url = dados.get("final_url", final_url)
     except Exception as e:
         logger.error(f"[OFERTA_LINK] Erro crítico na extração: {e}")
-        final_url = original_link
         dados = {
             "titulo": "Produto", "preco": "Preço não disponível", "imagem": None,
             "preco_original": None, "source_method": "FALLBACK_SEM_PRECO",
