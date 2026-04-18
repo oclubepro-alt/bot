@@ -191,3 +191,75 @@ def injetar_link_afiliado(url: str, store_key: str | None = None) -> str:
     except Exception as e:
         logger.error(f"[AFFILIATE_SERVICE] ERRO_GERANDO_LINK_AFILIADO: {e} | loja={store_key}")
         return url
+
+
+# ---------------------------------------------------------------------------
+# Resolver via Playwright (para shorteners que bloqueiam requests.get)
+# ---------------------------------------------------------------------------
+
+async def resolve_url_playwright(url: str) -> str:
+    """
+    Resolve URLs curtas (amzn.to, shope.ee, ml.tidd.ly, etc.) via Playwright.
+
+    Abre o link num browser headless, aguarda todos os redirecionamentos JS
+    e retorna page.url — a URL final real, com todos os parâmetros.
+
+    SÓ usa Playwright quando requests falha (domínios que bloqueiam bots).
+
+    Args:
+        url: URL curta ou com redirecionamento JS.
+
+    Returns:
+        URL final após redirecionamentos. Retorna a original em caso de falha.
+    """
+    try:
+        from playwright.async_api import async_playwright
+        import os
+
+        logger.info(f"[AFFILIATE_SERVICE] Playwright resolver iniciando: {url[:80]}")
+
+        async with async_playwright() as pw:
+            proxy_config = None
+            http_proxy = os.getenv("HTTP_PROXY", "").strip()
+            if http_proxy and http_proxy.lower() not in ("none", "null", "undefined"):
+                proxy_config = {"server": http_proxy}
+
+            browser = await pw.chromium.launch(
+                headless=True,
+                proxy=proxy_config,
+                args=[
+                    "--no-sandbox",
+                    "--disable-setuid-sandbox",
+                    "--disable-dev-shm-usage",
+                    "--disable-gpu",
+                ],
+            )
+            page = await browser.new_page(
+                user_agent=(
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/124.0.0.0 Safari/537.36"
+                ),
+                locale="pt-BR",
+            )
+            # domcontentloaded é suficiente para capturar a URL final
+            await page.goto(url, wait_until="domcontentloaded", timeout=30000)
+            # Aguarda 2s para redirecionamentos JS lentos
+            await page.wait_for_timeout(2000)
+            final_url = page.url
+            await browser.close()
+
+        if final_url and final_url != url:
+            logger.info(f"[AFFILIATE_SERVICE] Playwright resolveu: {final_url[:100]}")
+        else:
+            logger.info("[AFFILIATE_SERVICE] Playwright: URL não redirecionada (já é final).")
+            final_url = url
+
+        return final_url
+
+    except ImportError:
+        logger.warning("[AFFILIATE_SERVICE] Playwright não instalado. Usando URL original.")
+        return url
+    except Exception as e:
+        logger.warning(f"[AFFILIATE_SERVICE] Playwright resolver falhou ({e}). Usando URL original.")
+        return url

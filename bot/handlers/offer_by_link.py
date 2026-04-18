@@ -1,16 +1,21 @@
 """
 offer_by_link.py — Handler definitivo do botão "Publicar por Link".
 
-Pipeline:
-  1. Admin envia link (pode ser encurtado ou com redirecionamento).
-  2. Bot resolve a URL final real.
-  3. Injeta link de afiliado correto por loja.
-  4. Extrai imagem, título e preço em camadas (Playwright → HTML → mínimo seguro).
-  5. Gera nova copy de venda via IA.
-  6. Envia prévia privada ao admin com botões [✅ Confirmar] [❌ Cancelar].
-  7. Somente após confirmação, publica no canal.
+Máquina de Estados:
+  LINK_PRODUTO             → Admin envia o link
+  PREENCHER_NOME_FALTANTE  → Bot pede nome (se extração falhou)
+  PREENCHER_PRECO_FALTANTE → Bot pede preço (se extração falhou)
+  AGUARDAR_CUPOM           → Bot pergunta sobre cupom (NOVO)
+  CONFIRMAR_LINK           → Prévia exibida com botões Confirmar/Corrigir/Cancelar
+  EDITAR_CAMPOS            → Submenu de edição (Preço/Copy/Link/Cupom/Voltar)
+  AGUARDAR_EDICAO_TEXTO    → Bot aguarda texto do campo a corrigir (NOVO)
 
-Logs obrigatórios em cada etapa.
+Regras críticas:
+  - Na PRÉVIA: link de afiliado exibido CRUE (sem encurtamento) para verificação da tag.
+  - Encurtamento SOMENTE em confirmar_envio_link(), na hora de publicar.
+  - Preço PIX (is_pix_price=True) gera copy com "💰 Por apenas X no PIX".
+  - Se cupom informado: copy recebe linha "🎟️ Use o cupom: <b>CODIGO</b>".
+  - Todos os callbacks respondem com query.answer() antes de qualquer operação.
 """
 import logging
 import re
@@ -25,41 +30,251 @@ from bot.utils.constants import CB_MENU_PRINCIPAL
 logger = logging.getLogger(__name__)
 
 # ── Estados da conversa ──────────────────────────────────────────────────────
-LINK_PRODUTO           = 10
-PREENCHER_NOME_FALTANTE = 11
+LINK_PRODUTO             = 10
+PREENCHER_NOME_FALTANTE  = 11
 PREENCHER_PRECO_FALTANTE = 12
-LINK_AFILIADO          = 13
-CONFIRMAR_LINK         = 14
-EDITAR_CAMPOS          = 15
+LINK_AFILIADO            = 13   # mantido para compatibilidade de fallback
+CONFIRMAR_LINK           = 14
+EDITAR_CAMPOS            = 15
+AGUARDAR_CUPOM           = 16   # NOVO
+AGUARDAR_EDICAO_TEXTO    = 17   # NOVO
 
-# Callbacks exclusivos deste fluxo
-CB_CONFIRMAR_LINK     = "oferta_link_confirmar"
-CB_CANCELAR_OFERTA    = "oferta_link_cancelar"
+# ── Callbacks exclusivos deste fluxo ────────────────────────────────────────
+CB_CONFIRMAR_LINK  = "oferta_link_confirmar"
+CB_CANCELAR_OFERTA = "oferta_link_cancelar"
+CB_SEM_CUPOM       = "sem_cupom"
+CB_EDIT_PRECO      = "edit_preco"
+CB_EDIT_COPY       = "edit_copy"
+CB_EDIT_LINK       = "edit_link"
+CB_EDIT_CUPOM      = "edit_cupom"
+CB_VOLTAR_PREVIA   = "voltar_previa"
 
 # ── Regex para extrair a primeira URL de um texto ────────────────────────────
 _URL_RE = re.compile(r"https?://[^\s<>\"]+", re.IGNORECASE)
 
+
+# ── Helpers ──────────────────────────────────────────────────────────────────
 
 def _extrair_primeira_url(texto: str) -> str | None:
     match = _URL_RE.search(texto)
     return match.group(0).rstrip(".)],;") if match else None
 
 
-# ── Gerador de copy ──────────────────────────────────────────────────────────
+def _escape_html(text: str) -> str:
+    if not text:
+        return ""
+    return str(text).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
-def _gerar_copy_basica(titulo: str, preco: str, link_afiliado: str, source_method: str = "") -> str:
-    """
-    Copia de venda simples em HTML.
-    Usada se a IA falhar ou como base de prévia.
-    """
+
+def _gerar_copy_basica(
+    titulo: str,
+    preco: str,
+    link: str,
+    source_method: str = "",
+    cupom: str | None = None,
+    is_pix: bool = False,
+) -> str:
+    """Cópia de venda simples em HTML — usada como fallback se build_copy falhar."""
     metodo_txt = f"\n\n<i>🔍 Extraído via {source_method}</i>" if source_method else ""
+
+    preco_linha = (
+        f"💰 Por apenas <b>{_escape_html(preco)} no PIX</b>"
+        if is_pix
+        else f"💰 Por apenas <b>{_escape_html(preco)}</b>"
+    )
+
+    cupom_linha = (
+        f"\n🎟️ Use o cupom: <b>{_escape_html(cupom)}</b>"
+        if cupom else ""
+    )
+
     return (
-        f"🔥 <b>{titulo}</b>\n\n"
-        f"💰 Por apenas <b>{preco}</b>\n\n"
-        f"👉 <a href=\"{link_afiliado}\">Clique aqui para comprar</a>\n\n"
+        f"🔥 <b>{_escape_html(titulo)}</b>\n\n"
+        f"{preco_linha}\n"
+        f"{cupom_linha}\n\n"
+        f"👉 <a href=\"{link}\">Clique aqui para comprar</a>\n\n"
         f"⚡ <i>Oferta por tempo limitado. Corra!</i>"
         f"{metodo_txt}"
     )
+
+
+def _build_previa_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("✅ Confirmar e Publicar", callback_data=CB_CONFIRMAR_LINK)],
+        [
+            InlineKeyboardButton("✏️ Corrigir", callback_data="editar_oferta"),
+            InlineKeyboardButton("❌ Cancelar",  callback_data=CB_CANCELAR_OFERTA),
+        ],
+    ])
+
+
+# ============================================================================
+# NÚCLEO: _send_previa — exibe a prévia a partir de qualquer message object
+# ============================================================================
+
+async def _send_previa(message, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """
+    Envia a prévia para o admin.
+
+    'message' é qualquer objeto telegram.Message (de update.message OU
+    query.message) para que possamos usar reply_text / reply_photo.
+
+    IMPORTANTE:
+      - O link de afiliado é exibido CRUE (sem encurtar) para o admin
+        verificar se sua tag está presente.
+      - Encurtamento ocorre SOMENTE em confirmar_envio_link().
+    """
+    dados         = context.user_data.get("dados_produto", {})
+    affiliate_url = context.user_data.get("affiliate_url") or context.user_data.get("final_url", "")
+    store_key     = context.user_data.get("store_key", "other")
+    cupom         = context.user_data.get("cupom")
+    source_method = dados.get("source_method", "—")
+    is_pix        = dados.get("is_pix_price", False)
+
+    titulo         = dados.get("titulo", "Produto")
+    preco          = dados.get("preco", "Preço não disponível")
+    preco_original = dados.get("preco_original")
+    imagem         = dados.get("imagem")
+
+    # ── IA Copy ──────────────────────────────────────────────────────────────
+    copy_ia = None
+    try:
+        from bot.services.ai_writer import generate_caption
+        copy_ia = await generate_caption(
+            nome          = titulo,
+            preco         = preco,
+            loja          = dados.get("store", "Loja"),
+            descricao     = context.user_data.get("descricao_base"),
+            preco_original= preco_original,
+        )
+    except Exception as e:
+        logger.warning(f"[OFERTA_LINK] IA falhou ao gerar copy: {e}")
+
+    # ── Monta a copy (usa link CRUE na prévia) ────────────────────────────────
+    # Se o admin sobrescreveu a copy manualmente, respeita isso.
+    copy_override = context.user_data.get("copy_override")
+
+    if copy_override:
+        copy_canal = copy_override
+        copies = {"telegram": copy_canal, "whatsapp": copy_canal}
+    else:
+        try:
+            from bot.services.copy_builder import build_copy
+            copies = build_copy(
+                nome          = titulo,
+                preco         = preco,
+                loja          = dados.get("store", "Loja"),
+                store_key     = store_key,
+                short_url     = affiliate_url,   # link CRUE para a prévia
+                legenda_ia    = copy_ia,
+                preco_original= preco_original,
+            )
+            copy_canal = copies.get("telegram", "")
+
+            # Ajusta preço PIX na copy
+            if is_pix:
+                copy_canal = copy_canal.replace(
+                    "💰 <b>Preço:</b>",
+                    "💰 <b>Preço no PIX:</b>",
+                )
+
+            # Acrescenta cupom
+            if cupom:
+                copy_canal += f"\n\n🎟️ Use o cupom: <b>{_escape_html(cupom)}</b>"
+
+            # Acrescenta cupom na versão WhatsApp também
+            wa_copy = copies.get("whatsapp", "")
+            if is_pix:
+                wa_copy = wa_copy.replace(f"💰 *{preco}*", f"💰 *{preco} no PIX* 💳")
+            if cupom:
+                wa_copy += f"\n\n🎟️ Cupom: *{cupom}*"
+
+            copies["telegram"] = copy_canal
+            copies["whatsapp"] = wa_copy
+
+        except Exception as e:
+            logger.warning(f"[OFERTA_LINK] build_copy falhou ({e}). Usando copy básica.")
+            copy_canal = _gerar_copy_basica(
+                titulo, preco, affiliate_url, source_method, cupom, is_pix
+            )
+            copies = {"telegram": copy_canal, "whatsapp": copy_canal}
+
+    context.user_data["copies"]    = copies
+    context.user_data["copy_canal"] = copy_canal
+
+    # ── Monta a mensagem de PRÉVIA ────────────────────────────────────────────
+    if preco_original and preco_original != preco:
+        preco_display = (
+            f"💰 <b>De <s>{_escape_html(preco_original)}</s> "
+            f"por {_escape_html(preco)}</b>"
+        )
+    elif is_pix:
+        preco_display = f"💰 <b>{_escape_html(preco)} no PIX</b> 💳"
+    else:
+        preco_display = f"💰 <b>{_escape_html(preco)}</b>"
+
+    cupom_linha = (
+        f"🎟️ Cupom: <code>{_escape_html(cupom)}</code>\n"
+        if cupom else ""
+    )
+
+    preview_text = (
+        "💎 <b>PRÉVIA — Confirme antes de publicar</b>\n\n"
+        f"🏷️ <b>{_escape_html(titulo)}</b>\n"
+        f"{preco_display}\n"
+        f"{cupom_linha}"
+        f"🏪 Loja: <b>{_escape_html(dados.get('store', store_key))}</b>\n"
+        f"📡 Método: <i>{_escape_html(source_method)}</i>\n\n"
+        "🔗 <b>Link de afiliado (CRUE — verifique sua tag!):</b>\n"
+        f"<code>{_escape_html(affiliate_url)}</code>\n\n"
+        "━━━━━━━━━━━━━━━\n"
+        "<b>Texto que será publicado no canal:</b>\n\n"
+        f"{copy_canal}"
+    )
+
+    # Telegram: caption ≤ 1024, texto ≤ 4096
+    limite = 950 if imagem else 3800
+    if len(preview_text) > limite:
+        preview_text = preview_text[:limite] + "\n\n<i>... (texto truncado na prévia)</i>"
+
+    keyboard = _build_previa_keyboard()
+
+    logger.info(
+        f"[OFERTA_LINK] PREVIEW_ENVIADA | imagem={'sim' if imagem else 'não'} "
+        f"| pix={is_pix} | cupom={bool(cupom)}"
+    )
+
+    try:
+        if imagem:
+            await message.reply_photo(
+                photo=imagem,
+                caption=preview_text,
+                parse_mode=ParseMode.HTML,
+                reply_markup=keyboard,
+            )
+        else:
+            await message.reply_text(
+                preview_text,
+                parse_mode=ParseMode.HTML,
+                reply_markup=keyboard,
+                disable_web_page_preview=True,
+            )
+    except Exception as e:
+        logger.error(f"[OFERTA_LINK] Erro ao enviar prévia: {e}")
+        await message.reply_text(
+            f"⚠️ Erro ao renderizar prévia.\n\n"
+            f"Título: {titulo}\nPreço: {preco}\n"
+            f"Link: {affiliate_url[:100]}",
+            reply_markup=keyboard,
+            disable_web_page_preview=True,
+        )
+
+    return CONFIRMAR_LINK
+
+
+# ── Alias para compatibilidade (recebe update convencional) ──────────────────
+async def _gerar_e_enviar_previa(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    return await _send_previa(update.message, context)
 
 
 # ============================================================================
@@ -82,7 +297,7 @@ async def start_offer_by_link(update: Update, context: ContextTypes.DEFAULT_TYPE
     await query.edit_message_text(
         "🔗 <b>Publicar por Link</b>\n\n"
         "Cole o link do produto abaixo:\n"
-        "<i>Aceito links encurtados, de afiliado, amzn.to, bit.ly, etc.</i>",
+        "<i>Aceito links encurtados (amzn.to, shope.ee, bit.ly, etc.).</i>",
         parse_mode=ParseMode.HTML,
     )
     return LINK_PRODUTO
@@ -98,13 +313,12 @@ async def receber_link_produto(update: Update, context: ContextTypes.DEFAULT_TYP
     original_link = _extrair_primeira_url(raw_text)
     if not original_link:
         await update.message.reply_text(
-            "❌ Não encontrei nenhum link válido. Envie um link completo (começando com https://)."
+            "❌ Não encontrei nenhum link válido. Envie um link começando com https://."
         )
         return LINK_PRODUTO
 
     logger.info(f"[OFERTA_LINK] LINK_RECEBIDO: {original_link}")
 
-    # Guarda o texto extra como descrição base (se houver)
     if len(raw_text) > len(original_link) + 10:
         context.user_data["descricao_base"] = raw_text
     context.user_data["original_url"] = original_link
@@ -113,11 +327,11 @@ async def receber_link_produto(update: Update, context: ContextTypes.DEFAULT_TYP
         "⏳ <b>Processando...</b>\n"
         "🔎 Resolvendo link → Injetando afiliado → Extraindo produto...\n"
         "<i>Aguarde alguns segundos.</i>",
-        parse_mode=ParseMode.HTML
+        parse_mode=ParseMode.HTML,
     )
 
-    # ── 1. Extração de Produto e Resolução (Playwright) ──────────────────────
-    logger.info(f"[OFERTA_LINK] EXTRACAO_INICIADA para: {original_link[:80]}")
+    # ── 1. Extração + resolução da URL final (Playwright faz o redirect) ─────
+    logger.info(f"[OFERTA_LINK] EXTRACAO_INICIADA: {original_link[:80]}")
     try:
         from bot.services.product_extractor_v2 import extract_product_data_v2
         dados = await extract_product_data_v2(original_link)
@@ -127,48 +341,52 @@ async def receber_link_produto(update: Update, context: ContextTypes.DEFAULT_TYP
         final_url = original_link
         dados = {
             "titulo": "Produto", "preco": "Preço não disponível", "imagem": None,
-            "preco_original": None, "source_method": "FALLBACK_SEM_PRECO", "erro": str(e),
+            "preco_original": None, "source_method": "FALLBACK_SEM_PRECO",
+            "erro": str(e), "is_pix_price": False,
         }
-    
-    # ── 2. Injeta afiliado (baseado na URL final real) ──────────────────────
+
+    # ── 2. Injeta afiliado na URL final (sem sobrescrever depois) ────────────
     from bot.services.affiliate_link_service import injetar_link_afiliado, _detectar_loja
-    store_key  = _detectar_loja(final_url)
+
+    store_key     = _detectar_loja(final_url)
     affiliate_url = injetar_link_afiliado(final_url, store_key)
 
     context.user_data["final_url"]     = final_url
     context.user_data["store_key"]     = store_key
     context.user_data["affiliate_url"] = affiliate_url
-
-    logger.info(f"[OFERTA_LINK] LINK_AFILIADO_GERADO: {affiliate_url[:100]}")
-    logger.info(
-        f"[OFERTA_LINK] EXTRACAO_SUCESSO | METODO_USADO={dados.get('source_method')} | "
-        f"titulo={dados.get('titulo', '')[:40]} | preco={dados.get('preco')}"
-    )
-
     context.user_data["dados_produto"] = dados
 
-    await msg_aguardo.delete()
+    logger.info(
+        f"[OFERTA_LINK] LINK_AFILIADO_GERADO: {affiliate_url[:120]}\n"
+        f"  MÉTODO={dados.get('source_method')} | título={dados.get('titulo', '')[:40]} "
+        f"| preço={dados.get('preco')} | PIX={dados.get('is_pix_price', False)}"
+    )
 
-    # ── 4. Pede dados faltantes ao admin ────────────────────────────────────
+    try:
+        await msg_aguardo.delete()
+    except Exception:
+        pass
+
+    # ── 3. Dados faltantes → pede ao admin ───────────────────────────────────
     if not dados.get("titulo") or dados["titulo"] == "Produto":
         await update.message.reply_text(
             "⚠️ Não consegui extrair o <b>nome</b> do produto automaticamente.\n\n"
             "Por favor, digite o nome do produto:",
-            parse_mode=ParseMode.HTML
+            parse_mode=ParseMode.HTML,
         )
         return PREENCHER_NOME_FALTANTE
 
     if not dados.get("preco") or dados["preco"] == "Preço não disponível":
         await update.message.reply_text(
-            f"✅ Produto: <b>{dados['titulo'][:80]}</b>\n\n"
+            f"✅ Produto: <b>{_escape_html(dados['titulo'][:80])}</b>\n\n"
             "⚠️ Não consegui extrair o <b>preço</b> automaticamente.\n\n"
-            "Por favor, digite o preço da promoção (ex: <code>R$ 49,90</code>):",
-            parse_mode=ParseMode.HTML
+            "Por favor, digite o preço (ex: <code>R$ 49,90</code>):",
+            parse_mode=ParseMode.HTML,
         )
         return PREENCHER_PRECO_FALTANTE
 
-    # Tudo extraído → gera prévia
-    return await _gerar_e_enviar_previa(update, context)
+    # Dados completos → pergunta sobre cupom
+    return await _perguntar_cupom(update, context)
 
 
 # ============================================================================
@@ -184,163 +402,76 @@ async def preencher_nome_faltante(update: Update, context: ContextTypes.DEFAULT_
     if not dados.get("preco") or dados["preco"] == "Preço não disponível":
         await update.message.reply_text(
             "📝 Agora, qual é o <b>preço</b> da promoção? (ex: <code>R$ 49,90</code>)",
-            parse_mode=ParseMode.HTML
+            parse_mode=ParseMode.HTML,
         )
         return PREENCHER_PRECO_FALTANTE
 
-    return await _gerar_e_enviar_previa(update, context)
+    return await _perguntar_cupom(update, context)
 
 
 async def preencher_preco_faltante(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     preco = update.message.text.strip()
     context.user_data["dados_produto"]["preco"] = preco
     logger.info(f"[OFERTA_LINK] Preço preenchido manualmente: {preco}")
-    return await _gerar_e_enviar_previa(update, context)
+    return await _perguntar_cupom(update, context)
 
 
 # ============================================================================
-# RECEBIMENTO DE LINK DE AFILIADO MANUAL (opcional)
+# CUPOM DE DESCONTO  ←  NOVO
+# ============================================================================
+
+async def _perguntar_cupom(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Pergunta se a oferta possui cupom antes de gerar a prévia."""
+    keyboard = InlineKeyboardMarkup([[
+        InlineKeyboardButton("❌ Sem Cupom", callback_data=CB_SEM_CUPOM),
+    ]])
+    await update.message.reply_text(
+        "🎟️ <b>Essa oferta possui cupom de desconto?</b>\n\n"
+        "👉 Digite o código do cupom abaixo, ou clique em <b>Sem Cupom</b>.\n"
+        "<i>Exemplo: PROMO30, DESCONTO10, BLACKFRIDAY…</i>",
+        parse_mode=ParseMode.HTML,
+        reply_markup=keyboard,
+    )
+    return AGUARDAR_CUPOM
+
+
+async def receber_cupom(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Admin digitou o código do cupom."""
+    cupom = update.message.text.strip().upper()
+    context.user_data["cupom"] = cupom
+    logger.info(f"[OFERTA_LINK] Cupom recebido: {cupom}")
+    await update.message.reply_text(
+        f"✅ Cupom <b>{_escape_html(cupom)}</b> registrado! Gerando prévia...",
+        parse_mode=ParseMode.HTML,
+    )
+    return await _gerar_e_enviar_previa(update, context)
+
+
+async def btn_sem_cupom(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Admin clicou em ❌ Sem Cupom."""
+    query = update.callback_query
+    await query.answer("Sem cupom. Gerando prévia...")
+    context.user_data["cupom"] = None
+    logger.info("[OFERTA_LINK] Admin optou por 'Sem Cupom'.")
+    # query.message é a mensagem que tinha o botão — usamos como base do reply
+    return await _send_previa(query.message, context)
+
+
+# ============================================================================
+# LINK AFILIADO MANUAL (mantido por compatibilidade)
 # ============================================================================
 
 async def receber_link_afiliado(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     link_manual = update.message.text.strip()
     if link_manual.startswith("http"):
         context.user_data["affiliate_url"] = link_manual
-        logger.info(f"[OFERTA_LINK] Link de afiliado manual recebido: {link_manual[:80]}")
+        logger.info(f"[OFERTA_LINK] Link afiliado manual: {link_manual[:80]}")
     return await _gerar_e_enviar_previa(update, context)
 
 
 async def pular_link_afiliado(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    logger.info("[OFERTA_LINK] Admin pulou o link afiliado manual. Usando automático.")
+    logger.info("[OFERTA_LINK] Admin pulou link afiliado manual.")
     return await _gerar_e_enviar_previa(update, context)
-
-
-# ============================================================================
-# GERAÇÃO DE PRÉVIA
-# ============================================================================
-
-async def _gerar_e_enviar_previa(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    dados        = context.user_data["dados_produto"]
-    affiliate_url = context.user_data.get("affiliate_url", context.user_data.get("final_url", ""))
-    store_key    = context.user_data.get("store_key", "other")
-    source_method = dados.get("source_method", "—")
-
-    titulo        = dados.get("titulo", "Produto")
-    preco         = dados.get("preco", "Preço não disponível")
-    preco_original= dados.get("preco_original")
-    imagem        = dados.get("imagem")
-
-    # ── Encurtamento do link afiliado ────────────────────────────────────────
-    try:
-        from bot.services.link_shortener import shorten_for_publication
-        import asyncio
-        short_url = await asyncio.to_thread(shorten_for_publication, affiliate_url)
-        logger.info(f"[OFERTA_LINK] Link encurtado: {short_url}")
-    except Exception as e:
-        short_url = affiliate_url
-        logger.warning(f"[OFERTA_LINK] Encurtador falhou ({e}). Usando link longo.")
-
-    context.user_data["short_url"] = short_url
-
-    # ── Geração de copy via IA ───────────────────────────────────────────────
-    msg_ia = await update.message.reply_text("⏳ Gerando copy de venda com IA...")
-    try:
-        from bot.services.ai_writer import generate_caption
-        copy_ia = await generate_caption(
-            nome     = titulo,
-            preco    = preco,
-            loja     = dados.get("store", "Loja"),
-            descricao= context.user_data.get("descricao_base"),
-            preco_original = preco_original,
-        )
-    except Exception as e:
-        logger.warning(f"[OFERTA_LINK] IA falhou ao gerar copy: {e}. Usando fallback.")
-        copy_ia = None
-    await msg_ia.delete()
-
-    # ── Monta o texto do canal (HTML seguro) ─────────────────────────────────
-    try:
-        from bot.services.copy_builder import build_copy
-        copies = build_copy(
-            nome          = titulo,
-            preco         = preco,
-            loja          = dados.get("store", "Loja"),
-            store_key     = store_key,
-            short_url     = short_url,
-            legenda_ia    = copy_ia,
-            preco_original= preco_original,
-        )
-        copy_canal = copies.get("telegram", "")
-    except Exception as e:
-        logger.warning(f"[OFERTA_LINK] build_copy falhou ({e}). Usando copy básica.")
-        copy_canal = _gerar_copy_basica(titulo, preco, short_url, source_method)
-        copies = {"telegram": copy_canal, "whatsapp": copy_canal}
-
-    context.user_data["copies"]    = copies
-    context.user_data["copy_canal"] = copy_canal
-
-    # ── Monta a mensagem de PRÉVIA para o admin ──────────────────────────────
-    # Bloco de preço: mostra "De X por Y" se hover preço original
-    if preco_original and preco_original != preco:
-        preco_display = f"💰 <b>De <s>{preco_original}</s> por {preco}</b>"
-    else:
-        preco_display = f"💰 <b>{preco}</b>"
-
-    preview_text = (
-        f"💎 <b>PRÉVIA — Confirme antes de publicar</b>\n\n"
-        f"🏷️ <b>{titulo}</b>\n"
-        f"{preco_display}\n"
-        f"🏪 Loja: <b>{dados.get('store', store_key)}</b>\n"
-        f"📡 Método: <i>{source_method}</i>\n\n"
-        f"🔗 <b>Link de afiliado:</b>\n"
-        f"<code>{affiliate_url}</code>\n\n"
-        f"🔗 <b>Link encurtado:</b> <code>{short_url}</code>\n\n"
-        f"━━━━━━━━━━━━━━━\n"
-        f"<b>Texto que será publicado no canal:</b>\n\n"
-        f"{copy_canal}"
-    )
-
-    # Limita tamanho da prévia (Telegram tem limite de 4096 chars)
-    if len(preview_text) > 4000:
-        preview_text = preview_text[:3900] + "\n\n<i>... (texto truncado na prévia)</i>"
-
-    keyboard = InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton("✅ Confirmar e Publicar", callback_data=CB_CONFIRMAR_LINK),
-            InlineKeyboardButton("❌ Cancelar",             callback_data=CB_CANCELAR_OFERTA),
-        ],
-        [InlineKeyboardButton("✏️ Corrigir dados",    callback_data="editar_oferta")],
-        [InlineKeyboardButton("⬅️ Voltar ao Menu",    callback_data=CB_MENU_PRINCIPAL)],
-    ])
-
-    logger.info(f"[OFERTA_LINK] PREVIEW_ENVIADA | imagem={'sim' if imagem else 'não'}")
-
-    # Envia prévia com ou sem imagem
-    try:
-        if imagem:
-            await update.message.reply_photo(
-                photo=imagem,
-                caption=preview_text,
-                parse_mode=ParseMode.HTML,
-                reply_markup=keyboard,
-            )
-        else:
-            await update.message.reply_text(
-                preview_text,
-                parse_mode=ParseMode.HTML,
-                reply_markup=keyboard,
-                disable_web_page_preview=True,
-            )
-    except Exception as e:
-        logger.error(f"[OFERTA_LINK] Erro ao enviar prévia: {e}")
-        # Fallback sem HTML
-        await update.message.reply_text(
-            f"⚠️ Prévia com erro de renderização.\n\nTítulo: {titulo}\nPreço: {preco}\nLink: {short_url}",
-            reply_markup=keyboard,
-            disable_web_page_preview=True,
-        )
-
-    return CONFIRMAR_LINK
 
 
 # ============================================================================
@@ -350,9 +481,10 @@ async def _gerar_e_enviar_previa(update: Update, context: ContextTypes.DEFAULT_T
 async def confirmar_envio_link(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     back_keyboard = InlineKeyboardMarkup([[
-        InlineKeyboardButton("⬅️ Voltar ao Menu", callback_data=CB_MENU_PRINCIPAL)
+        InlineKeyboardButton("⬅️ Voltar ao Menu", callback_data=CB_MENU_PRINCIPAL),
     ]])
 
+    # ── Cancelamento ────────────────────────────────────────────────────────
     if query.data == CB_CANCELAR_OFERTA:
         await query.answer("❌ Publicação cancelada.")
         logger.info(f"[OFERTA_LINK] PUBLICACAO_CANCELADA por admin {query.from_user.id}.")
@@ -367,112 +499,256 @@ async def confirmar_envio_link(update: Update, context: ContextTypes.DEFAULT_TYP
         await query.answer()
         return CONFIRMAR_LINK
 
-    # Loga o início, mas não responde a query ainda para não bloquear a resposta final de sucesso
-    logger.info(f"[OFERTA_LINK] Iniciando processamento de publicação para admin {query.from_user.id}...")
+    # ── Publicação ──────────────────────────────────────────────────────────
+    await query.answer("🚀 Publicando...")
+    logger.info(f"[OFERTA_LINK] PUBLICACAO_INICIADA por admin {query.from_user.id}.")
 
-    copies  = context.user_data.get("copies")
-    img_url = context.user_data.get("dados_produto", {}).get("imagem")
+    copies        = context.user_data.get("copies")
+    img_url       = context.user_data.get("dados_produto", {}).get("imagem")
+    affiliate_url = context.user_data.get("affiliate_url", "")
+    cupom         = context.user_data.get("cupom")
+    is_pix        = context.user_data.get("dados_produto", {}).get("is_pix_price", False)
+    dados         = context.user_data.get("dados_produto", {})
 
     if not copies:
-        logger.error("[OFERTA_LINK] Erro: 'copies' não encontrado no user_data.")
-        await query.answer("❌ Erro: Dados da oferta perdidos.", show_alert=True)
+        logger.error("[OFERTA_LINK] 'copies' ausente no user_data.")
+        await query.answer("❌ Dados da oferta perdidos. Recomece o fluxo.", show_alert=True)
         return ConversationHandler.END
 
     try:
-        # Responde o Telegram IMEDIATAMENTE para o botão não travar
-        await query.answer("🚀 Publicando...")
-        
+        # ── Encurtamento AQUI — apenas na publicação final ───────────────────
+        short_url = affiliate_url
+        try:
+            from bot.services.link_shortener import shorten_for_publication
+            import asyncio
+            short_url = await asyncio.to_thread(shorten_for_publication, affiliate_url)
+            logger.info(f"[OFERTA_LINK] Link encurtado: {short_url}")
+        except Exception as e:
+            logger.warning(f"[OFERTA_LINK] Encurtador falhou ({e}). Usando link longo.")
+
+        # ── Reconstrói a copy com o link ENCURTADO para o canal ─────────────
+        titulo    = dados.get("titulo", "Produto")
+        preco     = dados.get("preco", "")
+        preco_ori = dados.get("preco_original")
+        store_key = context.user_data.get("store_key", "other")
+
+        try:
+            from bot.services.copy_builder import build_copy
+            from bot.services.ai_writer import generate_caption
+
+            try:
+                copy_ia = await generate_caption(
+                    nome=titulo, preco=preco, loja=dados.get("store", "Loja"),
+                    preco_original=preco_ori,
+                )
+            except Exception:
+                copy_ia = None
+
+            copies_final = build_copy(
+                nome          = titulo,
+                preco         = preco,
+                loja          = dados.get("store", "Loja"),
+                store_key     = store_key,
+                short_url     = short_url,
+                legenda_ia    = copy_ia,
+                preco_original= preco_ori,
+            )
+            # Aplica PIX e cupom na copy final
+            tg = copies_final.get("telegram", "")
+            if is_pix:
+                tg = tg.replace("💰 <b>Preço:</b>", "💰 <b>Preço no PIX:</b>")
+            if cupom:
+                tg += f"\n\n🎟️ Use o cupom: <b>{_escape_html(cupom)}</b>"
+
+            wa = copies_final.get("whatsapp", "")
+            if is_pix:
+                wa = wa.replace(f"💰 *{preco}*", f"💰 *{preco} no PIX* 💳")
+            if cupom:
+                wa += f"\n\n🎟️ Cupom: *{cupom}*"
+
+            copies_final["telegram"] = tg
+            copies_final["whatsapp"] = wa
+
+        except Exception as e:
+            logger.warning(f"[OFERTA_LINK] Rebuild copy falhou ({e}). Substituindo link nas copies salvas.")
+            copies_final = dict(copies)
+            if isinstance(copies_final.get("telegram"), str):
+                copies_final["telegram"] = copies_final["telegram"].replace(affiliate_url, short_url)
+            if isinstance(copies_final.get("whatsapp"), str):
+                copies_final["whatsapp"] = copies_final["whatsapp"].replace(affiliate_url, short_url)
+
+        # ── Publica no canal ────────────────────────────────────────────────
         from bot.services.publisher_router import publish_offer
         logger.info(f"[OFERTA_LINK] Chamando publish_offer (imagem={'sim' if img_url else 'não'})...")
-        await publish_offer(context.bot, copies, img_url)
+        await publish_offer(context.bot, copies_final, img_url)
 
-        msg_sucesso = "✅ <b>Publicado com sucesso no canal!</b>"
         await query.message.reply_text(
-            msg_sucesso,
+            "✅ <b>Publicado com sucesso no canal!</b>",
             parse_mode=ParseMode.HTML,
             reply_markup=back_keyboard,
         )
         try:
             await query.message.delete()
-        except:
+        except Exception:
             pass
-
 
     except Exception as e:
         logger.error(f"[OFERTA_LINK] Erro ao publicar: {e}")
         try:
             await context.bot.send_message(
                 chat_id=query.message.chat_id,
-                text=f"❌ Erro ao publicar no canal:\n\n<code>{e}</code>",
+                text=f"❌ Erro ao publicar no canal:\n\n<code>{_escape_html(str(e))}</code>",
                 parse_mode=ParseMode.HTML,
                 reply_markup=back_keyboard,
             )
         except Exception as fallback_err:
-            logger.error(f"[OFERTA_LINK] Falha dupla ao tentar enviar o erro: {fallback_err}")
+            logger.error(f"[OFERTA_LINK] Falha dupla ao enviar erro: {fallback_err}")
 
     context.user_data.clear()
     return ConversationHandler.END
 
 
 # ============================================================================
-# EDIÇÃO DE CAMPOS
+# MENU "CORRIGIR"  ←  IMPLEMENTADO DE VERDADE
 # ============================================================================
 
 async def btn_editar_oferta(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """
+    Exibe o submenu de edição quando admin clica em ✏️ Corrigir.
+    Responde o query e edita a mensagem com os botões de campo.
+    """
     query = update.callback_query
     await query.answer()
 
-    keyboard = [
+    keyboard = InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("🏷️ Nome",          callback_data="edit_nome"),
-            InlineKeyboardButton("💰 Preço",          callback_data="edit_preco"),
+            InlineKeyboardButton("💰 Preço",  callback_data=CB_EDIT_PRECO),
+            InlineKeyboardButton("📝 Copy",   callback_data=CB_EDIT_COPY),
         ],
-        [InlineKeyboardButton("📝 Copy/Legenda",      callback_data="edit_copy")],
-        [InlineKeyboardButton("⬅️ Cancelar Edição",  callback_data="cancel_edit")],
-    ]
+        [
+            InlineKeyboardButton("🔗 Link",   callback_data=CB_EDIT_LINK),
+            InlineKeyboardButton("🎟️ Cupom",  callback_data=CB_EDIT_CUPOM),
+        ],
+        [InlineKeyboardButton("⬅️ Voltar pra Prévia", callback_data=CB_VOLTAR_PREVIA)],
+    ])
     await query.edit_message_text(
-        "🛠️ <b>O que deseja corrigir?</b>",
+        "🛠️ <b>O que você deseja corrigir?</b>\n\n"
+        "Escolha o campo e envie o novo valor em seguida:",
         parse_mode=ParseMode.HTML,
-        reply_markup=InlineKeyboardMarkup(keyboard),
+        reply_markup=keyboard,
     )
     return EDITAR_CAMPOS
 
 
 async def escolher_campo_edicao(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """
+    Processa os botões do submenu de edição.
+    Edita a mensagem pedindo o novo valor e muda para AGUARDAR_EDICAO_TEXTO.
+    """
     query = update.callback_query
     await query.answer()
 
-    if query.data == "cancel_edit":
-        return await _gerar_e_enviar_previa(update, context)
-
-    campo = query.data.replace("edit_", "")
+    campo = query.data
     context.user_data["edit_campo"] = campo
 
-    msgs = {
-        "nome":  "Digite o novo <b>nome</b> do produto:",
-        "preco": "Digite o novo <b>preço</b> (ex: <code>R$ 99,90</code>):",
-        "copy":  "Digite a nova <b>copy/legenda</b>:",
+    prompts = {
+        CB_EDIT_PRECO: (
+            "💰 <b>Digite o novo preço:</b>\n\n"
+            "<i>Exemplo: R$ 99,90</i>"
+        ),
+        CB_EDIT_COPY: (
+            "📝 <b>Digite a nova copy completa</b> que será publicada no canal:\n\n"
+            "<i>Use HTML: &lt;b&gt;negrito&lt;/b&gt;, &lt;i&gt;itálico&lt;/i&gt;</i>"
+        ),
+        CB_EDIT_LINK: (
+            "🔗 <b>Cole o novo link de afiliado</b> (completo, com sua tag):\n\n"
+            "<i>Exemplo: https://amzn.to/xxxx?tag=seutag-20</i>"
+        ),
+        CB_EDIT_CUPOM: (
+            "🎟️ <b>Digite o novo código do cupom:</b>\n\n"
+            "<i>Para REMOVER o cupom, envie: <code>REMOVER</code></i>"
+        ),
     }
+
     await query.edit_message_text(
-        f"✍️ {msgs.get(campo, 'Digite o novo valor:')}",
+        prompts.get(campo, "✍️ Digite o novo valor:") + "\n\n<i>Envie a mensagem abaixo:</i>",
         parse_mode=ParseMode.HTML,
     )
-    return EDITAR_CAMPOS
+    return AGUARDAR_EDICAO_TEXTO
 
 
-async def salvar_edicao(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+async def salvar_edicao_texto(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """
+    Recebe o texto digitado pelo admin, atualiza user_data e regenera a prévia.
+    """
     novo_valor = update.message.text.strip()
-    campo = context.user_data.get("edit_campo")
+    campo      = context.user_data.get("edit_campo", "")
 
-    if campo == "nome":
-        context.user_data["dados_produto"]["titulo"] = novo_valor
-    elif campo == "preco":
+    if campo == CB_EDIT_PRECO:
         context.user_data["dados_produto"]["preco"] = novo_valor
-    elif campo == "copy":
-        # Substitui a copy diretamente nas copies salvas
-        if "copies" in context.user_data:
-            context.user_data["copies"]["telegram"] = novo_valor
-            context.user_data["copies"]["whatsapp"] = novo_valor
+        # Limpa override de copy para regenerar com novo preço
+        context.user_data.pop("copy_override", None)
+        await update.message.reply_text(
+            f"✅ Preço atualizado para: <b>{_escape_html(novo_valor)}</b>",
+            parse_mode=ParseMode.HTML,
+        )
 
-    await update.message.reply_text(f"✅ Campo <b>{campo}</b> atualizado!", parse_mode=ParseMode.HTML)
+    elif campo == CB_EDIT_COPY:
+        # Armazena override da copy — será usado por _send_previa
+        context.user_data["copy_override"] = novo_valor
+        await update.message.reply_text(
+            "✅ <b>Copy atualizada!</b> Regenerando prévia...",
+            parse_mode=ParseMode.HTML,
+        )
+
+    elif campo == CB_EDIT_LINK:
+        from bot.services.affiliate_link_service import injetar_link_afiliado, _detectar_loja
+        novo_link     = _extrair_primeira_url(novo_valor) or novo_valor.strip()
+        store_key     = _detectar_loja(novo_link)
+        affiliate_url = injetar_link_afiliado(novo_link, store_key)
+
+        context.user_data["affiliate_url"] = affiliate_url
+        context.user_data["store_key"]     = store_key
+        context.user_data["final_url"]     = novo_link
+        # Limpa override de copy para regenerar com novo link
+        context.user_data.pop("copy_override", None)
+
+        logger.info(f"[OFERTA_LINK] Link corrigido: {affiliate_url[:100]}")
+        await update.message.reply_text(
+            f"✅ Link atualizado!\n<code>{_escape_html(affiliate_url[:120])}</code>",
+            parse_mode=ParseMode.HTML,
+        )
+
+    elif campo == CB_EDIT_CUPOM:
+        if novo_valor.upper() == "REMOVER":
+            context.user_data["cupom"] = None
+            await update.message.reply_text(
+                "✅ Cupom <b>removido</b> da oferta.",
+                parse_mode=ParseMode.HTML,
+            )
+        else:
+            context.user_data["cupom"] = novo_valor.upper()
+            await update.message.reply_text(
+                f"✅ Cupom atualizado para: <b>{_escape_html(novo_valor.upper())}</b>",
+                parse_mode=ParseMode.HTML,
+            )
+        context.user_data.pop("copy_override", None)
+
+    context.user_data.pop("edit_campo", None)
+
+    # Regenera prévia com os dados atualizados
     return await _gerar_e_enviar_previa(update, context)
+
+
+async def voltar_previa_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Admin clicou em ⬅️ Voltar pra Prévia no menu de edição."""
+    query = update.callback_query
+    await query.answer()
+    # Usa query.message como base do reply
+    return await _send_previa(query.message, context)
+
+
+# ── Alias legado ─────────────────────────────────────────────────────────────
+async def salvar_edicao(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Alias de compatibilidade para salvar_edicao_texto."""
+    return await salvar_edicao_texto(update, context)

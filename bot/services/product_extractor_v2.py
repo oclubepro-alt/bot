@@ -2,13 +2,15 @@
 product_extractor_v2.py — Extrator de produtos em camadas.
 
 Ordem de prioridade:
+  Prioridade 0 — Preço PIX/à-vista (antes de tudo)
   Camada 1 — Playwright (renderização real de JS)
   Camada 2 — requests + BeautifulSoup (fallback HTML)
   Camada 3 — Retorno seguro mínimo (nunca quebra o fluxo)
 
-Regra de preço: SEMPRE pegar o preço PROMOCIONAL (menor).
-  Se dois preços forem encontrados, usar o menor.
-  Log obrigatório: PRECO_TIPO=PROMOCIONAL ou PRECO_TIPO=ORIGINAL
+Regra de preço:
+  1. Se existe preço PIX/à-vista → usa ele (is_pix_price=True)
+  2. Senão: pega o MENOR entre promocional e original.
+  Log obrigatório: PRECO_TIPO=PIX | PROMOCIONAL | ORIGINAL
 """
 import json
 import logging
@@ -88,6 +90,88 @@ def _choose_lower_price(p1: str | None, p2: str | None) -> tuple[str | None, str
         return _clean_price(p1), _clean_price(p2)
     else:
         return _clean_price(p2), _clean_price(p1)
+
+
+# ---------------------------------------------------------------------------
+# Prioridade 0: Preço PIX / à vista — buscado ANTES dos seletores padrão
+# ---------------------------------------------------------------------------
+
+_PIX_PATTERN = re.compile(r'pix|à\s*vista', re.IGNORECASE)
+
+
+def _find_price_near_text(soup: BeautifulSoup, text_pattern, price_selectors: list[str]) -> str | None:
+    """
+    Procura pelo texto que casa com text_pattern e tenta encontrar
+    um preço nos elementos vizinhos (subindo até 6 níveis na árvore).
+    Retorna o primeiro valor numérico válido encontrado.
+    """
+    for text_node in soup.find_all(string=text_pattern):
+        parent = text_node.parent
+        for _ in range(6):
+            if parent is None:
+                break
+            for sel in price_selectors:
+                tag = parent.select_one(sel)
+                if tag:
+                    val = tag.get_text(strip=True)
+                    if _parse_price_to_float(val):
+                        return val
+            parent = parent.parent
+    return None
+
+
+def _extract_pix_price_amazon(soup: BeautifulSoup) -> str | None:
+    """Amazon: busca preço 'no Pix' / 'à vista no Pix'."""
+    price_selectors = [
+        ".a-price .a-offscreen",
+        ".a-price-whole",
+        ".a-price .a-price-whole",
+    ]
+    val = _find_price_near_text(soup, _PIX_PATTERN, price_selectors)
+    if val:
+        logger.info(f"[EXTRACTOR_V2] Amazon PIX price encontrado: {val}")
+        return _clean_price(val)
+    return None
+
+
+def _extract_pix_price_ml(soup: BeautifulSoup) -> str | None:
+    """Mercado Livre: busca preço 'no Pix' na seção de desconto Pix."""
+    # Tenta primeiro via seletor específico de desconto Pix
+    pix_section = soup.select_one(".ui-pdp-price--pix, [data-testid='pix-price']")
+    if pix_section:
+        frac = pix_section.select_one(".andes-money-amount__fraction")
+        if frac:
+            val = frac.get_text(strip=True)
+            cents = pix_section.select_one(".andes-money-amount__cents")
+            if cents:
+                val += f",{cents.get_text(strip=True)}"
+            if _parse_price_to_float(val):
+                logger.info(f"[EXTRACTOR_V2] ML PIX price (seletor direto): {val}")
+                return _clean_price(val)
+
+    # Fallback: procura texto 'pix' e pega preço próximo
+    price_selectors = [
+        ".andes-money-amount__fraction",
+        ".price-tag-fraction",
+    ]
+    val = _find_price_near_text(soup, _PIX_PATTERN, price_selectors)
+    if val:
+        logger.info(f"[EXTRACTOR_V2] ML PIX price (texto): {val}")
+        return _clean_price(val)
+    return None
+
+
+def _extract_pix_price_magalu(soup: BeautifulSoup) -> str | None:
+    """Magalu: busca preço 'no Pix' próximo ao label PIX."""
+    price_selectors = [
+        "[data-testid='price-value']",
+        ".sc-kLojnp",
+    ]
+    val = _find_price_near_text(soup, _PIX_PATTERN, price_selectors)
+    if val:
+        logger.info(f"[EXTRACTOR_V2] Magalu PIX price encontrado: {val}")
+        return _clean_price(val)
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -265,8 +349,8 @@ def _extract_price_generic(soup: BeautifulSoup) -> tuple[str | None, str | None]
 # ---------------------------------------------------------------------------
 
 def _extract_from_soup(soup: BeautifulSoup, base_url: str, store_key: str = "other") -> dict:
-    """Extrai título, preço promocional, preço original e imagem."""
-    data = {"titulo": None, "preco": None, "preco_original": None, "imagem": None}
+    """Extrai título, preço promocional, preço original, imagem e flag PIX."""
+    data = {"titulo": None, "preco": None, "preco_original": None, "imagem": None, "is_pix_price": False}
 
     # ── TÍTULO ──────────────────────────────────────────────────────────────
     title_selectors = [
@@ -295,25 +379,50 @@ def _extract_from_soup(soup: BeautifulSoup, base_url: str, store_key: str = "oth
                 data["titulo"] = raw.strip()
                 break
 
-    # ── PREÇO (por loja, com prioridade promocional) ─────────────────────────
+    # ── PREÇO PRIORIDADE 0: PIX / à vista ───────────────────────────────────
+    pix_price = None
     if store_key == "amazon":
-        preco, preco_orig = _extract_price_amazon(soup)
+        pix_price = _extract_pix_price_amazon(soup)
     elif store_key == "mercadolivre":
-        preco, preco_orig = _extract_price_ml(soup)
+        pix_price = _extract_pix_price_ml(soup)
     elif store_key == "magalu":
-        preco, preco_orig = _extract_price_magalu(soup)
-    elif store_key == "netshoes":
-        preco, preco_orig = _extract_price_netshoes(soup)
-    else:
-        preco, preco_orig = _extract_price_generic(soup)
+        pix_price = _extract_pix_price_magalu(soup)
 
-    if preco:
-        data["preco"] = preco
-        data["preco_original"] = preco_orig
-        tipo = "PROMOCIONAL" if preco_orig else "ORIGINAL"
-        logger.info(f"[EXTRACTOR_V2] PRECO_TIPO={tipo} | promo={preco} | orig={preco_orig}")
+    if pix_price:
+        data["preco"]       = pix_price
+        data["is_pix_price"] = True
+        logger.info(f"[EXTRACTOR_V2] PRECO_TIPO=PIX | pix={pix_price}")
+        # Ainda busca preço original (riscado) para comparação
+        if store_key == "amazon":
+            _, preco_orig = _extract_price_amazon(soup)
+        elif store_key == "mercadolivre":
+            _, preco_orig = _extract_price_ml(soup)
+        elif store_key == "magalu":
+            _, preco_orig = _extract_price_magalu(soup)
+        else:
+            preco_orig = None
+        if preco_orig and preco_orig != pix_price:
+            data["preco_original"] = preco_orig
     else:
-        logger.warning(f"[EXTRACTOR_V2] ERRO_EXTRAINDO_PRECO para store_key={store_key}")
+        # ── PREÇO padrão (por loja, com prioridade promocional) ───────────────
+        if store_key == "amazon":
+            preco, preco_orig = _extract_price_amazon(soup)
+        elif store_key == "mercadolivre":
+            preco, preco_orig = _extract_price_ml(soup)
+        elif store_key == "magalu":
+            preco, preco_orig = _extract_price_magalu(soup)
+        elif store_key == "netshoes":
+            preco, preco_orig = _extract_price_netshoes(soup)
+        else:
+            preco, preco_orig = _extract_price_generic(soup)
+
+        if preco:
+            data["preco"]          = preco
+            data["preco_original"] = preco_orig
+            tipo = "PROMOCIONAL" if preco_orig else "ORIGINAL"
+            logger.info(f"[EXTRACTOR_V2] PRECO_TIPO={tipo} | promo={preco} | orig={preco_orig}")
+        else:
+            logger.warning(f"[EXTRACTOR_V2] ERRO_EXTRAINDO_PRECO para store_key={store_key}")
 
     # ── IMAGEM ──────────────────────────────────────────────────────────────
     for og_prop in ["og:image", "twitter:image"]:
@@ -422,6 +531,7 @@ async def extract_product_data_v2(url: str) -> dict:
         "titulo": "Produto", "imagem": None,
         "preco": "Preço não disponível", "preco_original": None,
         "source_method": "FALLBACK_SEM_PRECO", "erro": None,
+        "is_pix_price": False,
     }
 
     # Resolve URL final: Se for Amazon, não usa `requests` porque a Amazon bloqueia o bot.
@@ -463,6 +573,10 @@ async def extract_product_data_v2(url: str) -> dict:
         if data.get(key):
             result[key] = data[key]
 
+    # Propaga flag PIX (True tem prioridade)
+    if data.get("is_pix_price"):
+        result["is_pix_price"] = True
+
     result["source_method"] = data.get("source_method", "HTML_FALLBACK")
     result["final_url"]     = data.get("final_url", final_url)
 
@@ -472,6 +586,7 @@ async def extract_product_data_v2(url: str) -> dict:
 
     logger.info(
         f"[EXTRACTOR_V2] EXTRACAO_SUCESSO | método={result['source_method']} | "
-        f"título={result['titulo'][:40]} | preço={result['preco']} | orig={result['preco_original']}"
+        f"título={result['titulo'][:40]} | preço={result['preco']} | "
+        f"orig={result['preco_original']} | pix={result['is_pix_price']}"
     )
     return result
