@@ -218,11 +218,10 @@ def _extract_pix_price_magalu(soup: BeautifulSoup) -> str | None:
 def _is_valid_price_tag(tag) -> bool:
     """Verifica se a tag não pertence a um preço unitário (ex: R$ 0,26 / unidade)."""
     if not tag: return False
-    # Pega o texto da tag e do elemento pai para garantir contexto
-    text_context = ""
-    if tag.parent:
-        text_context += tag.parent.get_text(strip=True).lower()
-    text_context += " " + tag.get_text(strip=True).lower()
+    # Pega o texto da tag apenas. 
+    # Anteriormente checávamos o 'parent', mas containers da Amazon 
+    # frequentemente misturam preço total e unitário no mesmo div.
+    text_context = tag.get_text(strip=True).lower()
     
     # Palavras-chave que indicam preço unitário
     unit_keywords = ["unidade", "contagem", "/", "cada", " ml", " kg", " g", " l"]
@@ -416,22 +415,40 @@ def _extract_from_soup(soup: BeautifulSoup, base_url: str, store_key: str = "oth
                 data["titulo"] = raw.strip()
                 break
 
-    if not data["titulo"] or data["titulo"] == "Produto":
+    if not data["titulo"] or data["titulo"] in ("Produto", "Amazon.com.br"):
         # Fallback 3: Extração pela URL (Mergulha na slug estruturada)
         try:
             from urllib.parse import urlparse
             path = urlparse(base_url).path
-            parts = [p for p in path.split('/') if len(p) > 10 and '-' in p]
-            if parts:
-                raw = parts[0].replace('-', ' ')
-                raw = re.sub(r'mlb\s*\d+', '', raw, flags=re.I)
-                raw = re.sub(r'[_+\-]?jm\s*$', '', raw, flags=re.I)
-                raw = raw.strip().title()
-                # Corrige pequenos erros gramaticais comuns na url
-                raw = raw.replace('Tnis', 'Tênis')
-                if len(raw) > 5:
-                    data["titulo"] = raw
-                    logger.info(f"[EXTRACTOR_V2] Título extraído via URL: {data['titulo']}")
+            
+            # Padrão Amazon: /NOME-DO-PRODUTO/dp/ID ou /gp/product/ID
+            if "/dp/" in path or "/gp/" in path:
+                # O slug costuma vir antes do /dp/
+                parts = [p for p in path.split('/') if p]
+                idx = -1
+                if "dp" in parts: idx = parts.index("dp")
+                elif "product" in parts: idx = parts.index("product")
+                
+                if idx > 0:
+                    slug = parts[idx-1]
+                    if len(slug) > 5 and '-' in slug:
+                        raw = slug.replace('-', ' ')
+                        data["titulo"] = raw.strip().title()
+                        logger.info(f"[EXTRACTOR_V2] Título via URL (Amazon): {data['titulo']}")
+
+            if not data["titulo"] or data["titulo"] == "Produto":
+                # Padrão Geral (ML / Outros)
+                parts = [p for p in path.split('/') if len(p) > 10 and '-' in p]
+                if parts:
+                    raw = parts[0].replace('-', ' ')
+                    raw = re.sub(r'mlb\s*\d+', '', raw, flags=re.I)
+                    raw = re.sub(r'[_+\-]?jm\s*$', '', raw, flags=re.I)
+                    raw = raw.strip().title()
+                    # Corrige pequenos erros gramaticais comuns na url
+                    raw = raw.replace('Tnis', 'Tênis')
+                    if len(raw) > 5:
+                        data["titulo"] = raw
+                        logger.info(f"[EXTRACTOR_V2] Título extraído via URL: {data['titulo']}")
         except Exception:
             pass
 
@@ -592,7 +609,9 @@ def _extract_with_requests(url: str, store_key: str = "other") -> dict | None:
         logger.info(f"[EXTRACTOR_V2] HTML_FALLBACK iniciando | loja={store_key} | url={url[:80]}")
         session = requests.Session()
         resp = session.get(url, headers=_HEADERS, timeout=_TIMEOUT_HTTP, allow_redirects=True)
-        resp.raise_for_status()
+        # BUGFIX: Não dar raise_for_status aqui. 
+        # Sites como Amazon/ML podem retornar 403/503 mas ainda ter o <title> no body.
+        # resp.raise_for_status() 
         final_url = resp.url
         soup = BeautifulSoup(resp.text, "html.parser")
         data = _extract_from_soup(soup, final_url, store_key)
