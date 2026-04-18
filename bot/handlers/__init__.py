@@ -27,6 +27,7 @@ from bot.handlers.offer_by_link import (
     salvar_edicao,
     salvar_edicao_texto,
     voltar_previa_handler,
+    regen_ia_callback,
     # Estados
     LINK_PRODUTO,
     PREENCHER_NOME_FALTANTE,
@@ -149,6 +150,7 @@ def build_main_handler() -> ConversationHandler:
                 CallbackQueryHandler(confirmar_envio_link, pattern=f"^{CB_CONFIRMAR_LINK}$"),
                 CallbackQueryHandler(confirmar_envio_link, pattern=f"^{CB_CANCELAR_OFERTA}$"),
                 CallbackQueryHandler(btn_editar_oferta,    pattern=r"^editar_oferta$"),
+                CallbackQueryHandler(regen_ia_callback,    pattern=r"^regen_ia$"),
                 CallbackQueryHandler(start_command,        pattern=f"^({CB_VOLTAR_MENU}|{CB_MENU_PRINCIPAL})$"),
             ],
 

@@ -158,3 +158,26 @@ async def test_link_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         logs.append("\n⚠️ <b>Status:</b> Nenhuma tag detectada no link final.")
 
     await msg_wait.edit_text("\n".join(logs), parse_mode=ParseMode.HTML)
+
+async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Verifica a saúde do bot e a versão atual para detectar conflitos (Apenas Admin)."""
+    from bot.permissions import is_admin
+    import os
+    import sys
+    from datetime import datetime
+    
+    if not is_admin(update.effective_user.id):
+        return
+
+    # ID Único desta instância para detectar conflitos
+    instance_id = f"{os.getpid()}-{datetime.now().strftime('%H:%M:%S')}"
+    
+    msg = (
+        "📊 <b>STATUS DO SISTEMA</b>\n\n"
+        f"🕒 <b>Iniciado em:</b> <code>{instance_id}</code>\n"
+        f"🐍 <b>Python:</b> <code>{sys.version.split()[0]}</code>\n"
+        f"🖥️ <b>Plataforma:</b> <code>{sys.platform}</code>\n"
+        f"🛠️ <b>Modo:</b> <code>{'PRODUÇÃO (Railway)' if os.getenv('RAILWAY_STATIC_URL') else 'DESENVOLVIMENTO'}</code>\n\n"
+        "✅ Se você ver DUAS mensagens de status com horários diferentes simultâneas, há um <b>CONFLITO</b> de instâncias!"
+    )
+    await update.message.reply_text(msg, parse_mode=ParseMode.HTML)

@@ -39,43 +39,52 @@ _WA_CHANNEL = os.getenv("WHATSAPP_CHANNEL_URL", "").strip()
 _CATEGORY_EMOJIS: list[tuple[list[str], str]] = [
     # Eletrônicos / Tecnologia
     (["iphone", "samsung", "xiaomi", "celular", "smartphone", "fone", "airpod",
-      "tablet", "ipad", "note", "galaxy", "motorola"], "📱"),
+      "tablet", "ipad", "note", "galaxy", "motorola", "poco"], "📱"),
     (["notebook", "macbook", "laptop", "pc", "computador", "monitor",
-      "teclado", "mouse", "webcam", "processador", "ssd", "hd"], "💻"),
+      "teclado", "mouse", "webcam", "processador", "ssd", "hd", "placa de vídeo", "gpu"], "💻"),
     (["tv", "smart tv", "televisão", "televisor", "led", "4k", "oled"], "📺"),
-    (["câmera", "camera", "gopro", "lens", "lente", "tripé", "drone"], "📷"),
+    (["câmera", "camera", "gopro", "lens", "lente", "tripé", "drone", "instax", "polaroid"], "📷"),
     (["fone", "headphone", "headset", "earphone", "speaker", "caixa de som",
-      "soundbar", "jbl", "bose", "sony"], "🎧"),
+      "soundbar", "jbl", "bose", "sony", "alexa", "echo dot"], "🔊"),
     (["console", "playstation", "xbox", "nintendo", "switch", "videogame",
-      "controle", "joystick", "game"], "🎮"),
+      "controle", "joystick", "game", "gamer", "cadeira gamer"], "🎮"),
     # Moda / Vestuário
     (["tênis", "tenis", "adidas", "nike", "puma", "vans", "sapato",
-      "bota", "sandália", "chinelo"], "👟"),
+      "bota", "sandália", "chinelo", "oakley"], "👟"),
     (["camisa", "camiseta", "blusa", "calça", "casaco", "jaqueta",
-      "vestido", "moletom", "agasalho"], "👕"),
-    (["bolsa", "mochila", "carteira", "necessaire", "mala"], "👜"),
+      "vestido", "moletom", "agasalho", "bermuda", "cueca", "meia"], "👕"),
+    (["bolsa", "mochila", "carteira", "necessaire", "mala", "kipling"], "👜"),
+    (["relógio", "relogio", "watch", "smartwatch", "apple watch", "amazfit"], "⌚"),
+    (["óculos", "oculos", "ray ban", "sunglasses"], "🕶️"),
     # Casa e Cozinha
     (["airfryer", "fritadeira", "panela", "fogão", "forno", "microondas",
-      "cafeteira", "liquidificador", "batedeira", "sanduicheira"], "🍳"),
+      "cafeteira", "nespresso", "dolce gusto", "liquidificador", "batedeira", "sanduicheira"], "🍳"),
     (["geladeira", "freezer", "refrigerador", "lavadora", "máquina de lavar",
-      "secadora", "aspirador", "robô aspirador"], "🏠"),
+      "secadora", "aspirador", "robô aspirador", "mop"], "🏠"),
+    (["jogo de cama", "lençol", "travesseiro", "toalha", "edredom"], "🛏️"),
+    (["ferramenta", "bosch", "furadeira", "parafusadeira", "jogo de chaves"], "🛠️"),
     # Esportes / Fitness
-    (["haltere", "halter", "kettlebell", "bicicleta", "esteira",
-      "suplemento", "whey", "proteína", "creatina"], "🏋️"),
+    (["haltere", "halter", "kettlebell", "bicicleta", "bike", "esteira",
+      "suplemento", "whey", "proteína", "creatina", "pre treino"], "🏋️"),
     # Beleza / Cuidados
-    (["perfume", "colônia", "maquiagem", "batom", "shampoo",
-      "condicionador", "creme", "hidratante", "protetor"], "💄"),
+    (["perfume", "colônia", "fragrância", "maquiagem", "batom", "shampoo",
+      "condicionador", "creme", "hidratante", "protetor", "skincare", "dove", "nivea"], "✨"),
+    (["escova", "chapinha", "secador", "barbeador", "philips"], "🪮"),
     # Livros / Educação
-    (["livro", "book", "curso", "kindle", "ebook"], "📚"),
+    (["livro", "book", "curso", "kindle", "ebook", "papelaria"], "📚"),
     # Bebês / Infantil
-    (["bebê", "bebe", "infantil", "fraldas", "carrinho", "berço"], "🍼"),
+    (["bebê", "bebe", "infantil", "fraldas", "carrinho", "berço", "pampers", "huggies"], "👶"),
+    (["brinquedo", "lego", "boneca", "carrinho", "quebra cabeça"], "🧸"),
     # Pets
-    (["pet", "cachorro", "gato", "ração", "coleira", "arranhador"], "🐾"),
-    # Lojas
+    (["pet", "cachorro", "gato", "ração", "coleira", "arranhador", "whiskas"], "🐾"),
+    # Higiene / Limpeza
+    (["sabão", "omo", "detergente", "amaciante", "papel higiênico", "limpeza"], "🧼"),
+    # Lojas (como fallback)
     (["netshoes"], "👟"),
     (["magalu", "magazine"], "🛒"),
     (["amazon"], "📦"),
     (["mercado livre", "mercadolivre"], "🟡"),
+]
 ]
 
 _DEFAULT_EMOJI = "🔥"
@@ -149,26 +158,37 @@ def _build_telegram(
     preco_e = _escape_html(preco)
     loja_e  = _escape_html(loja)
 
-    linhas = [f"📦 <b>{nome_e}</b>", ""]
+    linhas = []
+    
+    # Cabeçalho Principal
+    linhas.append(f"{emoji} <b>{nome_e}</b>")
+    linhas.append("")
 
-    # Preço principal
+    # Seção de Preço
     p_line = f"💰 <b>Preço:</b> {preco_e}"
     if preco_original and preco_original != preco:
         orig_e = _escape_html(preco_original)
         p_line += f" <s>{orig_e}</s>"
+    
     if desconto:
         desc_e = _escape_html(desconto)
         p_line += f" ({desc_e})"
-    linhas.append(p_line)
     
+    linhas.append(p_line)
+
+    # Loja e Contexto
     linhas.append(f"🏪 <b>Loja:</b> {loja_e}")
 
+    # IA / Legenda (se houver)
     if legenda_ia and legenda_ia.strip():
         linhas.append("")
-        linhas.append(f"<i>{_escape_html(legenda_ia.strip())}</i>")
+        linhas.append(f"✨ <i>{_escape_html(legenda_ia.strip())}</i>")
 
+    # Call to Action
     linhas.append("")
-    linhas.append(f"🛒 <a href='{short_url}'><b>COMPRE AQUI</b></a>")
+    linhas.append(f"🛒 <a href='{short_url}'><b>CLIQUE AQUI PARA COMPRAR</b></a>")
+    linhas.append("")
+    linhas.append("🚨 <i>Preços sujeitos a alteração a qualquer momento!</i>")
 
     return "\n".join(linhas)
 

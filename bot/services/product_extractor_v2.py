@@ -45,7 +45,9 @@ def _parse_price_to_float(text: str) -> float | None:
     """Converte 'R$ 1.299,90' → 1299.90 para comparação numérica."""
     if not text:
         return None
-    cleaned = re.sub(r"[^\d,.]", "", str(text))
+    # Remove textos entre parênteses (ex: "R$ 49,90 (Economize R$ 10,00)")
+    text = re.sub(r"\(.*?\)", "", str(text))
+    cleaned = re.sub(r"[^\d,.]", "", text)
     if not cleaned:
         return None
     # Formato BR: 1.299,90
@@ -422,7 +424,17 @@ def _extract_from_soup(soup: BeautifulSoup, base_url: str, store_key: str = "oth
             tipo = "PROMOCIONAL" if preco_orig else "ORIGINAL"
             logger.info(f"[EXTRACTOR_V2] PRECO_TIPO={tipo} | promo={preco} | orig={preco_orig}")
         else:
-            logger.warning(f"[EXTRACTOR_V2] ERRO_EXTRAINDO_PRECO para store_key={store_key}")
+            # ── ULTIMATO: TENTA EXTRAIR PREÇO DO TÍTULO ───────────────────────
+            if data.get("titulo"):
+                # Busca padrões como R$ 99,90 ou 99.90
+                price_match = re.search(r"R\$\s*(\d+[.,]\d{2})", data["titulo"])
+                if price_match:
+                    found_p = f"R$ {price_match.group(1)}"
+                    data["preco"] = found_p
+                    logger.info(f"[EXTRACTOR_V2] Salva-vidas: Preço extraído do título -> {found_p}")
+            
+            if not data.get("preco"):
+                logger.warning(f"[EXTRACTOR_V2] ERRO_EXTRAINDO_PRECO para store_key={store_key}")
 
     # ── IMAGEM ──────────────────────────────────────────────────────────────
     for og_prop in ["og:image", "twitter:image"]:

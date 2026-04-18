@@ -131,14 +131,19 @@ def _gerar_copy_basica(
     )
 
 
-def _build_previa_keyboard() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton("✅ Confirmar e Publicar", callback_data=CB_CONFIRMAR_LINK)],
-        [
-            InlineKeyboardButton("✏️ Corrigir", callback_data="editar_oferta"),
-            InlineKeyboardButton("❌ Cancelar",  callback_data=CB_CANCELAR_OFERTA),
-        ],
+def _build_previa_keyboard(show_ai_button: bool = False) -> InlineKeyboardMarkup:
+    buttons = [
+        [InlineKeyboardButton("🚀 CONFIRMAR E PUBLICAR AGORA", callback_data=CB_CONFIRMAR_LINK)],
+    ]
+    
+    if show_ai_button:
+        buttons.append([InlineKeyboardButton("✨ REGERAR LEGENDA IA", callback_data="regen_ia")])
+        
+    buttons.append([
+        InlineKeyboardButton("✏️ CORRIGIR DADOS", callback_data="editar_oferta"),
+        InlineKeyboardButton("🗑️ DESCARTAR",  callback_data=CB_CANCELAR_OFERTA),
     ])
+    return InlineKeyboardMarkup(buttons)
 
 
 # ============================================================================
@@ -270,7 +275,8 @@ async def _send_previa(message, context: ContextTypes.DEFAULT_TYPE) -> int:
     if len(preview_text) > limite:
         preview_text = preview_text[:limite] + "\n\n<i>... (texto truncado na prévia)</i>"
 
-    keyboard = _build_previa_keyboard()
+    from bot.utils.config import OPENAI_API_KEY
+    keyboard = _build_previa_keyboard(show_ai_button=bool(OPENAI_API_KEY))
 
     logger.info(
         f"[OFERTA_LINK] PREVIEW_ENVIADA | imagem={'sim' if imagem else 'não'} "
@@ -367,6 +373,12 @@ async def receber_link_produto(update: Update, context: ContextTypes.DEFAULT_TYP
     final_url = original_link
     if "amzn.to" in original_link or "shope.ee" in original_link:
         try:
+            await msg_aguardo.edit_text(
+                "⏳ <b>Processando...</b>\n"
+                "✅ Link recebido\n"
+                "📡 <b>Resolvendo link encurtado...</b>",
+                parse_mode=ParseMode.HTML
+            )
             from bot.services.affiliate_link_service import resolve_url_playwright
             logger.info(f"[OFERTA_LINK] Resolvendo shortener via Playwright: {original_link}")
             final_url = await resolve_url_playwright(original_link)
@@ -374,6 +386,12 @@ async def receber_link_produto(update: Update, context: ContextTypes.DEFAULT_TYP
             logger.warning(f"[OFERTA_LINK] Playwright falhou ao resolver: {e}")
 
     # ── 2. Extração + resolução adicional ────────────────────────────────────
+    await msg_aguardo.edit_text(
+        "⏳ <b>Processando...</b>\n"
+        "✅ Link resolvido\n"
+        "🛍️ <b>Extraindo informações do produto...</b>",
+        parse_mode=ParseMode.HTML
+    )
     logger.info(f"[OFERTA_LINK] EXTRACAO_INICIADA: {final_url[:80]}")
     try:
         from bot.services.product_extractor_v2 import extract_product_data_v2
@@ -388,6 +406,12 @@ async def receber_link_produto(update: Update, context: ContextTypes.DEFAULT_TYP
         }
 
     # ── 2. Injeta afiliado na URL final (sem sobrescrever depois) ────────────
+    await msg_aguardo.edit_text(
+        "⏳ <b>Processando...</b>\n"
+        "✅ Dados extraídos\n"
+        "⚙️ <b>Configurando links de afiliado...</b>",
+        parse_mode=ParseMode.HTML
+    )
     from bot.services.affiliate_link_service import injetar_link_afiliado, _detectar_loja
 
     store_key     = _detectar_loja(final_url)
@@ -399,12 +423,6 @@ async def receber_link_produto(update: Update, context: ContextTypes.DEFAULT_TYP
     context.user_data["store_key"]     = store_key
     context.user_data["affiliate_url"] = affiliate_url
     context.user_data["dados_produto"] = dados
-
-    logger.info(
-        f"[OFERTA_LINK] LINK_AFILIADO_GERADO: {affiliate_url[:120]}\n"
-        f"  MÉTODO={dados.get('source_method')} | título={dados.get('titulo', '')[:40]} "
-        f"| preço={dados.get('preco')} | PIX={dados.get('is_pix_price', False)}"
-    )
 
     # ── TENTATIVA DE SALVA-VIDAS VIA TEXTO DO USUÁRIO ───────────────────────
     # Se a extração falhou mas o admin mandou o nome junto com o link, usamos o da mensagem!
@@ -428,17 +446,19 @@ async def receber_link_produto(update: Update, context: ContextTypes.DEFAULT_TYP
     # ── 3. Dados faltantes → pede ao admin ───────────────────────────────────
     if not dados.get("titulo") or dados["titulo"] == "Produto":
         await update.message.reply_text(
-            "⚠️ Não consegui extrair o <b>nome</b> do produto automaticamente.\n\n"
-            "Por favor, digite o nome do produto:",
+            "<b>🔍 NOME DO PRODUTO</b>\n\n"
+            "⚠️ Não conseguimos identificar o nome automaticamente.\n"
+            "📢 <b>Por favor, digite o nome completo do produto:</b>",
             parse_mode=ParseMode.HTML,
         )
         return PREENCHER_NOME_FALTANTE
 
     if not dados.get("preco") or dados["preco"] == "Preço não disponível":
         await update.message.reply_text(
-            f"✅ Produto: <b>{_escape_html(dados['titulo'][:80])}</b>\n\n"
-            "⚠️ Não consegui extrair o <b>preço</b> automaticamente.\n\n"
-            "Por favor, digite o preço (ex: <code>R$ 49,90</code>):",
+            f"📦 Produto: <b>{_escape_html(dados['titulo'][:80])}</b>\n\n"
+            "<b>💰 PREÇO DA OFERTA</b>\n"
+            "⚠️ O preço não foi detectado.\n"
+            "💵 <b>Digite o valor da promoção (ex: 49,90):</b>",
             parse_mode=ParseMode.HTML,
         )
         return PREENCHER_PRECO_FALTANTE
@@ -593,7 +613,7 @@ async def confirmar_envio_link(update: Update, context: ContextTypes.DEFAULT_TYP
         try:
             from bot.services.copy_builder import build_copy
             from bot.services.ai_writer import generate_caption
-
+            
             try:
                 copy_ia = await generate_caption(
                     nome=titulo, preco=preco, loja=dados.get("store", "Loja"),
@@ -640,14 +660,20 @@ async def confirmar_envio_link(update: Update, context: ContextTypes.DEFAULT_TYP
         logger.info(f"[OFERTA_LINK] Chamando publish_offer (imagem={'sim' if img_url else 'não'})...")
         await publish_offer(context.bot, copies_final, img_url)
 
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🔗 Publicar Outro Link", callback_data=CB_PUBLICAR_LINK)],
+            [InlineKeyboardButton("🏠 Menu Principal", callback_data=CB_MENU_PRINCIPAL)],
+        ])
+
+        msg_sucesso = "✅ <b>Oferta enviada com sucesso ao canal!</b>"
         await query.message.reply_text(
-            "✅ <b>Publicado com sucesso no canal!</b>",
+            msg_sucesso,
             parse_mode=ParseMode.HTML,
-            reply_markup=back_keyboard,
+            reply_markup=keyboard,
         )
         try:
             await query.message.delete()
-        except Exception:
+        except:
             pass
 
     except Exception as e:
@@ -810,3 +836,10 @@ async def voltar_previa_handler(update: Update, context: ContextTypes.DEFAULT_TY
 async def salvar_edicao(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Alias de compatibilidade para salvar_edicao_texto."""
     return await salvar_edicao_texto(update, context)
+async def regen_ia_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Callback para o botão 'Gerar Legenda IA'."""
+    query = update.callback_query
+    await query.answer("✨ Gerando nova versão...")
+    
+    await _gerar_legenda_ia_background(query.message, context)
+    return await _send_previa(query.message, context)
