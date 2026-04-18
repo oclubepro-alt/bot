@@ -58,6 +58,12 @@ _STORE_DOMAINS = [
 ]
 
 
+# ---------------------------------------------------------------------------
+# Domínios de encurtadores que precisam ser expandidos antes da injeção
+# ---------------------------------------------------------------------------
+_SHORT_DOMAINS = ["amzn.to", "amzn.com", "shope.ee", "shp.ee", "bit.ly", "t.co", "tinyurl.com", "is.gd"]
+
+
 def _detectar_loja(url: str) -> str:
     url_lower = url.lower()
     for fragment, key in _STORE_DOMAINS:
@@ -135,31 +141,45 @@ def _injetar_netshoes(url: str, ns_id: str) -> str:
 # Função pública central
 # ---------------------------------------------------------------------------
 
-def injetar_link_afiliado(url: str, store_key: str | None = None) -> str:
+async def injetar_link_afiliado(url: str, store_key: str | None = None) -> str:
     """
     Injeta o link de afiliado correto por loja.
 
-    IMPORTANTE: Deve ser chamada DEPOIS de resolve_url(), nunca antes.
+    IMPORTANTE: Agora é ASYNC para permitir expansão de links curtos via Playwright.
 
     Args:
-        url:        URL final/resolvida do produto.
+        url:        URL (pode ser curta ou longa).
         store_key:  Loja (detectada automaticamente se None).
 
     Returns:
         URL com parâmetros de afiliado corretos.
-        Se loja não suportada: retorna URL original sem erro.
     """
     if not url or not isinstance(url, str):
         logger.warning("[AFFILIATE_SERVICE] ERRO_GERANDO_LINK_AFILIADO: URL inválida.")
         return url or ""
 
-    # Limpeza preventiva de rastreadores de terceiros
+    # 1. Detectar loja se não informado
+    if not store_key:
+        store_key = _detectar_loja(url)
+
+    # 2. SE FOR LINK CURTO: Obrigatório esticar antes de injetar
+    is_short = any(s in url.lower() for s in _SHORT_DOMAINS)
+    if is_short:
+        logger.info(f"[AFFILIATE_SERVICE] Link curto detectado ({url[:30]}). Expandindo...")
+        try:
+            expanded = await resolve_url_playwright(url)
+            if expanded and expanded != url:
+                url = expanded
+                # Redetecta loja após expansão
+                store_key = _detectar_loja(url)
+                logger.info(f"[AFFILIATE_SERVICE] Expandido → {url[:80]}... | Loja: {store_key}")
+        except Exception as e:
+            logger.warning(f"[AFFILIATE_SERVICE] Falha ao expandir link curto: {e}")
+
+    # 3. Limpeza preventiva de rastreadores de terceiros
     for param in ["fbclid", "gclid", "aff_id", "clickid"]:
         url = re.sub(rf"[?&]{param}=[^&]*", "", url)
     url = re.sub(r"\?&", "?", url).rstrip("?&")
-
-    if not store_key:
-        store_key = _detectar_loja(url)
 
     logger.info(f"[AFFILIATE_SERVICE] Iniciando injeção | loja={store_key} | url={url[:80]}")
 
@@ -169,7 +189,7 @@ def injetar_link_afiliado(url: str, store_key: str | None = None) -> str:
         if store_key != "other":
             logger.warning(
                 f"[AFFILIATE_SERVICE] LOJA_NAO_CONFIGURADA: {store_key} "
-                f"— verifique AFFILIATE_ID_{store_key.upper()} no .env"
+                f"— verifique as variáveis de ambiente no Railway"
             )
         else:
             logger.info(f"[AFFILIATE_SERVICE] LOJA_NAO_SUPORTADA | url={url[:60]}")
@@ -189,7 +209,7 @@ def injetar_link_afiliado(url: str, store_key: str | None = None) -> str:
         else:
             return url
 
-        print(f"[LINK_AFILIADO_GERADO] Loja: {store_key} | URL: {resultado}")
+        logger.info(f"[LINK_AFILIADO_GERADO] Loja: {store_key} | URL Final: {resultado}")
         return resultado
 
     except Exception as e:

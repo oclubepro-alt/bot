@@ -111,3 +111,46 @@ async def check_config_command(update: Update, context: ContextTypes.DEFAULT_TYP
     msg.append(f"📄 Arquivo .env existe: {'✅' if has_env else '❌ (Railway usa Variables tab)'}")
 
     await update.message.reply_text("\n".join(msg), parse_mode=ParseMode.HTML)
+
+
+async def test_link_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Passo a passo da transformação de um link (Apenas Admin)."""
+    from bot.permissions import is_admin
+    from bot.services.affiliate_link_service import injetar_link_afiliado, _detectar_loja
+    from bot.utils.url_resolver import resolve_url
+    import asyncio
+
+    if not is_admin(update.effective_user.id):
+        return
+
+    args = context.args
+    if not args:
+        await update.message.reply_text("❌ Uso: `/test_link [url]`", parse_mode=ParseMode.HTML)
+        return
+
+    original_url = args[0]
+    msg_wait = await update.message.reply_text("⏳ <b>Analisando link...</b>", parse_mode=ParseMode.HTML)
+    
+    logs = [f"📥 <b>Original:</b> <code>{original_url}</code>"]
+    
+    # 1. Resolver encurtador básico
+    resolved = await asyncio.to_thread(resolve_url, original_url)
+    if resolved != original_url:
+        logs.append(f"🔍 <b>Resolvido:</b> <code>{resolved[:100]}...</code>")
+    
+    # 2. Injetar (isso vai disparar o Playwright se for shortener e o injetar_link_afiliado for async)
+    final_affiliate = await injetar_link_afiliado(resolved)
+    
+    store_key = _detectar_loja(final_affiliate)
+    logs.append(f"🏪 <b>Loja Detectada:</b> <code>{store_key}</code>")
+    
+    # 3. Resultado
+    logs.append(f"\n✅ <b>Link Final Gerado:</b>\n<code>{final_affiliate}</code>")
+    
+    # Verificar TAG
+    if "tag=" in final_affiliate or "matt_from=" in final_affiliate or "utm_source=" in final_affiliate or "af_id=" in final_affiliate:
+        logs.append("\n🎯 <b>Status:</b> Tag de afiliado injetada com sucesso!")
+    else:
+        logs.append("\n⚠️ <b>Status:</b> Nenhuma tag detectada no link final.")
+
+    await msg_wait.edit_text("\n".join(logs), parse_mode=ParseMode.HTML)

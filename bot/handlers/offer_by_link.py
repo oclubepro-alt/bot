@@ -391,7 +391,9 @@ async def receber_link_produto(update: Update, context: ContextTypes.DEFAULT_TYP
     from bot.services.affiliate_link_service import injetar_link_afiliado, _detectar_loja
 
     store_key     = _detectar_loja(final_url)
-    affiliate_url = injetar_link_afiliado(final_url, store_key)
+    affiliate_url = await injetar_link_afiliado(final_url, store_key)
+
+    logger.info(f"[OFERTA_LINK] AFFILIATE_URL_READY: {affiliate_url[:120]}")
 
     context.user_data["final_url"]     = final_url
     context.user_data["store_key"]     = store_key
