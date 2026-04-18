@@ -580,6 +580,30 @@ async def extract_product_data_v2(url: str) -> dict:
     result["source_method"] = data.get("source_method", "HTML_FALLBACK")
     result["final_url"]     = data.get("final_url", final_url)
 
+    # ── FALLBACK DE TÍTULO VIA URL SLUG ─────────────────────────────────────
+    if not result.get("titulo") or result["titulo"] == "Produto":
+        import urllib.parse
+        path = urllib.parse.urlparse(result["final_url"]).path
+        
+        slug = ""
+        if store_key == "amazon" and "/dp/" in path:
+            slug = path.split("/dp/")[0].strip("/")
+        elif store_key == "mercadolivre" and "/MLB-" in path:
+            # ex: /MLB-1234-nome-do-produto-aqui-_JM -> nome-do-produto-aqui
+            parts = path.split("-")
+            if len(parts) > 2:
+                # Remove MLB, id e _JM se houver
+                clean_parts = [p for p in parts[2:] if p != "_JM"]
+                slug = "-".join(clean_parts)
+        elif store_key == "magalu":
+            # ex: /nome-do-produto/p/123/
+            slug = path.split("/p/")[0].strip("/")
+
+        if slug:
+            titulo_from_slug = urllib.parse.unquote(slug).replace("-", " ").title().strip()
+            result["titulo"] = titulo_from_slug
+            logger.info(f"[EXTRACTOR_V2] Fallback de Título via URL Slug: {titulo_from_slug}")
+
     if not result.get("preco") or result["preco"] == "Preço não disponível":
         result["source_method"] = "FALLBACK_SEM_PRECO"
         logger.warning(f"[EXTRACTOR_V2] ERRO_EXTRAINDO_PRECO | url={final_url[:60]}")
