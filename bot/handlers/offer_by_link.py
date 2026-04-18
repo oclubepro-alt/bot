@@ -45,9 +45,9 @@ AGUARDAR_CUPOM           = 16   # NOVO
 AGUARDAR_EDICAO_TEXTO    = 17   # NOVO
 
 # ── Callbacks exclusivos deste fluxo ────────────────────────────────────────
-CB_CONFIRMAR_LINK  = "oferta_link_confirmar"
-CB_CANCELAR_OFERTA = "oferta_link_cancelar"
-CB_SEM_CUPOM       = "sem_cupom"
+CB_CONFIRMAR_LINK       = "oferta_link_confirmar"
+CB_CANCELAR_OFERTA_LINK = "oferta_link_cancelar"
+CB_SEM_CUPOM            = "sem_cupom"
 CB_EDIT_PRECO      = "edit_preco"
 CB_EDIT_COPY       = "edit_copy"
 CB_EDIT_LINK       = "edit_link"
@@ -113,8 +113,7 @@ def _gerar_copy_basica(
     is_pix: bool = False,
 ) -> str:
     """Cópia de venda simples em HTML — usada como fallback se build_copy falhar."""
-    metodo_txt = f"\n\n<i>🔍 Extraído via {source_method}</i>" if source_method else ""
-
+    
     preco_linha = (
         f"💰 Por apenas <b>{_escape_html(preco)} no PIX</b>"
         if is_pix
@@ -132,7 +131,6 @@ def _gerar_copy_basica(
         f"{cupom_linha}\n\n"
         f"👉 <a href=\"{link}\">Clique aqui para comprar</a>\n\n"
         f"⚡ <i>Oferta por tempo limitado. Corra!</i>"
-        f"{metodo_txt}"
     )
 
 
@@ -146,7 +144,7 @@ def _build_previa_keyboard(show_ai_button: bool = False) -> InlineKeyboardMarkup
         
     buttons.append([
         InlineKeyboardButton("✏️ CORRIGIR DADOS", callback_data="editar_oferta"),
-        InlineKeyboardButton("🗑️ DESCARTAR",  callback_data=CB_CANCELAR_OFERTA),
+        InlineKeyboardButton("🗑️ DESCARTAR",  callback_data=CB_CANCELAR_OFERTA_LINK),
     ])
     return InlineKeyboardMarkup(buttons)
 
@@ -575,7 +573,7 @@ async def confirmar_envio_link(update: Update, context: ContextTypes.DEFAULT_TYP
     ]])
 
     # ── Cancelamento ────────────────────────────────────────────────────────
-    if query.data == CB_CANCELAR_OFERTA:
+    if query.data == CB_CANCELAR_OFERTA_LINK:
         await query.answer("❌ Publicação cancelada.")
         logger.info(f"[OFERTA_LINK] PUBLICACAO_CANCELADA por admin {query.from_user.id}.")
         context.user_data.clear()

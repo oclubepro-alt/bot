@@ -39,7 +39,7 @@ from bot.handlers.offer_by_link import (
     AGUARDAR_EDICAO_TEXTO,    # NOVO
     # Callbacks
     CB_CONFIRMAR_LINK,
-    CB_CANCELAR_OFERTA,
+    CB_CANCELAR_OFERTA_LINK,
     CB_SEM_CUPOM,             # NOVO
     CB_EDIT_PRECO,            # NOVO
     CB_EDIT_COPY,             # NOVO
@@ -148,7 +148,7 @@ def build_main_handler() -> ConversationHandler:
             # Estado 4: prévia exibida — aguarda Confirmar / Corrigir / Cancelar
             CONFIRMAR_LINK: [
                 CallbackQueryHandler(confirmar_envio_link, pattern=f"^{CB_CONFIRMAR_LINK}$"),
-                CallbackQueryHandler(confirmar_envio_link, pattern=f"^{CB_CANCELAR_OFERTA}$"),
+                CallbackQueryHandler(confirmar_envio_link, pattern=f"^{CB_CANCELAR_OFERTA_LINK}$"),
                 CallbackQueryHandler(btn_editar_oferta,    pattern=r"^editar_oferta$"),
                 CallbackQueryHandler(regen_ia_callback,    pattern=r"^regen_ia$"),
                 CallbackQueryHandler(start_command,        pattern=f"^({CB_VOLTAR_MENU}|{CB_MENU_PRINCIPAL})$"),
