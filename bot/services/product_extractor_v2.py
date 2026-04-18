@@ -53,6 +53,9 @@ def _parse_price_to_float(text: str) -> float | None:
     # Formato BR: 1.299,90
     if "," in cleaned:
         cleaned = cleaned.replace(".", "").replace(",", ".")
+    else:
+        # Falso positivo: "1.020" sem vírgula significa 1020 no BR
+        cleaned = cleaned.replace(".", "")
     try:
         return float(cleaned)
     except ValueError:
@@ -150,17 +153,6 @@ def _extract_pix_price_ml(soup: BeautifulSoup) -> str | None:
             if _parse_price_to_float(val):
                 logger.info(f"[EXTRACTOR_V2] ML PIX price (seletor direto): {val}")
                 return _clean_price(val)
-
-    # Fallback: procura texto 'pix' e pega preço próximo
-    price_selectors = [
-        ".andes-money-amount__fraction",
-        ".price-tag-fraction",
-    ]
-    val = _find_price_near_text(soup, _PIX_PATTERN, price_selectors)
-    if val:
-        logger.info(f"[EXTRACTOR_V2] ML PIX price (texto): {val}")
-        return _clean_price(val)
-        return _clean_price(val)
     return None
 
 
