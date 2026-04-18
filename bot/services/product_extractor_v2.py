@@ -416,6 +416,25 @@ def _extract_from_soup(soup: BeautifulSoup, base_url: str, store_key: str = "oth
                 data["titulo"] = raw.strip()
                 break
 
+    if not data["titulo"] or data["titulo"] == "Produto":
+        # Fallback 3: Extração pela URL (Mergulha na slug estruturada)
+        try:
+            from urllib.parse import urlparse
+            path = urlparse(base_url).path
+            parts = [p for p in path.split('/') if len(p) > 10 and '-' in p]
+            if parts:
+                raw = parts[0].replace('-', ' ')
+                raw = re.sub(r'mlb\s*\d+', '', raw, flags=re.I)
+                raw = re.sub(r'[_+\-]?jm\s*$', '', raw, flags=re.I)
+                raw = raw.strip().title()
+                # Corrige pequenos erros gramaticais comuns na url
+                raw = raw.replace('Tnis', 'Tênis')
+                if len(raw) > 5:
+                    data["titulo"] = raw
+                    logger.info(f"[EXTRACTOR_V2] Título extraído via URL: {data['titulo']}")
+        except Exception:
+            pass
+
     # ── PREÇO PRIORIDADE 0: PIX / à vista ───────────────────────────────────
     pix_price = None
     if store_key == "amazon":
