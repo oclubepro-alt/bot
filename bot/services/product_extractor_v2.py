@@ -661,6 +661,10 @@ async def _extract_with_playwright(url: str, store_key: str = "other") -> dict |
         from playwright.async_api import async_playwright
         import os
 
+        # Força Magalu Desktop (menos agressivo no bloqueio que a versão Mobile)
+        if "magazineluiza.com.br" in url:
+            url = url.replace("m.magazineluiza.com.br", "www.magazineluiza.com.br")
+
         logger.info(f"[EXTRACTOR_V2] PLAYWRIGHT iniciando | loja={store_key} | url={url[:80]}")
         async with async_playwright() as pw:
             proxy_config = None
@@ -704,8 +708,12 @@ async def _extract_with_playwright(url: str, store_key: str = "other") -> dict |
 
             # Timeout aumentado para ambiente de cloud (Railway)
             await page.goto(url, wait_until="networkidle", timeout=45000)
-            await page.wait_for_timeout(3000)
-            
+            # Simulação de comportamento humano (Scroll)
+            try:
+                await page.evaluate("window.scrollTo(0, 400)")
+                await page.wait_for_timeout(1000)
+            except: pass
+
             html = await page.content()
             final_url = page.url
             await browser.close()
@@ -714,42 +722,58 @@ async def _extract_with_playwright(url: str, store_key: str = "other") -> dict |
             data = _extract_from_soup(soup, final_url, store_key)
             data["source_method"] = "PLAYWRIGHT"
             data["final_url"] = final_url
-            data["debug_info"] = f"PW {store_key} | UA: {'Mobile' if 'm.magazineluiza' in url else 'Desktop'}"
+            data["debug_info"] = f"PW {store_key} | UA: {ua[:20]}..."
             return data
 
     except ImportError:
         logger.warning("[EXTRACTOR_V2] Playwright não instalado. Fallback HTML.")
         return {"debug_info": "Playwright não instalado"}
     except Exception as e:
-        msg = f"PLAYWRIGHT ERRO: {e}"
-        logger.warning(f"[EXTRACTOR_V2] {msg}")
-        return {"debug_info": msg}
+        import traceback
+        err_msg = str(e).split('\n')[0] # Pega a primeira linha do erro
+        logger.warning(f"[EXTRACTOR_V2] PLAYWRIGHT ERRO: {e}")
+        return {"debug_info": f"PW_ERROR: {err_msg}"}
 
 
 # ---------------------------------------------------------------------------
 # Camada 2 — HTML + BeautifulSoup
 # ---------------------------------------------------------------------------
 
-def _extract_with_requests(url: str, store_key: str = "other") -> dict | None:
+def _extract_with_httpx(url: str, store_key: str = "other") -> dict | None:
+    """Fallback usando HTTP/2 (mais difícil de detectar que requests)"""
     try:
-        logger.info(f"[EXTRACTOR_V2] HTML_FALLBACK iniciando | loja={store_key} | url={url[:80]}")
-        session = requests.Session()
-        # Escolha inteligente de User-Agent para Mobile Magalu
-        headers = _MOBILE_HEADERS.copy() if "m.magazineluiza" in url else _HEADERS.copy()
-        if "magazineluiza" in url:
-            headers["Referer"] = "https://www.google.com/"
-            
-        resp = session.get(url, headers=headers, timeout=_TIMEOUT_HTTP, allow_redirects=True)
+        import httpx
+        logger.info(f"[EXTRACTOR_V2] HTTPX_FALLBACK iniciando | loja={store_key} | url={url[:80]}")
         
-        final_url = resp.url
-        soup = BeautifulSoup(resp.text, "html.parser")
-        data = _extract_from_soup(soup, final_url, store_key)
-        data["source_method"] = "HTML_FALLBACK"
-        data["final_url"] = final_url
-        data["debug_info"] = f"HTTP {resp.status_code} | UA: {'Mobile' if 'm.magazineluiza' in url else 'Desktop'}"
-        return data
+        # Força Magalu Desktop no HTTPX também
+        if "magazineluiza.com.br" in url:
+            url = url.replace("m.magazineluiza.com.br", "www.magazineluiza.com.br")
+
+        headers = _HEADERS.copy() # Sempre desktop para evitar bloqueio agressivo mobile
+        headers.update({
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+            "Accept-Encoding": "gzip, deflate, br",
+            "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8",
+            "Cache-Control": "max-age=0",
+            "Referer": "https://www.google.com.br/",
+            "Sec-Ch-Ua": '"Not?A_Brand";v="8", "Chromium";v="124", "Google Chrome";v="124"',
+            "Sec-Ch-Ua-Mobile": "?0",
+            "Sec-Ch-Ua-Platform": '"Windows"',
+            "Upgrade-Insecure-Requests": "1"
+        })
+
+        with httpx.Client(http2=True, timeout=_TIMEOUT_HTTP, follow_redirects=True) as client:
+            resp = client.get(url, headers=headers)
+            
+            final_url = str(resp.url)
+            soup = BeautifulSoup(resp.text, "html.parser")
+            data = _extract_from_soup(soup, final_url, store_key)
+            data["source_method"] = "HTTPX_FALLBACK"
+            data["final_url"] = final_url
+            data["debug_info"] = f"H2 {resp.status_code} | UA: Desktop"
+            return data
     except Exception as e:
-        msg = f"HTML_FALLBACK ERRO: {e}"
+        msg = f"HTTPX_FALLBACK ERRO: {e}"
         logger.warning(f"[EXTRACTOR_V2] {msg}")
         return {"debug_info": msg}
 
@@ -801,9 +825,10 @@ async def extract_product_data_v2(url: str) -> dict:
     data = await _extract_with_playwright(final_url, store_key)
 
     # Camada 2: HTML Fallback
-    if not data or not data.get("titulo"):
-        logger.info("[EXTRACTOR_V2] Playwright insuficiente → HTML_FALLBACK")
-        data = await asyncio.to_thread(_extract_with_requests, final_url, store_key)
+    # Camada 2: HTTPX (HTTP/2) Fallback
+    if not data or not data.get("titulo") or "BLOQUEIO" in data.get("titulo", ""):
+        logger.info("[EXTRACTOR_V2] Playwright insuficiente/bloqueado → HTTPX_FALLBACK")
+        data = await asyncio.to_thread(_extract_with_httpx, final_url, store_key)
 
     # Camada 3: mínimo seguro
     if not data:
