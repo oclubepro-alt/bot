@@ -17,6 +17,8 @@ import re
 import asyncio
 import httpx
 import json
+import os
+import random
 from bs4 import BeautifulSoup
 from urllib.parse import urlparse, unquote, urljoin
 from playwright.async_api import async_playwright
@@ -48,6 +50,58 @@ _BLOCK_KEYWORDS = ["captcha", "blocked", "bot manager", "perfdrive", "shieldsqua
 _TIMEOUT_HTTP = 15
 _TIMEOUT_PLAYWRIGHT = 45
 _TIMEOUT_SCRAPERAPI = 60
+
+
+# ---------------------------------------------------------------------------
+# Camada 0: API Interna da Magalu (Prioridade Zero)
+# ---------------------------------------------------------------------------
+
+async def fetch_magalu_api(url: str) -> dict | None:
+    """
+    Usa a API interna da Magalu para pegar dados sem scraping.
+    URL do produto contém /p/{PRODUCT_ID}/
+    """
+    try:
+        match = re.search(r'/p/(\d+)/', url)
+        if not match:
+            # Tenta outro padrão comum na Magalu
+            match = re.search(r'/p/(\w+)/', url)
+            if not match:
+                return None
+
+        product_id = match.group(1)
+        # Tenta o endpoint v1 (mobile/app) que costuma ser mais aberto
+        api_url = f"https://www.magazineluiza.com.br/api/v1/product/{product_id}/"
+
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "Accept": "application/json",
+            "Referer": "https://www.magazineluiza.com.br/"
+        }
+
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.get(api_url, headers=headers)
+            if resp.status_code == 200:
+                data = resp.json()
+                logger.info(f"[MAGALU_API] ✅ Sucesso no endpoint: {api_url}")
+                
+                # Mapeia campos da API para o nosso padrão
+                best_price = data.get("price", {}).get("best_price")
+                original_price = data.get("price", {}).get("original_price")
+                
+                return {
+                    "titulo": data.get("title", "Produto"),
+                    "imagem": data.get("image", None),
+                    "preco": _clean_price(str(best_price)) if best_price else "Preço não disponível",
+                    "preco_original": _clean_price(str(original_price)) if original_price else None,
+                    "source_method": "MAGALU_API_INTERNA",
+                    "is_pix_price": True # Geralmente o best_price da API é o à vista
+                }
+            else:
+                logger.warning(f"[MAGALU_API] ❌ Falha: Status {resp.status_code}")
+    except Exception as e:
+        logger.warning(f"[MAGALU_API] ❌ Exceção: {str(e)[:100]}")
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -549,107 +603,139 @@ def _extract_from_soup(soup: BeautifulSoup, base_url: str, store_key: str = "oth
 
 async def get_page_html(url: str) -> tuple[str | None, str]:
     """
-    Pipeline Híbrido de Extração (Regra 2):
-    1. ScraperAPI (Prioridade)
-    2. Playwright Local (Fallback)
-    3. Requests Simples (Último Recurso)
+    Pipeline Híbrido de Extração (V5 Hardened):
+    1. ScraperAPI (Premium + Browser Render)
+    2. Playwright Local (Anti-Detecção)
+    3. Requests Simples (Fallback)
     """
+    # [DEBUG] Presença da chave no início da execução
+    logger.info(f"[DEBUG] SCRAPERAPI_KEY presente: {bool(SCRAPERAPI_KEY)}")
+
     # ── TENTATIVA 1: ScraperAPI ───────────────────────────────────────────
     if SCRAPERAPI_KEY:
         try:
-            logger.info(f"[EXTRACTOR_V2] Tentativa 1: ScraperAPI | url={url[:60]}")
-            params = {
-                "api_key": SCRAPERAPI_KEY,
-                "url": url,
-                "render": "true",
-                "country_code": "br"
+            logger.info(f"[EXTRACTOR_V2] Camada 1: ScraperAPI | url={url[:60]}")
+            
+            is_amazon = "amazon" in url.lower() or "amzn.to" in url.lower()
+            is_magalu = "magazineluiza" in url.lower() or "magalu" in url.lower()
+            is_shopee = "shopee" in url.lower()
+            
+            payload = {
+                'api_key': SCRAPERAPI_KEY,
+                'url': url,
+                'render': 'true',        # JS rendering obrigatório
+                'country_code': 'br',    # IP brasileiro obrigatório
+                'device_type': 'desktop' # Magalu bloqueia mobile frequentemente
             }
+
+            # Amazon e Magalu exigem proxies premium
+            if is_amazon or is_magalu:
+                payload['premium'] = 'true'
             
-            # Magalu exige modo ULTRA_PREMIUM (exige muitos créditos, mas fura o Radware)
-            # Amazon funciona bem com PREMIUM padrão
-            if "magazineluiza.com.br" in url or "magaluluiza.com" in url:
-                params["ultra_premium"] = "true"
-                logger.info("[EXTRACTOR_V2] Usando modo ULTRA_PREMIUM para Magalu.")
-            elif "amazon.com" in url or "amzn.to" in url:
-                params["premium"] = "true"
-                logger.info("[EXTRACTOR_V2] Usando modo PREMIUM para Amazon.")
-            
-            headers = _HEADERS
-            if "m.magazineluiza.com.br" in url:
-                headers = _MOBILE_HEADERS
-            
+            # Shopee precisa de sessão mantida
+            if is_shopee:
+                payload['keep_headers'] = 'true'
+
             async with httpx.AsyncClient(timeout=_TIMEOUT_SCRAPERAPI) as client:
-                resp = await client.get("http://api.scraperapi.com", params=params, headers=headers)
+                resp = await client.get('http://api.scraperapi.com', params=payload)
+                
                 if resp.status_code == 200:
                     html = resp.text
-                    if not any(k in html.lower() for k in _BLOCK_KEYWORDS):
+                    html_lower = html.lower()
+                    
+                    # Detectar CAPTCHA/Bloqueio no conteúdo (Radware, etc)
+                    bloqueios = ["radware", "captcha", "robot", "blocked", "access denied", "unusual traffic", "verify you are human"]
+                    found_block = None
+                    for termo in bloqueios:
+                        if termo in html_lower:
+                            found_block = termo
+                            break
+                    
+                    if not found_block:
+                        logger.info(f"[SCRAPERAPI] ✅ Sucesso ({len(html)} chars)")
                         return html, "SCRAPERAPI"
-                    logger.warning("[EXTRACTOR_V2] ScraperAPI retornou CAPTCHA/Block. Pulando para Playwright.")
+                    else:
+                        logger.warning(f"[SCRAPERAPI] ❌ BLOQUEIO DETECTADO: '{found_block}' — indo para Playwright")
                 else:
-                    logger.warning(f"[EXTRACTOR_V2] ScraperAPI erro {resp.status_code}")
+                    logger.warning(f"[SCRAPERAPI] ❌ Falhou com status {resp.status_code}: {resp.text[:200]}")
         except Exception as e:
-            logger.warning(f"[EXTRACTOR_V2] ScraperAPI falhou: {str(e)[:100]}")
+            logger.warning(f"[SCRAPERAPI] ❌ Exceção: {str(e)[:100]}")
 
-    # ── TENTATIVA 2: Playwright Local ─────────────────────────────────────
+    # ── TENTATIVA 2: Playwright Local (Anti-Detecção) ─────────────────────
     try:
-        logger.info(f"[EXTRACTOR_V2] Tentativa 2: Playwright Local | url={url[:60]}")
+        logger.info(f"[EXTRACTOR_V2] Camada 2: Playwright Local | url={url[:60]}")
         async with async_playwright() as pw:
             browser = await pw.chromium.launch(headless=True, args=[
-                "--no-sandbox", 
-                "--disable-setuid-sandbox",
-                "--disable-blink-features=AutomationControlled"
+                '--no-sandbox',
+                '--disable-blink-features=AutomationControlled',
+                '--disable-dev-shm-usage',
+                '--disable-setuid-sandbox'
             ])
-            # Simula um dispositivo real mais fielmente
+            
             context = await browser.new_context(
+                viewport={'width': 1366, 'height': 768},
                 user_agent=_HEADERS["User-Agent"],
-                viewport={'width': 1920, 'height': 1080},
-                device_scale_factor=1,
+                locale='pt-BR',
+                timezone_id='America/Sao_Paulo',
+                extra_http_headers={
+                    'Accept-Language': 'pt-BR,pt;q=0.9',
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8'
+                }
             )
+
+            # Mascarar propriedades do WebDriver que o Radware detecta
+            await context.add_init_script("""
+                Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+                Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3]});
+                window.chrome = { runtime: {} };
+            """)
+
             page = await context.new_page()
             await stealth(page)
-            
-            # Tenta carregar a página
+
+            # Comportamento humano: esperar entre 1 e 3 segundos antes de acessar
+            await asyncio.sleep(random.uniform(1, 3))
+
             try:
-                # wait_until="load" é mais rápido que networkidle e menos propenso a timeout eterno
-                await page.goto(url, wait_until="load", timeout=_TIMEOUT_PLAYWRIGHT * 1000)
-                
-                # Espera extra para renderização de JS (Magalu/Amazon são pesados)
-                await page.wait_for_timeout(3000) 
-                
-                # Scroll para ativar carregamento lazy de imagens e preços
+                await page.goto(url, wait_until='load', timeout=_TIMEOUT_PLAYWRIGHT * 1000)
+                # Espera extra para renderização de JS
+                await page.wait_for_timeout(3000)
+                # Scroll para ativar carregamento lazy
                 await page.evaluate("window.scrollTo(0, 400)")
                 await page.wait_for_timeout(2000)
             except Exception as e:
-                logger.warning(f"[EXTRACTOR_V2] Playwright timeout ou erro no goto: {str(e)[:50]}")
+                logger.warning(f"[PLAYWRIGHT] Timeout ou erro no goto (tentando prosseguir): {str(e)[:50]}")
 
             html = await page.content()
             await browser.close()
             
             if html and not any(k in html.lower() for k in _BLOCK_KEYWORDS):
+                logger.info(f"[PLAYWRIGHT] ✅ Sucesso ({len(html)} chars)")
                 return html, "PLAYWRIGHT"
-            logger.warning("[EXTRACTOR_V2] Playwright bloqueado ou vazio. Indo para Requests.")
+            logger.warning("[PLAYWRIGHT] ❌ Bloqueado ou vazio. Indo para Requests.")
     except Exception as e:
-        logger.warning(f"[EXTRACTOR_V2] Playwright falhou criticamente: {str(e)[:100]}")
+        logger.warning(f"[PLAYWRIGHT] ❌ Exceção Crítica: {str(e)[:100]}")
 
     # ── TENTATIVA 3: Requests Simples ─────────────────────────────────────
     try:
-        logger.info(f"[EXTRACTOR_V2] Tentativa 3: Requests Simples | url={url[:60]}")
+        logger.info(f"[EXTRACTOR_V2] Camada 3: Requests Simples | url={url[:60]}")
         async with httpx.AsyncClient(timeout=_TIMEOUT_HTTP, follow_redirects=True, headers=_HEADERS) as client:
             resp = await client.get(url)
             if resp.status_code == 200:
+                logger.info("[REQUESTS] ✅ Sucesso")
                 return resp.text, "REQUESTS_FALLBACK"
     except Exception as e:
-        logger.warning(f"[EXTRACTOR_V2] Requests falhou: {str(e)[:100]}")
+        logger.warning(f"[REQUESTS] ❌ Falhou: {str(e)[:100]}")
 
     return None, "FALHA_TOTAL"
 
 
 async def extract_product_data_v2(url: str) -> dict:
-    """Orquestrador do Pipeline Híbrido."""
+    """Orquestrador do Pipeline Híbrido V5 (5 Camadas)."""
     from bot.utils.detect_store import detect_store
     from bot.utils.url_resolver import resolve_url
 
-    logger.info(f"[EXTRACTOR_V2] ── INÍCIO PIPELINE HÍBRIDO ── {url}")
+    logger.info(f"[EXTRATOR] ── INÍCIO PIPELINE V5 ── {url[:80]}")
     
     result = {
         "store": "desconhecida", "store_key": "other",
@@ -658,35 +744,55 @@ async def extract_product_data_v2(url: str) -> dict:
         "source_method": "INICIANDO", "is_pix_price": False
     }
 
-    # Resolve encurtadores simples antes de começar (exceto Amazon)
+    # Resolve encurtadores simples antes de começar
     final_url = url
-    if "amzn.to" not in url and "amazon.com" not in url:
-        try: final_url = await asyncio.to_thread(resolve_url, url)
-        except: pass
+    try:
+        # Se for Magalu curta (magalu.me) ou encurtadores comuns, resolve para pegar o ID
+        if any(x in url for x in ["magalu.me", "t.co", "bit.ly", "tinyurl.com"]):
+            final_url = await asyncio.to_thread(resolve_url, url)
+    except: pass
 
     store_display, store_key = detect_store(final_url)
     result["store"] = store_display
     result["store_key"] = store_key
+    
+    logger.info(f"[EXTRATOR] Loja detectada: {store_key}")
 
-    # 1. Obtém HTML (Regra 2)
+    # ── CAMADA 0: API INTERNA (Apenas Magalu) ──────────────────────────────
+    if store_key == "magalu":
+        logger.info("[EXTRATOR] Camada 0: Tentando Magalu API Interna...")
+        api_data = await fetch_magalu_api(final_url)
+        if api_data:
+            logger.info("[EXTRATOR] Camada 0 (MAGALU_API): ✅ Sucesso")
+            result.update(api_data)
+            return result
+        else:
+            logger.info("[EXTRATOR] Camada 0 (MAGALU_API): ❌ Falhou")
+
+    # ── CAMADA 1-3: Fluxo de HTML ──────────────────────────────────────────
     html, method = await get_page_html(final_url)
     result["source_method"] = method
 
-    # 2. Parseamento Centralizado (Regra 3)
     if html:
+        # 2. Parseamento Centralizado (BS4)
         data = _extract_from_soup(BeautifulSoup(html, "html.parser"), final_url, store_key)
         
-        # Merge de resultados
+        # Merge de resultados se não estiver bloqueado no parser
         if "BLOQUEIO" not in (data.get("titulo") or ""):
             for k in ["titulo", "preco", "preco_original", "imagem", "is_pix_price"]:
                 if data.get(k): result[k] = data[k]
+            logger.info(f"[EXTRATOR] Camada {method}: ✅ Sucesso")
         else:
             result["titulo"] = data.get("titulo")
             result["source_method"] = f"{method}_BUT_PARSER_BLOCKED"
+            logger.warning(f"[EXTRATOR] Camada {method}: ❌ Bloqueio no conteúdo")
 
-    # Fallback inquebrável para título se falhar tudo
+    # ── CAMADA 4: Fallback Seguro ──────────────────────────────────────────
     if not result.get("titulo") or result["titulo"] == "Produto":
         result["titulo"] = "Produto Disponível"
+        if result["source_method"] == "FALHA_TOTAL":
+            result["source_method"] = "FALLBACK_MINIMO"
 
-    logger.info(f"[EXTRACTOR_V2] FIM PIPELINE | Method: {result['source_method']} | Titulo: {result['titulo'][:40]}")
+    logger.info(f"[EXTRATOR] Método final usado: {result['source_method']}")
+    logger.info(f"[EXTRATOR] Preço final: {result['preco']}")
     return result
