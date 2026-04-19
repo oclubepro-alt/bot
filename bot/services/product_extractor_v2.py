@@ -12,7 +12,17 @@ Regra de preço:
   2. Senão: pega o MENOR entre promocional e original.
   Log obrigatório: PRECO_TIPO=PIX | PROMOCIONAL | ORIGINAL
 """
+import logging
+import re
+import asyncio
+import httpx
+import json
+from bs4 import BeautifulSoup
+from urllib.parse import urlparse, unquote, urljoin
+from playwright.async_api import async_playwright
+from playwright_stealth import stealth_async
 from bot.utils.config import SCRAPERAPI_KEY
+
 logger = logging.getLogger(__name__)
 
 _HEADERS = {
