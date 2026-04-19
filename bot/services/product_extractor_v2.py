@@ -564,11 +564,18 @@ async def get_page_html(url: str) -> tuple[str | None, str]:
                 "render": "true",
                 "country_code": "br"
             }
-            if "amazon.com" in url or "amzn.to" in url:
+            
+            # Sites agressivos (Amazon, Magalu) exigem modo premium (proxies residenciais)
+            premium_sites = ["amazon.com", "amzn.to", "magazineluiza.com.br", "magaluluiza.com"]
+            if any(site in url for site in premium_sites):
                 params["premium"] = "true"
             
+            headers = _HEADERS
+            if "m.magazineluiza.com.br" in url:
+                headers = _MOBILE_HEADERS
+            
             async with httpx.AsyncClient(timeout=_TIMEOUT_SCRAPERAPI) as client:
-                resp = await client.get("http://api.scraperapi.com", params=params)
+                resp = await client.get("http://api.scraperapi.com", params=params, headers=headers)
                 if resp.status_code == 200:
                     html = resp.text
                     if not any(k in html.lower() for k in _BLOCK_KEYWORDS):
