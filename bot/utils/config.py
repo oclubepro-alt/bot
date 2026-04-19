@@ -90,4 +90,6 @@ except ValueError:
 _raw_auto = os.getenv("AUTO_APPROVE", "false").strip().lower()
 AUTO_APPROVE: bool = _raw_auto in ("1", "true", "yes")
 
+SCRAPERAPI_KEY: str = os.getenv("SCRAPERAPI_KEY", "").strip()
+
 logger.info(f"[CONFIG] Scheduler: a cada {MONITOR_INTERVAL_MINUTES} min | Auto-approve: {AUTO_APPROVE}")

@@ -12,15 +12,7 @@ Regra de preço:
   2. Senão: pega o MENOR entre promocional e original.
   Log obrigatório: PRECO_TIPO=PIX | PROMOCIONAL | ORIGINAL
 """
-import json
-import logging
-import re
-import asyncio
-
-import requests
-from bs4 import BeautifulSoup
-from urllib.parse import urljoin
-
+from bot.utils.config import SCRAPERAPI_KEY
 logger = logging.getLogger(__name__)
 
 _HEADERS = {
@@ -495,12 +487,12 @@ def _extract_from_soup(soup: BeautifulSoup, base_url: str, store_key: str = "oth
 
     if not data["titulo"]:
         # Fallback 2: Meta tags
-        for attr_name, attr_val in [("property", "og:title"), ("name", "twitter:title")]:
+        for attr_name, attr_val in [("property", "og:title"), ("name", "twitter:title"), ("name", "title")]:
             meta = soup.find("meta", attrs={attr_name: attr_val})
             if meta and meta.get("content"):
                 raw = meta["content"]
-                raw = re.sub(r"^(Amazon\.com\.br|Mercado Livre|Magalu)\s*[:\-]\s*", "", raw, flags=re.I)
-                raw = re.sub(r"\s*[|–\-]\s*(Amazon|Mercado Livre|Magalu).*", "", raw, flags=re.I)
+                raw = re.sub(r"^(Amazon\.com\.br|Mercado Livre|Magalu|Magazine Luiza)\s*[:\-]\s*", "", raw, flags=re.I)
+                raw = re.sub(r"\s*[|–\-]\s*(Amazon|Mercado Livre|Magalu|Magazine Luiza|Shopee).*", "", raw, flags=re.I)
                 data["titulo"] = raw.strip()
                 break
 
@@ -653,233 +645,207 @@ def _extract_from_soup(soup: BeautifulSoup, base_url: str, store_key: str = "oth
 
 
 # ---------------------------------------------------------------------------
-# Camada 1 — Playwright
+# Motores de Captura de HTML (HTML Providers)
 # ---------------------------------------------------------------------------
 
-async def _extract_with_playwright(url: str, store_key: str = "other") -> dict | None:
+async def _get_html_scraperapi(url: str) -> tuple[str | None, str | None, str | None]:
+    """Tenta obter HTML via ScraperAPI (Camada 1 - Prioridade)"""
+    if not SCRAPERAPI_KEY:
+        return None, None, "SCRAPERAPI_OFF (Sem Chave)"
+        
+    try:
+        import httpx
+        logger.info(f"[EXTRACTOR_V2] SCRAPERAPI tentando | url={url[:80]}")
+        
+        params = {
+            "api_key": SCRAPERAPI_KEY,
+            "url": url,
+            "render": "true",
+            "country_code": "br"
+        }
+        # Amazon requer premium no ScraperAPI
+        if "amazon.com" in url or "amzn.to" in url:
+            params["premium"] = "true"
+            
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            resp = await client.get("http://api.scraperapi.com", params=params)
+            if resp.status_code == 200:
+                html = resp.text
+                # Validação rápida de bloqueio no HTML retornado
+                if any(k in html.lower() for k in ["captcha", "blocked", "radware", "robot", "validate.perfdrive.com"]):
+                    logger.warning("[EXTRACTOR_V2] SCRAPERAPI retornou página de bloqueio.")
+                    return None, None, "SCRAPERAPI_BLOCKED"
+                
+                return html, str(resp.url), "SCRAPERAPI"
+            else:
+                logger.warning(f"[EXTRACTOR_V2] SCRAPERAPI erro {resp.status_code}")
+                return None, None, f"SCRAPERAPI_ERROR_{resp.status_code}"
+    except Exception as e:
+        logger.warning(f"[EXTRACTOR_V2] SCRAPERAPI falha: {e}")
+        return None, None, f"SCRAPERAPI_FAIL: {str(e)[:50]}"
+
+async def _get_html_playwright(url: str) -> tuple[str | None, str | None, str | None]:
+    """Tenta obter HTML via Playwright Local (Camada 2 - Fallback)"""
     try:
         from playwright.async_api import async_playwright
-        import os
-
-        # Força Magalu Desktop (menos agressivo no bloqueio que a versão Mobile)
+        from playwright_stealth import stealth_async
+        
         if "magazineluiza.com.br" in url:
             url = url.replace("m.magazineluiza.com.br", "www.magazineluiza.com.br")
 
-        logger.info(f"[EXTRACTOR_V2] PLAYWRIGHT iniciando | loja={store_key} | url={url[:80]}")
+        logger.info(f"[EXTRACTOR_V2] PLAYWRIGHT local iniciando | url={url[:80]}")
         async with async_playwright() as pw:
-            proxy_config = None
-            http_proxy = os.getenv("HTTP_PROXY", "").strip()
-            if http_proxy and http_proxy.lower() not in ("none", "null", "undefined"):
-                proxy_config = {"server": http_proxy}
-
             browser = await pw.chromium.launch(
                 headless=True,
-                proxy=proxy_config,
                 args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--disable-gpu"],
             )
-            # Escolha inteligente de User-Agent
-            ua = _MOBILE_HEADERS["User-Agent"] if "m.magazineluiza" in url else _HEADERS["User-Agent"]
-            logger.info(f"[EXTRACTOR_V2] PLAYWRIGHT: Usando UA {'MOBILE' if 'm.magazineluiza' in url else 'DESKTOP'}")
-            
-            page = await browser.new_page(
-                user_agent=ua, 
-                locale="pt-BR",
-                timezone_id="America/Sao_Paulo"
+            context = await browser.new_context(
+                user_agent=_HEADERS["User-Agent"],
+                viewport={"width": 1280, "height": 800},
+                locale="pt-BR"
             )
+            page = await context.new_page()
+            await stealth_async(page)
             
-            # ── STEALTH MODE (Bypass Fingerprinting) ──────────────────────────────
-            try:
-                from playwright_stealth import stealth_async
-                await stealth_async(page)
-                logger.info("[EXTRACTOR_V2] PLAYWRIGHT: Stealth Mode ativado.")
-            except ImportError:
-                logger.warning("[EXTRACTOR_V2] playwright-stealth não disponível.")
-
-            # Cabeçalhos extras para Magalu
-            if "magazineluiza" in url:
-                await page.set_extra_http_headers({
-                    "Referer": "https://www.google.com/",
-                    "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
-                    "Sec-Fetch-Dest": "document",
-                    "Sec-Fetch-Mode": "navigate",
-                    "Sec-Fetch-Site": "cross-site",
-                    "Sec-Fetch-User": "?1"
-                })
-
-            # Timeout aumentado para ambiente de cloud (Railway)
+            # Tenta carregar até networkidle ou timeout
             await page.goto(url, wait_until="networkidle", timeout=45000)
-            # Simulação de comportamento humano (Scroll)
-            try:
-                await page.evaluate("window.scrollTo(0, 400)")
-                await page.wait_for_timeout(1000)
+            
+            # Scroll para simular comportamento humano
+            try: await page.evaluate("window.scrollTo(0, 400)")
             except: pass
-
+            
+            await asyncio.sleep(1) # Pequena pausa para JS estabilizar
+            
             html = await page.content()
             final_url = page.url
             await browser.close()
-
-            soup = BeautifulSoup(html, "html.parser")
-            data = _extract_from_soup(soup, final_url, store_key)
-            data["source_method"] = "PLAYWRIGHT"
-            data["final_url"] = final_url
-            data["debug_info"] = f"PW {store_key} | UA: {ua[:20]}..."
-            return data
-
-    except ImportError:
-        logger.warning("[EXTRACTOR_V2] Playwright não instalado. Fallback HTML.")
-        return {"debug_info": "Playwright não instalado"}
+            
+            if any(k in html.lower() for k in ["captcha", "blocked", "radware", "robot"]):
+                return None, None, "PLAYWRIGHT_BLOCKED"
+                
+            return html, final_url, "PLAYWRIGHT"
     except Exception as e:
-        import traceback
-        err_msg = str(e).split('\n')[0] # Pega a primeira linha do erro
-        logger.warning(f"[EXTRACTOR_V2] PLAYWRIGHT ERRO: {e}")
-        return {"debug_info": f"PW_ERROR: {err_msg}"}
+        logger.warning(f"[EXTRACTOR_V2] PLAYWRIGHT falha: {e}")
+        return None, None, f"PW_FAIL: {str(e).splitlines()[0]}"
 
-
-# ---------------------------------------------------------------------------
-# Camada 2 — HTML + BeautifulSoup
-# ---------------------------------------------------------------------------
-
-def _extract_with_httpx(url: str, store_key: str = "other") -> dict | None:
-    """Fallback usando HTTP/2 (mais difícil de detectar que requests)"""
+async def _get_html_httpx(url: str) -> tuple[str | None, str | None, str | None]:
+    """Tenta obter HTML via HTTPX simples (Camada 3 - Último Recurso)"""
     try:
         import httpx
-        logger.info(f"[EXTRACTOR_V2] HTTPX_FALLBACK iniciando | loja={store_key} | url={url[:80]}")
+        logger.info(f"[EXTRACTOR_V2] HTTPX simple fallback | url={url[:80]}")
         
-        # Força Magalu Desktop no HTTPX também
-        if "magazineluiza.com.br" in url:
-            url = url.replace("m.magazineluiza.com.br", "www.magazineluiza.com.br")
-
-        headers = _HEADERS.copy() # Sempre desktop para evitar bloqueio agressivo mobile
-        headers.update({
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
-            "Accept-Encoding": "gzip, deflate, br",
-            "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8",
-            "Cache-Control": "max-age=0",
-            "Referer": "https://www.google.com.br/",
-            "Sec-Ch-Ua": '"Not?A_Brand";v="8", "Chromium";v="124", "Google Chrome";v="124"',
-            "Sec-Ch-Ua-Mobile": "?0",
-            "Sec-Ch-Ua-Platform": '"Windows"',
-            "Upgrade-Insecure-Requests": "1"
-        })
-
-        with httpx.Client(http2=True, timeout=_TIMEOUT_HTTP, follow_redirects=True) as client:
-            resp = client.get(url, headers=headers)
-            
-            final_url = str(resp.url)
-            soup = BeautifulSoup(resp.text, "html.parser")
-            data = _extract_from_soup(soup, final_url, store_key)
-            data["source_method"] = "HTTPX_FALLBACK"
-            data["final_url"] = final_url
-            data["debug_info"] = f"H2 {resp.status_code} | UA: Desktop"
-            return data
+        async with httpx.AsyncClient(http2=True, timeout=15.0, follow_redirects=True, headers=_HEADERS) as client:
+            resp = await client.get(url)
+            if resp.status_code == 200:
+                return resp.text, str(resp.url), "HTTPX_FALLBACK"
+            return None, None, f"HTTPX_{resp.status_code}"
     except Exception as e:
-        msg = f"HTTPX_FALLBACK ERRO: {e}"
-        logger.warning(f"[EXTRACTOR_V2] {msg}")
-        return {"debug_info": msg}
-
+        return None, None, f"HTTPX_FAIL: {str(e)[:50]}"
 
 # ---------------------------------------------------------------------------
-# Ponto de entrada público
+# Ponto de entrada público (Orquestrador)
 # ---------------------------------------------------------------------------
 
 async def extract_product_data_v2(url: str) -> dict:
     """
-    Pipeline em camadas: Playwright → HTML → mínimo seguro.
-    Sempre retorna dict completo, nunca levanta exceção para o chamador.
+    Pipeline Híbrido V8: ScraperAPI -> Playwright -> HTTPX.
+    Centraliza o retorno de dados com fallback seguro.
     """
     from bot.utils.detect_store import detect_store
     from bot.utils.url_resolver import resolve_url
 
-    logger.info(f"[EXTRACTOR_V2] ── INÍCIO PIPELINE ── url={url[:100]}")
-
+    logger.info(f"[EXTRACTOR_V2] ── INÍCIO PIPELINE HÍBRIDO ──")
+    
     result = {
         "store": "desconhecida", "store_key": "other",
         "final_url": url, "affiliate_url": url,
         "titulo": "Produto", "imagem": None,
         "preco": "Preço não disponível", "preco_original": None,
-        "source_method": "FALLBACK_SEM_PRECO", "erro": None,
-        "is_pix_price": False,
+        "source_method": "EXTRAÇÃO_PENDENTE", "erro": None,
+        "is_pix_price": False, "debug_info": ""
     }
 
-    # Resolve URL final: Se for Amazon, não usa `requests` porque a Amazon bloqueia o bot.
-    # O Playwright resolverá o redirecionamento com integridade depois.
+    # 1. Resolve URL (apenas se não for Amazon, que resolvemos no motor)
+    final_url = url
     if "amzn.to" not in url and "amazon.com" not in url:
         try:
             final_url = await asyncio.to_thread(resolve_url, url)
-            result["final_url"] = final_url
-            logger.info(f"[EXTRACTOR_V2] URL_RESOLVIDA: {final_url[:100]}")
-        except Exception as e:
-            final_url = url
-            logger.warning(f"[EXTRACTOR_V2] Falha ao resolver URL: {e}")
-    else:
-        final_url = url
-        logger.info(f"[EXTRACTOR_V2] URL amazon será resolvida no Playwright: {final_url}")
+        except: pass
 
-    # Detecta loja
     store_display, store_key = detect_store(final_url)
-    result["store"]     = store_display
+    result["store"] = store_display
     result["store_key"] = store_key
-    logger.info(f"[EXTRACTOR_V2] LOJA_DETECTADA: {store_display} (key={store_key})")
 
-    # Camada 1: Playwright
-    data = await _extract_with_playwright(final_url, store_key)
+    # 2. Orquestração de Camadas
+    html = None
+    best_final_url = final_url
+    method = "FALHA_TOTAL"
+    debug_notes = []
 
-    # Camada 2: HTML Fallback
-    # Camada 2: HTTPX (HTTP/2) Fallback
-    if not data or not data.get("titulo") or "BLOQUEIO" in data.get("titulo", ""):
-        logger.info("[EXTRACTOR_V2] Playwright insuficiente/bloqueado → HTTPX_FALLBACK")
-        data = await asyncio.to_thread(_extract_with_httpx, final_url, store_key)
+    # Camada 1: ScraperAPI
+    html, f_url, m = await _get_html_scraperapi(final_url)
+    if html:
+        method = m
+        best_final_url = f_url
+    else:
+        debug_notes.append(m)
+        # Camada 2: Playwright Local
+        html, f_url, m = await _get_html_playwright(final_url)
+        if html:
+            method = m
+            best_final_url = f_url
+        else:
+            debug_notes.append(m)
+            # Camada 3: HTTPX
+            html, f_url, m = await _get_html_httpx(final_url)
+            if html:
+                method = m
+                best_final_url = f_url
+            else:
+                debug_notes.append(m)
 
-    # Camada 3: mínimo seguro
-    if not data:
-        logger.error("[EXTRACTOR_V2] Todas as camadas falharam. Retornando mínimo.")
-        result["erro"] = "Todas as camadas de extração falharam."
-        return result
+    result["source_method"] = method
+    result["debug_info"] = " | ".join(debug_notes) if debug_notes else method
+    result["final_url"] = best_final_url
 
-    # Merge
-    for key in ["titulo", "preco", "preco_original", "imagem"]:
-        if data.get(key):
-            result[key] = data[key]
-
-    # Propaga flag PIX (True tem prioridade)
-    if data.get("is_pix_price"):
-        result["is_pix_price"] = True
-
-    result["source_method"] = data.get("source_method", "HTML_FALLBACK")
-    result["final_url"]     = data.get("final_url", final_url)
-    result["debug_info"]    = data.get("debug_info", "N/A")
-
-    # ── FALLBACK DE TÍTULO VIA URL SLUG ─────────────────────────────────────
-    if not result.get("titulo") or result["titulo"] == "Produto":
-        import urllib.parse
-        path = urllib.parse.urlparse(result["final_url"]).path
+    # 3. Parseamento Centralizado
+    if html:
+        soup = BeautifulSoup(html, "html.parser")
+        data = _extract_from_soup(soup, best_final_url, store_key)
         
-        slug = ""
-        if store_key == "amazon" and "/dp/" in path:
-            slug = path.split("/dp/")[0].strip("/")
-        elif store_key == "mercadolivre" and "/MLB-" in path:
-            # ex: /MLB-1234-nome-do-produto-aqui-_JM -> nome-do-produto-aqui
-            parts = path.split("-")
-            if len(parts) > 2:
-                # Remove MLB, id e _JM se houver
-                clean_parts = [p for p in parts[2:] if p != "_JM"]
-                slug = "-".join(clean_parts)
-        elif store_key == "magalu":
-            # ex: /nome-do-produto/p/123/
-            slug = path.split("/p/")[0].strip("/")
+        # Merge de dados (se não for block)
+        if data.get("titulo") and "BLOQUEIO" not in data["titulo"]:
+            for key in ["titulo", "preco", "preco_original", "imagem", "is_pix_price"]:
+                if data.get(key):
+                    result[key] = data[key]
+        else:
+            # Se o parser detectou bloqueio que os motores não pegaram
+            result["titulo"] = data.get("titulo", "Produto Bloqueado")
+            result["preco"] = "Bloqueio no Parsing"
+            result["source_method"] = "PARSER_BLOCKED"
 
-        if slug:
-            titulo_from_slug = urllib.parse.unquote(slug).replace("-", " ").title().strip()
-            result["titulo"] = titulo_from_slug
-            logger.info(f"[EXTRACTOR_V2] Fallback de Título via URL Slug: {titulo_from_slug}")
+    # Fallback de título via URL se necessário
+    if result["titulo"] == "Produto" or not result["titulo"]:
+        from urllib.parse import urlparse, unquote
+        try:
+            path = urlparse(result["final_url"]).path
+            slug = ""
+            if store_key == "amazon" and "/dp/" in path:
+                slug = path.split("/dp/")[0].strip("/")
+            elif store_key == "mercadolivre" and "/MLB-" in path:
+                parts = path.split("-")
+                if len(parts) > 2:
+                    clean_parts = [p for p in parts[2:] if p != "_JM"]
+                    slug = "-".join(clean_parts)
+            elif store_key == "magalu":
+                slug = path.split("/p/")[0].strip("/")
 
-    if not result.get("preco") or result["preco"] == "Preço não disponível":
-        result["source_method"] = "FALLBACK_SEM_PRECO"
-        logger.warning(f"[EXTRACTOR_V2] ERRO_EXTRAINDO_PRECO | url={final_url[:60]}")
+            if slug:
+                titulo_from_slug = unquote(slug).replace("-", " ").title().strip()
+                if len(titulo_from_slug) > 5:
+                    result["titulo"] = titulo_from_slug
+                    logger.info(f"[EXTRACTOR_V2] Fallback de Título via URL Slug: {titulo_from_slug}")
+        except: pass
 
-    logger.info(
-        f"[EXTRACTOR_V2] EXTRACAO_SUCESSO | método={result['source_method']} | "
-        f"título={result['titulo'][:40]} | preço={result['preco']} | "
-        f"orig={result['preco_original']} | pix={result['is_pix_price']}"
-    )
+    logger.info(f"[EXTRACTOR_V2] FIM PIPELINE | Sucesso={method} | Titulo={result['titulo'][:40]}")
     return result
