@@ -21,8 +21,8 @@ import logging
 import re
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ContextTypes, ConversationHandler
 from telegram.constants import ParseMode
+from bot.services.product_extractor_v2 import extract_product_data_v2
 
 from bot.permissions import is_admin
 from bot.utils.constants import (
@@ -96,6 +96,38 @@ def _parse_fallback_text(raw_text: str, url: str) -> dict:
 def _extrair_primeira_url(texto: str) -> str | None:
     match = _URL_RE.search(texto)
     return match.group(0).rstrip(".)],;") if match else None
+
+# ── Comando de Diagnóstico (Debug) ──────────────────────────────────────────
+
+async def cmd_debug_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Comando /debug_link [URL] para investigar falhas de extração."""
+    if not await is_admin(update, context):
+        return
+
+    msg_text = update.effective_message.text or ""
+    url = _extrair_primeira_url(msg_text)
+
+    if not url:
+        await update.message.reply_text("❌ Uso: /debug_link [URL]")
+        return
+
+    wait_msg = await update.message.reply_text(f"🔍 Iniciando diagnóstico de extração...\nURL: <code>{url}</code>", parse_mode=ParseMode.HTML)
+
+    try:
+        data = await extract_product_data_v2(url)
+        
+        report = (
+            f"📊 <b>DIAGNÓSTICO TÉCNICO V5</b>\n\n"
+            f"🏷️ <b>Título:</b> {data.get('titulo', 'N/A')}\n"
+            f"💰 <b>Preço:</b> {data.get('preco', 'N/A')}\n"
+            f"🏪 <b>Loja:</b> {data.get('store')} ({data.get('store_key')})\n"
+            f"⚙️ <b>Método:</b> {data.get('source_method')}\n"
+            f"🐞 <b>Debug:</b> <code>{data.get('debug_info', 'N/A')}</code>\n\n"
+            f"🔗 <b>Encontrado em:</b>\n<code>{data.get('final_url', 'N/A')}</code>"
+        )
+        await wait_msg.edit_text(report, parse_mode=ParseMode.HTML)
+    except Exception as e:
+        await wait_msg.edit_text(f"🔴 <b>ERRO NO DEBUGGER:</b>\n<code>{str(e)}</code>", parse_mode=ParseMode.HTML)
 
 
 def _escape_html(text: str) -> str:

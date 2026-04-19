@@ -669,18 +669,20 @@ async def _extract_with_playwright(url: str, store_key: str = "other") -> dict |
             final_url = page.url
             await browser.close()
 
-        soup = BeautifulSoup(html, "html.parser")
-        data = _extract_from_soup(soup, final_url, store_key)
-        data["source_method"] = "PLAYWRIGHT"
-        data["final_url"] = final_url
-        return data
+            soup = BeautifulSoup(html, "html.parser")
+            data = _extract_from_soup(soup, final_url, store_key)
+            data["source_method"] = "PLAYWRIGHT"
+            data["final_url"] = final_url
+            data["debug_info"] = f"PW {store_key} | UA: {'Mobile' if 'm.magazineluiza' in url else 'Desktop'}"
+            return data
 
     except ImportError:
         logger.warning("[EXTRACTOR_V2] Playwright não instalado. Fallback HTML.")
-        return None
+        return {"debug_info": "Playwright não instalado"}
     except Exception as e:
-        logger.warning(f"[EXTRACTOR_V2] PLAYWRIGHT falhou: {e}")
-        return None
+        msg = f"PLAYWRIGHT ERRO: {e}"
+        logger.warning(f"[EXTRACTOR_V2] {msg}")
+        return {"debug_info": msg}
 
 
 # ---------------------------------------------------------------------------
@@ -694,18 +696,18 @@ def _extract_with_requests(url: str, store_key: str = "other") -> dict | None:
         # Escolha inteligente de User-Agent para Mobile Magalu
         headers = _MOBILE_HEADERS if "m.magazineluiza" in url else _HEADERS
         resp = session.get(url, headers=headers, timeout=_TIMEOUT_HTTP, allow_redirects=True)
-        # BUGFIX: Não dar raise_for_status aqui. 
-        # Sites como Amazon/ML podem retornar 403/503 mas ainda ter o <title> no body.
-        # resp.raise_for_status() 
+        
         final_url = resp.url
         soup = BeautifulSoup(resp.text, "html.parser")
         data = _extract_from_soup(soup, final_url, store_key)
         data["source_method"] = "HTML_FALLBACK"
         data["final_url"] = final_url
+        data["debug_info"] = f"HTTP {resp.status_code} | UA: {'Mobile' if 'm.magazineluiza' in url else 'Desktop'}"
         return data
     except Exception as e:
-        logger.warning(f"[EXTRACTOR_V2] HTML_FALLBACK falhou: {e}")
-        return None
+        msg = f"HTML_FALLBACK ERRO: {e}"
+        logger.warning(f"[EXTRACTOR_V2] {msg}")
+        return {"debug_info": msg}
 
 
 # ---------------------------------------------------------------------------
@@ -776,6 +778,7 @@ async def extract_product_data_v2(url: str) -> dict:
 
     result["source_method"] = data.get("source_method", "HTML_FALLBACK")
     result["final_url"]     = data.get("final_url", final_url)
+    result["debug_info"]    = data.get("debug_info", "N/A")
 
     # ── FALLBACK DE TÍTULO VIA URL SLUG ─────────────────────────────────────
     if not result.get("titulo") or result["titulo"] == "Produto":
