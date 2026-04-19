@@ -41,8 +41,13 @@ _MOBILE_HEADERS = {
     "Connection": "keep-alive",
 }
 
+_BLOCK_KEYWORDS = ["captcha", "blocked", "bot manager", "perfdrive", "shieldsquare", 
+                  "acesso negado", "access denied", "validate.perfdrive.com",
+                  "type the characters you see in this image", "robot", "human verification"]
+
 _TIMEOUT_HTTP = 15
-_TIMEOUT_PLAYWRIGHT = 20
+_TIMEOUT_PLAYWRIGHT = 45
+_TIMEOUT_SCRAPERAPI = 60
 
 
 # ---------------------------------------------------------------------------
@@ -446,17 +451,13 @@ def _extract_from_soup(soup: BeautifulSoup, base_url: str, store_key: str = "oth
     """Extrai título, preço promocional, preço original, imagem e flag PIX."""
     data = {"titulo": None, "preco": None, "preco_original": None, "imagem": None, "is_pix_price": False}
 
-    # ── DETECÇÃO DE BLOQUEIO / CAPTCHA ─────────────────────────────────────
-    blocked_patterns = [
-        "captcha", "blocked", "bot manager", "perfdrive", "shieldsquare", 
-        "acesso negado", "access denied", "validate.perfdrive.com"
-    ]
+    # ── DETECÇÃO DE BLOQUEIO ────────────────────────────────────────────────
     page_text_lower = soup.get_text().lower()
     page_title_lower = (soup.title.string.lower() if soup.title else "")
     
-    if any(p in page_title_lower for p in blocked_patterns) or \
+    if any(p in page_title_lower for p in _BLOCK_KEYWORDS) or \
        any(p in page_text_lower for p in ["radware bot manager", "please verify you are a human"]):
-        logger.warning(f"[EXTRACTOR_V2] Bloqueio detectado: {page_title_lower}")
+        logger.warning(f"[EXTRACTOR_V2] Bloqueio detectado no HTML: {page_title_lower}")
         return {
             "titulo": f"BLOQUEIO: {page_title_lower or 'Acesso Negado'}",
             "preco": "Erro: Captcha/Block",
@@ -480,382 +481,188 @@ def _extract_from_soup(soup: BeautifulSoup, base_url: str, store_key: str = "oth
                 raw = re.sub(r"^(Amazon\.com\.br|Mercado Livre|Magalu|Magazine Luiza)\s*[:\-]\s*", "", text, flags=re.I)
                 raw = re.sub(r"\s*[|–\-]\s*(Amazon|Mercado Livre|Magalu|Magazine Luiza|Shopee).*", "", raw, flags=re.I)
                 data["titulo"] = raw.strip()
-                logger.info(f"[EXTRACTOR_V2] Título via '{sel}': {data['titulo'][:60]}")
                 break
 
-    # Detecção de bloqueio Industrial (Magalu/Amazon/Geral)
-    block_keywords = [
-        "parece que você acessou", "acesso incomum", "acesso negado", 
-        "forbidden", "access denied", "robot", "bot detection", "captcha",
-        "human verification", "segurança", "desculpe"
-    ]
-    if data["titulo"]:
-        lower_title = data["titulo"].lower()
-        if any(k in lower_title for k in block_keywords):
-            logger.warning(f"[EXTRACTOR_V2] BLOQUEIO DETECTADO no título: '{data['titulo']}'. Anulando título.")
-            data["titulo"] = None
-
+    # Fallback título via Meta
     if not data["titulo"]:
-        # Fallback 2: Meta tags
         for attr_name, attr_val in [("property", "og:title"), ("name", "twitter:title"), ("name", "title")]:
             meta = soup.find("meta", attrs={attr_name: attr_val})
             if meta and meta.get("content"):
-                raw = meta["content"]
-                raw = re.sub(r"^(Amazon\.com\.br|Mercado Livre|Magalu|Magazine Luiza)\s*[:\-]\s*", "", raw, flags=re.I)
-                raw = re.sub(r"\s*[|–\-]\s*(Amazon|Mercado Livre|Magalu|Magazine Luiza|Shopee).*", "", raw, flags=re.I)
-                data["titulo"] = raw.strip()
+                data["titulo"] = meta["content"].strip()
                 break
 
-    # Fallback extra: Tag <title> bruta
-    if not data["titulo"] and soup.title:
-        raw = soup.title.get_text(strip=True)
-        raw = re.sub(r"^(Amazon\.com\.br|Mercado Livre|Magalu)\s*[:\-]\s*", "", raw, flags=re.I)
-        raw = re.sub(r"\s*[|–\-]\s*(Amazon|Mercado Livre|Magalu).*", "", raw, flags=re.I)
-        if len(raw) > 10:
-            data["titulo"] = raw.strip()
-
-    if not data["titulo"] or data["titulo"] in ("Produto", "Amazon.com.br", "Magazine Luiza", "Magalu", "Mercado Livre"):
-        # Fallback 3: Extração pela URL (Mergulha na slug estruturada)
-        try:
-            from urllib.parse import urlparse
-            path = urlparse(base_url).path
-            
-            # Padrão Amazon: /NOME-DO-PRODUTO/dp/ID ou /gp/product/ID
-            if "/dp/" in path or "/gp/" in path:
-                # O slug costuma vir antes do /dp/
-                parts = [p for p in path.split('/') if p]
-                idx = -1
-                if "dp" in parts: idx = parts.index("dp")
-                elif "product" in parts: idx = parts.index("product")
-                
-                if idx > 0:
-                    slug = parts[idx-1]
-                    if len(slug) > 5 and '-' in slug:
-                        raw = slug.replace('-', ' ')
-                        data["titulo"] = raw.strip().title()
-                        logger.info(f"[EXTRACTOR_V2] Título via URL (Amazon): {data['titulo']}")
-
-            if not data["titulo"] or data["titulo"] == "Produto":
-                # Padrão Geral (ML / Outros)
-                parts = [p for p in path.split('/') if len(p) > 10 and '-' in p]
-                if parts:
-                    raw = parts[0].replace('-', ' ')
-                    raw = re.sub(r'mlb\s*\d+', '', raw, flags=re.I)
-                    raw = re.sub(r'[_+\-]?jm\s*$', '', raw, flags=re.I)
-                    raw = raw.strip().title()
-                    # Corrige pequenos erros gramaticais comuns na url
-                    raw = raw.replace('Tnis', 'Tênis')
-                    if len(raw) > 5:
-                        data["titulo"] = raw
-                        logger.info(f"[EXTRACTOR_V2] Título extraído via URL: {data['titulo']}")
-        except Exception:
-            pass
-
-    # ── PREÇO PRIORIDADE 0: PIX / à vista ───────────────────────────────────
+    # ── PREÇO PRIORIDADE 0: PIX / à vista (Magalu, ML) ─────────────────────
     pix_price = None
-    if store_key == "amazon":
-        pix_price = _extract_pix_price_amazon(soup)
-    elif store_key == "mercadolivre":
+    if store_key == "mercadolivre":
         pix_price = _extract_pix_price_ml(soup)
     elif store_key == "magalu":
         pix_price = _extract_pix_price_magalu(soup)
+    elif store_key == "amazon":
+        pix_price = _extract_pix_price_amazon(soup) # Amazon PIX fallback
 
     if pix_price:
-        data["preco"]       = pix_price
+        data["preco"] = pix_price
         data["is_pix_price"] = True
-        logger.info(f"[EXTRACTOR_V2] PRECO_TIPO=PIX | pix={pix_price}")
-        # Ainda busca preço original (riscado) para comparação
-        if store_key == "amazon":
-            _, preco_orig = _extract_price_amazon(soup)
-        elif store_key == "mercadolivre":
-            _, preco_orig = _extract_price_ml(soup)
-        elif store_key == "magalu":
-            _, preco_orig = _extract_price_magalu(soup)
-        else:
-            preco_orig = None
-        if preco_orig and preco_orig != pix_price:
-            data["preco_original"] = preco_orig
+        # Ainda busca original para contexto
+        if store_key == "mercadolivre": _, preco_orig = _extract_price_ml(soup)
+        elif store_key == "magalu": _, preco_orig = _extract_price_magalu(soup)
+        else: preco_orig = None
+        data["preco_original"] = preco_orig
     else:
-        # ── PREÇO padrão (por loja, com prioridade promocional) ───────────────
+        # ── PREÇO PADRÃO POR LOJA ──────────────────────────────────────────
         if store_key == "amazon":
+            # Amazon: .a-price .a-offscreen (menor valor)
             preco, preco_orig = _extract_price_amazon(soup)
         elif store_key == "mercadolivre":
             preco, preco_orig = _extract_price_ml(soup)
         elif store_key == "magalu":
             preco, preco_orig = _extract_price_magalu(soup)
         elif store_key == "netshoes":
+            # Netshoes: .product-final-price
             preco, preco_orig = _extract_price_netshoes(soup)
         else:
             preco, preco_orig = _extract_price_generic(soup)
 
-        if preco:
-            data["preco"]          = preco
-            data["preco_original"] = preco_orig
-            tipo = "PROMOCIONAL" if preco_orig else "ORIGINAL"
-            logger.info(f"[EXTRACTOR_V2] PRECO_TIPO={tipo} | promo={preco} | orig={preco_orig}")
-        else:
-            # ── ULTIMATO 0: Tenta extrair via JSON-LD Schema.org ──────────────
-            schema_p = _extract_price_from_schema(soup)
-            if schema_p:
-                data["preco"] = schema_p
-                logger.info(f"[EXTRACTOR_V2] Salva-vidas: Preço extraído via Schema.org -> {schema_p}")
+        data["preco"] = preco
+        data["preco_original"] = preco_orig
 
-            # ── ULTIMATO 1: Tenta extrair do <title> ─────────────────────────
-            if not data.get("preco"):
-                html_title = soup.title.string if soup.title else ""
-                if html_title:
-                    title_match = re.search(r"R\$\s*(\d{1,3}(?:\.\d{3})*,\d{2})", html_title)
-                    if title_match:
-                        found_title_p = f"R$ {title_match.group(1)}"
-                        data["preco"] = found_title_p
-                        logger.info(f"[EXTRACTOR_V2] Salva-vidas: Preço extraído do <title> -> {found_title_p}")
-
-            # ── ULTIMATO 2: Tenta extrair do Título do Produto ───────────────
-            if not data.get("preco") and data.get("titulo"):
-                price_match = re.search(r"R\$\s*(\d{1,3}(?:\.\d{3})*,\d{2})", data["titulo"])
-                if price_match:
-                    found_p = f"R$ {price_match.group(1)}"
-                    data["preco"] = found_p
-                    logger.info(f"[EXTRACTOR_V2] Salva-vidas: Preço extraído do h1/titulo -> {found_p}")
-
-            # ── ULTIMATO 3: Mineração Regex no Body ──────────────────────────
-            if not data.get("preco"):
-                regex_p = _extract_price_from_body_regex(soup)
-                if regex_p:
-                    data["preco"] = regex_p
-
-            if not data.get("preco"):
-                logger.warning(f"[EXTRACTOR_V2] ERRO_EXTRAINDO_PRECO para store_key={store_key}")
+    # ── ULTIMATO DE PREÇO (Schema / Regex) ───────────────────────────────
+    if not data["preco"]:
+        data["preco"] = _extract_price_from_schema(soup) or _extract_price_from_body_regex(soup)
 
     # ── IMAGEM ──────────────────────────────────────────────────────────────
+    # Prioridade meta og:image como solicitado
     for og_prop in ["og:image", "twitter:image"]:
-        meta = (
-            soup.find("meta", attrs={"property": og_prop})
-            or soup.find("meta", attrs={"name": og_prop})
-        )
+        meta = soup.find("meta", attrs={"property": og_prop}) or soup.find("meta", attrs={"name": og_prop})
         if meta and meta.get("content"):
-            img = meta["content"]
-            data["imagem"] = img if img.startswith("http") else urljoin(base_url, img)
+            data["imagem"] = meta["content"]
             break
 
     if not data["imagem"]:
         img_tag = soup.select_one(".ui-pdp-gallery__figure__image, #imgBlkFront, #landingImage")
         if img_tag:
             src = img_tag.get("src") or img_tag.get("data-src")
-            if src:
-                data["imagem"] = src if src.startswith("http") else urljoin(base_url, src)
-
-    # ── HIGIENIZAÇÃO DA IMAGEM ──────────────────────────────────────────────
-    # Se a URL da imagem tiver variáveis de template "{...}", o Telegram recusa (ex: Mercado Livre)
-    if data["imagem"] and ("{" in data["imagem"] or "}" in data["imagem"]):
-        logger.warning(f"[EXTRACTOR_V2] Imagem ignorada por conter template inválido: {data['imagem']}")
-        data["imagem"] = None
+            if src: data["imagem"] = urljoin(base_url, src)
 
     return data
 
 
-# ---------------------------------------------------------------------------
-# Motores de Captura de HTML (HTML Providers)
-# ---------------------------------------------------------------------------
-
-async def _get_html_scraperapi(url: str) -> tuple[str | None, str | None, str | None]:
-    """Tenta obter HTML via ScraperAPI (Camada 1 - Prioridade)"""
-    if not SCRAPERAPI_KEY:
-        return None, None, "SCRAPERAPI_OFF (Sem Chave)"
-        
-    try:
-        import httpx
-        logger.info(f"[EXTRACTOR_V2] SCRAPERAPI tentando | url={url[:80]}")
-        
-        params = {
-            "api_key": SCRAPERAPI_KEY,
-            "url": url,
-            "render": "true",
-            "country_code": "br"
-        }
-        # Amazon requer premium no ScraperAPI
-        if "amazon.com" in url or "amzn.to" in url:
-            params["premium"] = "true"
+async def get_page_html(url: str) -> tuple[str | None, str]:
+    """
+    Pipeline Híbrido de Extração (Regra 2):
+    1. ScraperAPI (Prioridade)
+    2. Playwright Local (Fallback)
+    3. Requests Simples (Último Recurso)
+    """
+    # ── TENTATIVA 1: ScraperAPI ───────────────────────────────────────────
+    if SCRAPERAPI_KEY:
+        try:
+            logger.info(f"[EXTRACTOR_V2] Tentativa 1: ScraperAPI | url={url[:60]}")
+            params = {
+                "api_key": SCRAPERAPI_KEY,
+                "url": url,
+                "render": "true",
+                "country_code": "br"
+            }
+            if "amazon.com" in url or "amzn.to" in url:
+                params["premium"] = "true"
             
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            resp = await client.get("http://api.scraperapi.com", params=params)
-            if resp.status_code == 200:
-                html = resp.text
-                # Validação rápida de bloqueio no HTML retornado
-                if any(k in html.lower() for k in ["captcha", "blocked", "radware", "robot", "validate.perfdrive.com"]):
-                    logger.warning("[EXTRACTOR_V2] SCRAPERAPI retornou página de bloqueio.")
-                    return None, None, "SCRAPERAPI_BLOCKED"
-                
-                return html, str(resp.url), "SCRAPERAPI"
-            else:
-                logger.warning(f"[EXTRACTOR_V2] SCRAPERAPI erro {resp.status_code}")
-                return None, None, f"SCRAPERAPI_ERROR_{resp.status_code}"
-    except Exception as e:
-        logger.warning(f"[EXTRACTOR_V2] SCRAPERAPI falha: {e}")
-        return None, None, f"SCRAPERAPI_FAIL: {str(e)[:50]}"
+            async with httpx.AsyncClient(timeout=_TIMEOUT_SCRAPERAPI) as client:
+                resp = await client.get("http://api.scraperapi.com", params=params)
+                if resp.status_code == 200:
+                    html = resp.text
+                    if not any(k in html.lower() for k in _BLOCK_KEYWORDS):
+                        return html, "SCRAPERAPI"
+                    logger.warning("[EXTRACTOR_V2] ScraperAPI retornou CAPTCHA/Block. Pulando para Playwright.")
+                else:
+                    logger.warning(f"[EXTRACTOR_V2] ScraperAPI erro {resp.status_code}")
+        except Exception as e:
+            logger.warning(f"[EXTRACTOR_V2] ScraperAPI falhou: {str(e)[:100]}")
 
-async def _get_html_playwright(url: str) -> tuple[str | None, str | None, str | None]:
-    """Tenta obter HTML via Playwright Local (Camada 2 - Fallback)"""
+    # ── TENTATIVA 2: Playwright Local ─────────────────────────────────────
     try:
-        from playwright.async_api import async_playwright
-        from playwright_stealth import stealth_async
-        
-        if "magazineluiza.com.br" in url:
-            url = url.replace("m.magazineluiza.com.br", "www.magazineluiza.com.br")
-
-        logger.info(f"[EXTRACTOR_V2] PLAYWRIGHT local iniciando | url={url[:80]}")
+        logger.info(f"[EXTRACTOR_V2] Tentativa 2: Playwright Local | url={url[:60]}")
         async with async_playwright() as pw:
-            browser = await pw.chromium.launch(
-                headless=True,
-                args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--disable-gpu"],
-            )
-            context = await browser.new_context(
-                user_agent=_HEADERS["User-Agent"],
-                viewport={"width": 1280, "height": 800},
-                locale="pt-BR"
-            )
+            browser = await pw.chromium.launch(headless=True, args=["--no-sandbox"])
+            context = await browser.new_context(user_agent=_HEADERS["User-Agent"])
             page = await context.new_page()
             await stealth_async(page)
             
-            # Tenta carregar até networkidle ou timeout
-            await page.goto(url, wait_until="networkidle", timeout=45000)
-            
-            # Scroll para simular comportamento humano
-            try: await page.evaluate("window.scrollTo(0, 400)")
-            except: pass
-            
-            await asyncio.sleep(1) # Pequena pausa para JS estabilizar
+            # Aguarda networkidle ou seletores de preço (Regra 2)
+            try:
+                await page.goto(url, wait_until="networkidle", timeout=_TIMEOUT_PLAYWRIGHT * 1000)
+            except:
+                logger.info("[EXTRACTOR_V2] Playwright timeout networkidle, tentando prosseguir...")
+
+            # Scroll básico
+            await page.evaluate("window.scrollTo(0, 500)")
+            await asyncio.sleep(2)
             
             html = await page.content()
-            final_url = page.url
             await browser.close()
             
-            if any(k in html.lower() for k in ["captcha", "blocked", "radware", "robot"]):
-                return None, None, "PLAYWRIGHT_BLOCKED"
-                
-            return html, final_url, "PLAYWRIGHT"
+            if not any(k in html.lower() for k in _BLOCK_KEYWORDS):
+                return html, "PLAYWRIGHT"
+            logger.warning("[EXTRACTOR_V2] Playwright bloqueado. Indo para Requests.")
     except Exception as e:
-        logger.warning(f"[EXTRACTOR_V2] PLAYWRIGHT falha: {e}")
-        return None, None, f"PW_FAIL: {str(e).splitlines()[0]}"
+        logger.warning(f"[EXTRACTOR_V2] Playwright falhou: {str(e)[:100]}")
 
-async def _get_html_httpx(url: str) -> tuple[str | None, str | None, str | None]:
-    """Tenta obter HTML via HTTPX simples (Camada 3 - Último Recurso)"""
+    # ── TENTATIVA 3: Requests Simples ─────────────────────────────────────
     try:
-        import httpx
-        logger.info(f"[EXTRACTOR_V2] HTTPX simple fallback | url={url[:80]}")
-        
-        async with httpx.AsyncClient(http2=True, timeout=15.0, follow_redirects=True, headers=_HEADERS) as client:
+        logger.info(f"[EXTRACTOR_V2] Tentativa 3: Requests Simples | url={url[:60]}")
+        async with httpx.AsyncClient(timeout=_TIMEOUT_HTTP, follow_redirects=True, headers=_HEADERS) as client:
             resp = await client.get(url)
             if resp.status_code == 200:
-                return resp.text, str(resp.url), "HTTPX_FALLBACK"
-            return None, None, f"HTTPX_{resp.status_code}"
+                return resp.text, "REQUESTS_FALLBACK"
     except Exception as e:
-        return None, None, f"HTTPX_FAIL: {str(e)[:50]}"
+        logger.warning(f"[EXTRACTOR_V2] Requests falhou: {str(e)[:100]}")
 
-# ---------------------------------------------------------------------------
-# Ponto de entrada público (Orquestrador)
-# ---------------------------------------------------------------------------
+    return None, "FALHA_TOTAL"
+
 
 async def extract_product_data_v2(url: str) -> dict:
-    """
-    Pipeline Híbrido V8: ScraperAPI -> Playwright -> HTTPX.
-    Centraliza o retorno de dados com fallback seguro.
-    """
+    """Orquestrador do Pipeline Híbrido."""
     from bot.utils.detect_store import detect_store
     from bot.utils.url_resolver import resolve_url
 
-    logger.info(f"[EXTRACTOR_V2] ── INÍCIO PIPELINE HÍBRIDO ──")
+    logger.info(f"[EXTRACTOR_V2] ── INÍCIO PIPELINE HÍBRIDO ── {url}")
     
     result = {
         "store": "desconhecida", "store_key": "other",
-        "final_url": url, "affiliate_url": url,
-        "titulo": "Produto", "imagem": None,
+        "final_url": url, "titulo": "Produto", "imagem": None,
         "preco": "Preço não disponível", "preco_original": None,
-        "source_method": "EXTRAÇÃO_PENDENTE", "erro": None,
-        "is_pix_price": False, "debug_info": ""
+        "source_method": "INICIANDO", "is_pix_price": False
     }
 
-    # 1. Resolve URL (apenas se não for Amazon, que resolvemos no motor)
+    # Resolve encurtadores simples antes de começar (exceto Amazon)
     final_url = url
     if "amzn.to" not in url and "amazon.com" not in url:
-        try:
-            final_url = await asyncio.to_thread(resolve_url, url)
+        try: final_url = await asyncio.to_thread(resolve_url, url)
         except: pass
 
     store_display, store_key = detect_store(final_url)
     result["store"] = store_display
     result["store_key"] = store_key
 
-    # 2. Orquestração de Camadas
-    html = None
-    best_final_url = final_url
-    method = "FALHA_TOTAL"
-    debug_notes = []
-
-    # Camada 1: ScraperAPI
-    html, f_url, m = await _get_html_scraperapi(final_url)
-    if html:
-        method = m
-        best_final_url = f_url
-    else:
-        debug_notes.append(m)
-        # Camada 2: Playwright Local
-        html, f_url, m = await _get_html_playwright(final_url)
-        if html:
-            method = m
-            best_final_url = f_url
-        else:
-            debug_notes.append(m)
-            # Camada 3: HTTPX
-            html, f_url, m = await _get_html_httpx(final_url)
-            if html:
-                method = m
-                best_final_url = f_url
-            else:
-                debug_notes.append(m)
-
+    # 1. Obtém HTML (Regra 2)
+    html, method = await get_page_html(final_url)
     result["source_method"] = method
-    result["debug_info"] = " | ".join(debug_notes) if debug_notes else method
-    result["final_url"] = best_final_url
 
-    # 3. Parseamento Centralizado
+    # 2. Parseamento Centralizado (Regra 3)
     if html:
-        soup = BeautifulSoup(html, "html.parser")
-        data = _extract_from_soup(soup, best_final_url, store_key)
+        data = _extract_from_soup(BeautifulSoup(html, "html.parser"), final_url, store_key)
         
-        # Merge de dados (se não for block)
-        if data.get("titulo") and "BLOQUEIO" not in data["titulo"]:
-            for key in ["titulo", "preco", "preco_original", "imagem", "is_pix_price"]:
-                if data.get(key):
-                    result[key] = data[key]
+        # Merge de resultados
+        if "BLOQUEIO" not in (data.get("titulo") or ""):
+            for k in ["titulo", "preco", "preco_original", "imagem", "is_pix_price"]:
+                if data.get(k): result[k] = data[k]
         else:
-            # Se o parser detectou bloqueio que os motores não pegaram
-            result["titulo"] = data.get("titulo", "Produto Bloqueado")
-            result["preco"] = "Bloqueio no Parsing"
-            result["source_method"] = "PARSER_BLOCKED"
+            result["titulo"] = data.get("titulo")
+            result["source_method"] = f"{method}_BUT_PARSER_BLOCKED"
 
-    # Fallback de título via URL se necessário
-    if result["titulo"] == "Produto" or not result["titulo"]:
-        from urllib.parse import urlparse, unquote
-        try:
-            path = urlparse(result["final_url"]).path
-            slug = ""
-            if store_key == "amazon" and "/dp/" in path:
-                slug = path.split("/dp/")[0].strip("/")
-            elif store_key == "mercadolivre" and "/MLB-" in path:
-                parts = path.split("-")
-                if len(parts) > 2:
-                    clean_parts = [p for p in parts[2:] if p != "_JM"]
-                    slug = "-".join(clean_parts)
-            elif store_key == "magalu":
-                slug = path.split("/p/")[0].strip("/")
+    # Fallback inquebrável para título se falhar tudo
+    if not result.get("titulo") or result["titulo"] == "Produto":
+        result["titulo"] = "Produto Disponível"
 
-            if slug:
-                titulo_from_slug = unquote(slug).replace("-", " ").title().strip()
-                if len(titulo_from_slug) > 5:
-                    result["titulo"] = titulo_from_slug
-                    logger.info(f"[EXTRACTOR_V2] Fallback de Título via URL Slug: {titulo_from_slug}")
-        except: pass
-
-    logger.info(f"[EXTRACTOR_V2] FIM PIPELINE | Sucesso={method} | Titulo={result['titulo'][:40]}")
+    logger.info(f"[EXTRACTOR_V2] FIM PIPELINE | Method: {result['source_method']} | Titulo: {result['titulo'][:40]}")
     return result

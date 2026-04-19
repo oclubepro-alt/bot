@@ -410,7 +410,7 @@ async def receber_link_produto(update: Update, context: ContextTypes.DEFAULT_TYP
     msg_aguardo = await update.message.reply_text(
         "⏳ <b>Processando...</b>\n"
         "🔎 Resolvendo link → Injetando afiliado → Extraindo produto...\n"
-        "<i>Aguarde alguns segundos.</i>",
+        "<i>Aguarde, isso pode levar até 1 minuto para garantir a melhor extração.</i>",
         parse_mode=ParseMode.HTML,
     )
 
@@ -434,7 +434,7 @@ async def receber_link_produto(update: Update, context: ContextTypes.DEFAULT_TYP
     await msg_aguardo.edit_text(
         "⏳ <b>Processando...</b>\n"
         "✅ Link resolvido\n"
-        "🛍️ <b>Extraindo informações do produto...</b>",
+        "🛍️ <b>Extraindo informações (Híbrido ScraperAPI + PW)...</b>",
         parse_mode=ParseMode.HTML
     )
     logger.info(f"[OFERTA_LINK] EXTRACAO_INICIADA: {final_url[:80]}")
