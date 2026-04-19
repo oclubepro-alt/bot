@@ -565,10 +565,14 @@ async def get_page_html(url: str) -> tuple[str | None, str]:
                 "country_code": "br"
             }
             
-            # Sites agressivos (Amazon, Magalu) exigem modo premium (proxies residenciais)
-            premium_sites = ["amazon.com", "amzn.to", "magazineluiza.com.br", "magaluluiza.com"]
-            if any(site in url for site in premium_sites):
+            # Magalu exige modo ULTRA_PREMIUM (exige muitos créditos, mas fura o Radware)
+            # Amazon funciona bem com PREMIUM padrão
+            if "magazineluiza.com.br" in url or "magaluluiza.com" in url:
+                params["ultra_premium"] = "true"
+                logger.info("[EXTRACTOR_V2] Usando modo ULTRA_PREMIUM para Magalu.")
+            elif "amazon.com" in url or "amzn.to" in url:
                 params["premium"] = "true"
+                logger.info("[EXTRACTOR_V2] Usando modo PREMIUM para Amazon.")
             
             headers = _HEADERS
             if "m.magazineluiza.com.br" in url:
@@ -590,29 +594,42 @@ async def get_page_html(url: str) -> tuple[str | None, str]:
     try:
         logger.info(f"[EXTRACTOR_V2] Tentativa 2: Playwright Local | url={url[:60]}")
         async with async_playwright() as pw:
-            browser = await pw.chromium.launch(headless=True, args=["--no-sandbox"])
-            context = await browser.new_context(user_agent=_HEADERS["User-Agent"])
+            browser = await pw.chromium.launch(headless=True, args=[
+                "--no-sandbox", 
+                "--disable-setuid-sandbox",
+                "--disable-blink-features=AutomationControlled"
+            ])
+            # Simula um dispositivo real mais fielmente
+            context = await browser.new_context(
+                user_agent=_HEADERS["User-Agent"],
+                viewport={'width': 1920, 'height': 1080},
+                device_scale_factor=1,
+            )
             page = await context.new_page()
             await stealth(page)
             
-            # Aguarda networkidle ou seletores de preço (Regra 2)
+            # Tenta carregar a página
             try:
-                await page.goto(url, wait_until="networkidle", timeout=_TIMEOUT_PLAYWRIGHT * 1000)
-            except:
-                logger.info("[EXTRACTOR_V2] Playwright timeout networkidle, tentando prosseguir...")
+                # wait_until="load" é mais rápido que networkidle e menos propenso a timeout eterno
+                await page.goto(url, wait_until="load", timeout=_TIMEOUT_PLAYWRIGHT * 1000)
+                
+                # Espera extra para renderização de JS (Magalu/Amazon são pesados)
+                await page.wait_for_timeout(3000) 
+                
+                # Scroll para ativar carregamento lazy de imagens e preços
+                await page.evaluate("window.scrollTo(0, 400)")
+                await page.wait_for_timeout(2000)
+            except Exception as e:
+                logger.warning(f"[EXTRACTOR_V2] Playwright timeout ou erro no goto: {str(e)[:50]}")
 
-            # Scroll básico
-            await page.evaluate("window.scrollTo(0, 500)")
-            await asyncio.sleep(2)
-            
             html = await page.content()
             await browser.close()
             
-            if not any(k in html.lower() for k in _BLOCK_KEYWORDS):
+            if html and not any(k in html.lower() for k in _BLOCK_KEYWORDS):
                 return html, "PLAYWRIGHT"
-            logger.warning("[EXTRACTOR_V2] Playwright bloqueado. Indo para Requests.")
+            logger.warning("[EXTRACTOR_V2] Playwright bloqueado ou vazio. Indo para Requests.")
     except Exception as e:
-        logger.warning(f"[EXTRACTOR_V2] Playwright falhou: {str(e)[:100]}")
+        logger.warning(f"[EXTRACTOR_V2] Playwright falhou criticamente: {str(e)[:100]}")
 
     # ── TENTATIVA 3: Requests Simples ─────────────────────────────────────
     try:
