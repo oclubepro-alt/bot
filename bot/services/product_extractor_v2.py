@@ -444,6 +444,24 @@ def _extract_from_soup(soup: BeautifulSoup, base_url: str, store_key: str = "oth
     """Extrai título, preço promocional, preço original, imagem e flag PIX."""
     data = {"titulo": None, "preco": None, "preco_original": None, "imagem": None, "is_pix_price": False}
 
+    # ── DETECÇÃO DE BLOQUEIO / CAPTCHA ─────────────────────────────────────
+    blocked_patterns = [
+        "captcha", "blocked", "bot manager", "perfdrive", "shieldsquare", 
+        "acesso negado", "access denied", "validate.perfdrive.com"
+    ]
+    page_text_lower = soup.get_text().lower()
+    page_title_lower = (soup.title.string.lower() if soup.title else "")
+    
+    if any(p in page_title_lower for p in blocked_patterns) or \
+       any(p in page_text_lower for p in ["radware bot manager", "please verify you are a human"]):
+        logger.warning(f"[EXTRACTOR_V2] Bloqueio detectado: {page_title_lower}")
+        return {
+            "titulo": f"BLOQUEIO: {page_title_lower or 'Acesso Negado'}",
+            "preco": "Erro: Captcha/Block",
+            "imagem": None,
+            "source_method": "BLOCKED"
+        }
+
     # ── TÍTULO ──────────────────────────────────────────────────────────────
     title_selectors = [
         "#productTitle",             # Amazon
@@ -659,10 +677,33 @@ async def _extract_with_playwright(url: str, store_key: str = "other") -> dict |
             ua = _MOBILE_HEADERS["User-Agent"] if "m.magazineluiza" in url else _HEADERS["User-Agent"]
             logger.info(f"[EXTRACTOR_V2] PLAYWRIGHT: Usando UA {'MOBILE' if 'm.magazineluiza' in url else 'DESKTOP'}")
             
-            page = await browser.new_page(user_agent=ua, locale="pt-BR")
+            page = await browser.new_page(
+                user_agent=ua, 
+                locale="pt-BR",
+                timezone_id="America/Sao_Paulo"
+            )
             
+            # ── STEALTH MODE (Bypass Fingerprinting) ──────────────────────────────
+            try:
+                from playwright_stealth import stealth_async
+                await stealth_async(page)
+                logger.info("[EXTRACTOR_V2] PLAYWRIGHT: Stealth Mode ativado.")
+            except ImportError:
+                logger.warning("[EXTRACTOR_V2] playwright-stealth não disponível.")
+
+            # Cabeçalhos extras para Magalu
+            if "magazineluiza" in url:
+                await page.set_extra_http_headers({
+                    "Referer": "https://www.google.com/",
+                    "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
+                    "Sec-Fetch-Dest": "document",
+                    "Sec-Fetch-Mode": "navigate",
+                    "Sec-Fetch-Site": "cross-site",
+                    "Sec-Fetch-User": "?1"
+                })
+
             # Timeout aumentado para ambiente de cloud (Railway)
-            await page.goto(url, wait_until="domcontentloaded", timeout=45000)
+            await page.goto(url, wait_until="networkidle", timeout=45000)
             await page.wait_for_timeout(3000)
             
             html = await page.content()
@@ -694,7 +735,10 @@ def _extract_with_requests(url: str, store_key: str = "other") -> dict | None:
         logger.info(f"[EXTRACTOR_V2] HTML_FALLBACK iniciando | loja={store_key} | url={url[:80]}")
         session = requests.Session()
         # Escolha inteligente de User-Agent para Mobile Magalu
-        headers = _MOBILE_HEADERS if "m.magazineluiza" in url else _HEADERS
+        headers = _MOBILE_HEADERS.copy() if "m.magazineluiza" in url else _HEADERS.copy()
+        if "magazineluiza" in url:
+            headers["Referer"] = "https://www.google.com/"
+            
         resp = session.get(url, headers=headers, timeout=_TIMEOUT_HTTP, allow_redirects=True)
         
         final_url = resp.url
