@@ -20,7 +20,7 @@ import json
 from bs4 import BeautifulSoup
 from urllib.parse import urlparse, unquote, urljoin
 from playwright.async_api import async_playwright
-from playwright_stealth import stealth_async
+from playwright_stealth import stealth
 from bot.utils.config import SCRAPERAPI_KEY
 
 logger = logging.getLogger(__name__)
@@ -586,7 +586,7 @@ async def get_page_html(url: str) -> tuple[str | None, str]:
             browser = await pw.chromium.launch(headless=True, args=["--no-sandbox"])
             context = await browser.new_context(user_agent=_HEADERS["User-Agent"])
             page = await context.new_page()
-            await stealth_async(page)
+            await stealth(page)
             
             # Aguarda networkidle ou seletores de preço (Regra 2)
             try:
