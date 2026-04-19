@@ -102,8 +102,10 @@ def _extrair_primeira_url(texto: str) -> str | None:
 
 async def cmd_debug_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Comando /debug_link [URL] para investigar falhas de extração."""
-    if not await is_admin(update, context):
+    if not is_admin(update.effective_user.id):
         return
+
+    logger.info(f"[DEBUG] Comando /debug_link acionado por {update.effective_user.id}")
 
     msg_text = update.effective_message.text or ""
     url = _extrair_primeira_url(msg_text)
