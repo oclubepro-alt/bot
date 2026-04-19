@@ -21,6 +21,7 @@ import logging
 import re
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import ContextTypes, ConversationHandler
 from telegram.constants import ParseMode
 from bot.services.product_extractor_v2 import extract_product_data_v2
 
