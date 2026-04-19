@@ -37,6 +37,7 @@ def main() -> None:
     from bot.utils.config import INSTANCE_ID
     logger.info("=" * 60)
     logger.info(f" 🛒 BOT DE ACHADINHOS — #{INSTANCE_ID}")
+    logger.info(" 🚀 VERSÃO: V5 — BYPASS RADWARE CARREGADO")
     logger.info("=" * 60)
 
     if not TELEGRAM_BOT_TOKEN:
@@ -99,6 +100,7 @@ def main() -> None:
             ],
         },
         fallbacks=[CommandHandler("cancelar", cancelar_config)],
+        per_message=True, # Silencia avisos de CallbackQueryHandler
     )
     app.add_handler(config_handler)
 

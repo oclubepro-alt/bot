@@ -171,6 +171,7 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     msg = (
         "📊 <b>STATUS DO SISTEMA</b>\n\n"
+        f"🏷️ <b>Versão:</b> <code>V5 (Bypass Radware)</code>\n"
         f"🆔 <b>Instância ID:</b> <code>{INSTANCE_ID}</code>\n"
         f"🕒 <b>Ligado em:</b> <code>{BOOT_TIME}</code>\n"
         f"🐍 <b>Python:</b> <code>{sys.version.split()[0]}</code>\n"
@@ -178,6 +179,6 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         f"📡 <b>Canal:</b> <code>{TELEGRAM_CHANNEL_ID}</code>\n"
         f"🛠️ <b>Modo:</b> <code>{'PRODUÇÃO' if os.getenv('RAILWAY_STATIC_URL') else 'DESENVOLVIMENTO'}</code>\n\n"
         "⚠️ <b>COMO DETECTAR CONFLITO:</b>\n"
-        "Se você digitar <code>/status</code> e receber **DUAS** respostas com IDs diferentes ao mesmo tempo, significa que existem dois bots rodando. Você deve deletar o deploy antigo no Railway!"
+        "Se você receber **DUAS** respostas com IDs diferentes, delete o deploy antigo no Railway!"
     )
     await update.message.reply_text(msg, parse_mode=ParseMode.HTML)

@@ -173,6 +173,7 @@ def build_main_handler() -> ConversationHandler:
             CommandHandler("start", start_command),
         ],
         allow_reentry=True,
+        per_message=True, # Silencia avisos e resolve conflitos de botões inline
     )
 
 

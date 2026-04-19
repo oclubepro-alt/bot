@@ -98,9 +98,9 @@ async def fetch_magalu_api(url: str) -> dict | None:
                     "is_pix_price": True # Geralmente o best_price da API é o à vista
                 }
             else:
-                logger.warning(f"[MAGALU_API] ❌ Falha: Status {resp.status_code}")
+                logger.warning(f"[MAGALU_API] ❌ Falha: Status {resp.status_code} | Body: {resp.text[:150]}")
     except Exception as e:
-        logger.warning(f"[MAGALU_API] ❌ Exceção: {str(e)[:100]}")
+        logger.warning(f"[MAGALU_API] ❌ Exceção Crítica: {str(e)[:100]}")
     return None
 
 
@@ -609,7 +609,7 @@ async def get_page_html(url: str) -> tuple[str | None, str]:
     3. Requests Simples (Fallback)
     """
     # [DEBUG] Presença da chave no início da execução
-    logger.info(f"[DEBUG] SCRAPERAPI_KEY presente: {bool(SCRAPERAPI_KEY)}")
+    logger.info(f"[EXTRATOR V5] Pipeline Ativo | SCRAPERAPI_KEY: {bool(SCRAPERAPI_KEY)}")
 
     # ── TENTATIVA 1: ScraperAPI ───────────────────────────────────────────
     if SCRAPERAPI_KEY:
