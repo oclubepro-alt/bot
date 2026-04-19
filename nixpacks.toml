@@ -1,5 +1,5 @@
 [phases.setup]
-nixPkgs = ["python311", "gcc", "libgbm"]
+nixPkgs = ["python311", "gcc", "libgbm", "nss", "atk", "at-spi2-atk", "libdrm", "libxcomposite", "libxdamage", "libxext", "libxfixes", "libxrandr", "libasound2", "libpangocairo-1.0-0"]
 
 [phases.build]
 cmds = [

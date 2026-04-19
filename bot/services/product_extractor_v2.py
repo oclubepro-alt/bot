@@ -24,13 +24,19 @@ from urllib.parse import urljoin
 logger = logging.getLogger(__name__)
 
 _HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/124.0.0.0 Safari/537.36"
-    ),
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
     "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8",
+    "Accept-Encoding": "gzip, deflate, br",
+    "Referer": "https://www.google.com/",
+    "Connection": "keep-alive",
+}
+
+_MOBILE_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4.1 Mobile/15E148 Safari/604.1",
+    "Accept-Language": "pt-BR,pt;q=0.9",
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+    "Connection": "keep-alive",
 }
 
 _TIMEOUT_HTTP = 15
@@ -42,23 +48,38 @@ _TIMEOUT_PLAYWRIGHT = 20
 # ---------------------------------------------------------------------------
 
 def _parse_price_to_float(text: str) -> float | None:
-    """Converte 'R$ 1.299,90' → 1299.90 para comparação numérica."""
+    """Converte 'R$ 1.299,90' ou 'R\u00a0189,90' ou '399.00' → float."""
     if not text:
         return None
-    # Remove textos entre parênteses (ex: "R$ 49,90 (Economize R$ 10,00)")
-    text = re.sub(r"\(.*?\)", "", str(text))
+    # Normaliza: remove espaço não-quebrável (\xa0) e parenteséticos
+    text = str(text).replace('\u00a0', ' ').replace('\xa0', ' ')
+    text = re.sub(r"\(.*?\)", "", text)
     cleaned = re.sub(r"[^\d,.]", "", text)
     if not cleaned:
         return None
-    # Formato BR: 1.299,90
+
     if "," in cleaned:
+        # Padrão BR: 1.299,90 -> 1299.90
         cleaned = cleaned.replace(".", "").replace(",", ".")
     else:
-        # Falso positivo: "1.020" sem vírgula significa 1020 no BR
-        cleaned = cleaned.replace(".", "")
+        # Padrão Internacional ou BR sem decimal: 399.00 ou 1.200
+        # Se houver apenas um ponto e ele estiver na posição de centavos (2 antes do fim),
+        # e não for um número gigante, tratamos como decimal (comum em JSON-LD).
+        parts = cleaned.split('.')
+        if len(parts) == 2 and len(parts[1]) == 2:
+            # Caso 399.00 -> mantém o ponto como decimal
+            pass
+        else:
+            # Caso 1.200 -> remove o ponto (divisor de milhar)
+            cleaned = cleaned.replace(".", "")
+            
     try:
-        return float(cleaned)
-    except ValueError:
+        val = float(cleaned)
+        # Sanidade mínima: preços absurdos > 500k em itens comuns costumam ser erro de parsing
+        # (A menos que seja um carro ou imóvel, mas pro bot de achadinhos 500k é safe limit)
+        if val > 500000: return None
+        return val
+    except Exception:
         return None
 
 
@@ -157,25 +178,38 @@ def _extract_pix_price_ml(soup: BeautifulSoup) -> str | None:
 
 
 def _extract_price_from_schema(soup: BeautifulSoup) -> str | None:
-    """Busca universal de preço usando JSON-LD Schema.org (Funciona na Netshoes)."""
+    """Busca universal de preço usando JSON-LD Schema.org (Agressivo)."""
     scripts = soup.find_all('script', type='application/ld+json')
     for s in scripts:
         if not s.string: continue
         try:
             data = json.loads(s.string)
             if not isinstance(data, dict): continue
-            graph = data.get('@graph', [data])
-            for item in graph:
-                if item.get('@type') == 'Product' and 'offers' in item:
-                    offers = item['offers']
-                    if 'price' in offers:
-                        return _clean_price(offers['price'])
-                    elif 'lowPrice' in offers:
-                        return _clean_price(offers['lowPrice'])
-                    elif 'offers' in offers and len(offers['offers']) > 0:
-                        inner = offers['offers'][0]
-                        if 'price' in inner:
-                            return _clean_price(inner['price'])
+            
+            # Normaliza para lista (mesmo se for um objeto só ou @graph)
+            items = data.get('@graph', [data])
+            if not isinstance(items, list): items = [items]
+            
+            for item in items:
+                # Procura por Product ou MainEntity (comum na Magalu/Netshoes)
+                if item.get('@type') in ('Product', 'ProductCollection'):
+                    offers = item.get('offers')
+                    if not offers: continue
+                    
+                    if isinstance(offers, dict):
+                        # Padrão simples
+                        p = offers.get('price') or offers.get('lowPrice')
+                        if p: return _clean_price(str(p))
+                    elif isinstance(offers, list):
+                        # Lista de ofertas
+                        for off in offers:
+                            p = off.get('price')
+                            if p: return _clean_price(str(p))
+                            
+                # Fallback: qualquer coisa que pareça uma oferta solta
+                if item.get('@type') == 'Offer':
+                    p = item.get('price')
+                    if p: return _clean_price(str(p))
         except Exception:
             pass
     return None
@@ -218,13 +252,18 @@ def _extract_pix_price_magalu(soup: BeautifulSoup) -> str | None:
 def _is_valid_price_tag(tag) -> bool:
     """Verifica se a tag não pertence a um preço unitário (ex: R$ 0,26 / unidade)."""
     if not tag: return False
-    # Pega o texto da tag apenas. 
-    # Anteriormente checávamos o 'parent', mas containers da Amazon 
-    # frequentemente misturam preço total e unitário no mesmo div.
+    # Verifica o contexto do PAI (onde a Amazon coloca '/ unidade')
+    # mas também o texto da própria tag para tags 'a-offscreen' que só contam o número
     text_context = tag.get_text(strip=True).lower()
+    # Sobe até 4 níveis para buscar contexto de 'unidade'
+    p = tag.parent
+    for _ in range(4):
+        if p is None: break
+        text_context += ' ' + p.get_text(strip=True).lower()
+        p = p.parent
     
     # Palavras-chave que indicam preço unitário
-    unit_keywords = ["unidade", "contagem", "/", "cada", " ml", " kg", " g", " l"]
+    unit_keywords = ["/ unidade", "/unidade", "por unidade", "/ unit", " ml", " kg"]
     return not any(k in text_context for k in unit_keywords)
 
 
@@ -234,23 +273,34 @@ def _extract_price_amazon(soup: BeautifulSoup) -> tuple[str | None, str | None]:
     preco_orig  = None
 
     # Preço promocional (seletores em ordem de confiança)
+    # PRIORIDADE: Usar .a-offscreen antes de .a-price-whole para capturar os centavos
     promo_selectors = [
-        "#corePrice_feature_div .a-price .a-offscreen",
+        "#corePrice_feature_div .a-offscreen",
+        "#corePrice_feature_div .a-price-whole",
         "#priceblock_dealprice",
         "#priceblock_ourprice",
         ".a-price.priceToPay .a-offscreen",
         ".a-price .a-offscreen",
-        ".a-price-whole",
     ]
     for sel in promo_selectors:
         # Pega todos os matches e filtra os de 'unidade'
         for tag in soup.select(sel):
-            if _is_valid_price_tag(tag):
-                val = tag.get_text(strip=True)
-                if _parse_price_to_float(val):
-                    preco_promo = val
-                    logger.info(f"[EXTRACTOR_V2] Amazon preço promo via '{sel}': {preco_promo}")
-                    break
+            if not _is_valid_price_tag(tag):
+                continue
+                
+            val = tag.get_text(strip=True)
+            
+            # Especial para Amazon: se pegou o 'whole', tenta achar os centavos no vizinho
+            if "a-price-whole" in sel:
+                parent = tag.parent
+                fraction = parent.select_one(".a-price-fraction") if parent else None
+                if fraction:
+                    val = f"{val.replace(',', '').replace('.', '')},{fraction.get_text(strip=True)}"
+            
+            if _parse_price_to_float(val):
+                preco_promo = val
+                logger.info(f"[EXTRACTOR_V2] Amazon preço promo via '{sel}': {preco_promo}")
+                break
         if preco_promo:
             break
 
@@ -279,21 +329,27 @@ def _extract_price_ml(soup: BeautifulSoup) -> tuple[str | None, str | None]:
         ".ui-pdp-price__second-line .andes-money-amount__fraction",
         ".andes-money-amount--main .andes-money-amount__fraction",
         ".ui-pdp-price .andes-money-amount__fraction",
-        "[data-cy='price-tag'] .price-tag-fraction",
+        ".andes-money-amount__fraction", # Genérico como última opção
     ]
     for sel in promo_selectors:
-        tag = soup.select_one(sel)
-        if tag:
+        # Pega todas as tags e filtra explicitly as que são "previous" (riscadas)
+        for tag in soup.select(sel):
+            parent_container = tag.find_parent(class_=re.compile(r"andes-money-amount"))
+            if parent_container and "andes-money-amount--previous" in parent_container.get("class", []):
+                continue # Pula preço riscado
+            
             val = tag.get_text(strip=True)
             parent = tag.parent
             cents = parent.select_one(".andes-money-amount__cents") if parent else None
             if cents:
                 val += f",{cents.get_text(strip=True)}"
-            preco_promo = val
-            if _parse_price_to_float(preco_promo):
+            
+            if _parse_price_to_float(val):
+                preco_promo = val
                 logger.info(f"[EXTRACTOR_V2] ML preço promo via '{sel}': {preco_promo}")
                 break
-            preco_promo = None
+        if preco_promo:
+            break
 
     # Preço original riscado — seletor da classe "previous"
     orig_tag = soup.select_one(".andes-money-amount--previous .andes-money-amount__fraction")
@@ -401,21 +457,44 @@ def _extract_from_soup(soup: BeautifulSoup, base_url: str, store_key: str = "oth
         if tag:
             text = tag.get_text(strip=True)
             if len(text) > 10:
-                raw = re.sub(r"\s*[|–\-]\s*(Amazon|Mercado Livre|Magalu|Shopee).*", "", text, flags=re.I)
+                raw = re.sub(r"^(Amazon\.com\.br|Mercado Livre|Magalu|Magazine Luiza)\s*[:\-]\s*", "", text, flags=re.I)
+                raw = re.sub(r"\s*[|–\-]\s*(Amazon|Mercado Livre|Magalu|Magazine Luiza|Shopee).*", "", raw, flags=re.I)
                 data["titulo"] = raw.strip()
                 logger.info(f"[EXTRACTOR_V2] Título via '{sel}': {data['titulo'][:60]}")
                 break
 
+    # Detecção de bloqueio Industrial (Magalu/Amazon/Geral)
+    block_keywords = [
+        "parece que você acessou", "acesso incomum", "acesso negado", 
+        "forbidden", "access denied", "robot", "bot detection", "captcha",
+        "human verification", "segurança", "desculpe"
+    ]
+    if data["titulo"]:
+        lower_title = data["titulo"].lower()
+        if any(k in lower_title for k in block_keywords):
+            logger.warning(f"[EXTRACTOR_V2] BLOQUEIO DETECTADO no título: '{data['titulo']}'. Anulando título.")
+            data["titulo"] = None
+
     if not data["titulo"]:
+        # Fallback 2: Meta tags
         for attr_name, attr_val in [("property", "og:title"), ("name", "twitter:title")]:
             meta = soup.find("meta", attrs={attr_name: attr_val})
             if meta and meta.get("content"):
                 raw = meta["content"]
+                raw = re.sub(r"^(Amazon\.com\.br|Mercado Livre|Magalu)\s*[:\-]\s*", "", raw, flags=re.I)
                 raw = re.sub(r"\s*[|–\-]\s*(Amazon|Mercado Livre|Magalu).*", "", raw, flags=re.I)
                 data["titulo"] = raw.strip()
                 break
 
-    if not data["titulo"] or data["titulo"] in ("Produto", "Amazon.com.br"):
+    # Fallback extra: Tag <title> bruta
+    if not data["titulo"] and soup.title:
+        raw = soup.title.get_text(strip=True)
+        raw = re.sub(r"^(Amazon\.com\.br|Mercado Livre|Magalu)\s*[:\-]\s*", "", raw, flags=re.I)
+        raw = re.sub(r"\s*[|–\-]\s*(Amazon|Mercado Livre|Magalu).*", "", raw, flags=re.I)
+        if len(raw) > 10:
+            data["titulo"] = raw.strip()
+
+    if not data["titulo"] or data["titulo"] in ("Produto", "Amazon.com.br", "Magazine Luiza", "Magalu", "Mercado Livre"):
         # Fallback 3: Extração pela URL (Mergulha na slug estruturada)
         try:
             from urllib.parse import urlparse
@@ -576,7 +655,11 @@ async def _extract_with_playwright(url: str, store_key: str = "other") -> dict |
                 proxy=proxy_config,
                 args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--disable-gpu"],
             )
-            page = await browser.new_page(user_agent=_HEADERS["User-Agent"], locale="pt-BR")
+            # Escolha inteligente de User-Agent
+            ua = _MOBILE_HEADERS["User-Agent"] if "m.magazineluiza" in url else _HEADERS["User-Agent"]
+            logger.info(f"[EXTRACTOR_V2] PLAYWRIGHT: Usando UA {'MOBILE' if 'm.magazineluiza' in url else 'DESKTOP'}")
+            
+            page = await browser.new_page(user_agent=ua, locale="pt-BR")
             
             # Timeout aumentado para ambiente de cloud (Railway)
             await page.goto(url, wait_until="domcontentloaded", timeout=45000)
@@ -608,7 +691,9 @@ def _extract_with_requests(url: str, store_key: str = "other") -> dict | None:
     try:
         logger.info(f"[EXTRACTOR_V2] HTML_FALLBACK iniciando | loja={store_key} | url={url[:80]}")
         session = requests.Session()
-        resp = session.get(url, headers=_HEADERS, timeout=_TIMEOUT_HTTP, allow_redirects=True)
+        # Escolha inteligente de User-Agent para Mobile Magalu
+        headers = _MOBILE_HEADERS if "m.magazineluiza" in url else _HEADERS
+        resp = session.get(url, headers=headers, timeout=_TIMEOUT_HTTP, allow_redirects=True)
         # BUGFIX: Não dar raise_for_status aqui. 
         # Sites como Amazon/ML podem retornar 403/503 mas ainda ter o <title> no body.
         # resp.raise_for_status() 
