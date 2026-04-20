@@ -80,18 +80,20 @@ def main() -> None:
     # Handlers isolados para modo Encaminhamento
     from bot.handlers.forward_publisher import (
         start_forward_mode, receive_forwarded_message, cancel_forward_mode, process_all_forwardings,
-        frev_aprovar, frev_descartar, frev_corrigir_link, frev_corrigir_texto, receive_correction,
-        CB_PROCESSAR_TUDO, CB_CANCELAR_ENCAM
+        encam_revisar_uma, encam_aprovar_todas, frev_aprovar, frev_descartar, frev_proxima, frev_corrigir, 
+        receive_correction, CB_PROCESSAR_TUDO, CB_CANCELAR_ENCAM
     )
     from bot.utils.constants import CB_PUBLICAR_ENCAMINHAMENTO
 
     app.add_handler(CallbackQueryHandler(start_forward_mode, pattern=f"^{CB_PUBLICAR_ENCAMINHAMENTO}$"))
     app.add_handler(CallbackQueryHandler(process_all_forwardings, pattern=f"^{CB_PROCESSAR_TUDO}$"))
     app.add_handler(CallbackQueryHandler(cancel_forward_mode, pattern=f"^{CB_CANCELAR_ENCAM}$"))
+    app.add_handler(CallbackQueryHandler(encam_revisar_uma, pattern=r"^encam_revisar$"))
+    app.add_handler(CallbackQueryHandler(encam_aprovar_todas, pattern=r"^encam_aprovar_todas$"))
     app.add_handler(CallbackQueryHandler(frev_aprovar, pattern=r"^frev_aprovar$"))
     app.add_handler(CallbackQueryHandler(frev_descartar, pattern=r"^frev_descartar$"))
-    app.add_handler(CallbackQueryHandler(frev_corrigir_link, pattern=r"^frev_corrigir_link$"))
-    app.add_handler(CallbackQueryHandler(frev_corrigir_texto, pattern=r"^frev_corrigir_texto$"))
+    app.add_handler(CallbackQueryHandler(frev_proxima, pattern=r"^frev_proxima$"))
+    app.add_handler(CallbackQueryHandler(frev_corrigir, pattern=r"^frev_corrigir$"))
     
     app.add_handler(MessageHandler(
         filters.FORWARDED & (
