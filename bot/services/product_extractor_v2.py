@@ -53,57 +53,260 @@ _TIMEOUT_SCRAPERAPI = 60
 
 
 # ---------------------------------------------------------------------------
-# Camada 0: API Interna da Magalu (Prioridade Zero)
+# Camada 0: API Interna da Magalu — cascata de 3 endpoints
 # ---------------------------------------------------------------------------
 
 async def fetch_magalu_api(url: str) -> dict | None:
     """
-    Usa a API interna da Magalu para pegar dados sem scraping.
-    URL do produto contém /p/{PRODUCT_ID}/
+    Tenta extrair dados da Magalu sem scraping, via 3 endpoints em cascata:
+      1. API catalog interna (usada pelo app mobile)
+      2. API de detalhes de produto (endpoint alternativo)
+      3. Fetch leve do JSON-LD da página do produto
+    Retorna None se todos falharem → pipeline cai para Camada 1 (ScraperAPI).
     """
-    try:
-        match = re.search(r'/p/(\d+)/', url)
-        if not match:
-            # Tenta outro padrão comum na Magalu
-            match = re.search(r'/p/(\w+)/', url)
-            if not match:
-                return None
+    # Extrai o ID do produto da URL — padrão: /p/XXXXXXXX/
+    match = re.search(r'/p/(\w+)/?', url)
+    if not match:
+        logger.warning("[MAGALU_API] ⚠️ ID do produto não encontrado na URL")
+        return None
 
-        product_id = match.group(1)
-        # Tenta o endpoint v1 (mobile/app) que costuma ser mais aberto
-        api_url = f"https://www.magazineluiza.com.br/api/v1/product/{product_id}/"
+    product_id = match.group(1)
+    logger.info(f"[MAGALU_API] ℹ️ Produto ID extraído: {product_id}")
 
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-            "Accept": "application/json",
-            "Referer": "https://www.magazineluiza.com.br/"
-        }
+    headers_json = {
+        "User-Agent": "Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36",
+        "Accept": "application/json, text/plain, */*",
+        "Accept-Language": "pt-BR,pt;q=0.9",
+        "Referer": "https://www.magazineluiza.com.br/",
+        "Origin": "https://www.magazineluiza.com.br",
+        "x-requested-with": "com.magalu.magaluapp",
+    }
 
-        async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
-            resp = await client.get(api_url, headers=headers)
-            
-            # Se der 404 ou 500, a URL pode estar errada ou o produto expirou
-            if resp.status_code == 200:
+    _ENDPOINTS_MAGALU = [
+        # Endpoint 1: API catalog mobile (mais recente)
+        f"https://ms.catalog.magazineluiza.com.br/api/v1/products/{product_id}",
+        # Endpoint 2: API legada usada pelo site
+        f"https://www.magazineluiza.com.br/api/v1/product/{product_id}/",
+        # Endpoint 3: API de busca por código
+        f"https://www.magazineluiza.com.br/api/v1/search/?q={product_id}&limit=1",
+    ]
+
+    async with httpx.AsyncClient(timeout=12, follow_redirects=True) as client:
+        for endpoint in _ENDPOINTS_MAGALU:
+            try:
+                logger.info(f"[MAGALU_API] ℹ️ Tentando: {endpoint}")
+                resp = await client.get(endpoint, headers=headers_json)
+                logger.info(f"[MAGALU_API] ℹ️ Status: {resp.status_code} | Endpoint: {endpoint}")
+
+                if resp.status_code != 200:
+                    continue
+
+                # Verifica se retornou JSON válido
+                ct = resp.headers.get("content-type", "")
+                if "json" not in ct:
+                    logger.warning(f"[MAGALU_API] ⚠️ Resposta não é JSON: {ct}")
+                    continue
+
                 data = resp.json()
-                logger.info(f"[MAGALU_API] ✅ Sucesso no endpoint: {api_url}")
-                
-                # Mapeia campos da API para o nosso padrão
-                best_price = data.get("price", {}).get("best_price")
-                original_price = data.get("price", {}).get("original_price")
-                
-                return {
-                    "titulo": data.get("title", "Produto"),
-                    "imagem": data.get("image", None),
-                    "preco": _clean_price(str(best_price)) if best_price else "Preço não disponível",
-                    "preco_original": _clean_price(str(original_price)) if original_price else None,
-                    "source_method": "MAGALU_API_INTERNA",
-                    "is_pix_price": True
-                }
-            else:
-                logger.warning(f"[MAGALU_API] ❌ Falha: Status {resp.status_code} | Produto: {product_id}")
 
+                # --- Mapeamento Endpoint 1/2 (produto direto) ---
+                titulo = (
+                    data.get("title")
+                    or data.get("name")
+                    or data.get("product", {}).get("title")
+                )
+                imagem = (
+                    data.get("image")
+                    or data.get("thumbnail")
+                    or data.get("product", {}).get("image")
+                )
+                price_obj = data.get("price") or data.get("product", {}).get("price") or {}
+                best_price = (
+                    price_obj.get("best_price")
+                    or price_obj.get("sale_price")
+                    or price_obj.get("price")
+                    or data.get("price_in_cash")
+                )
+                orig_price = price_obj.get("original_price") or price_obj.get("list_price")
+
+                # --- Mapeamento Endpoint 3 (busca) ---
+                if not titulo and isinstance(data.get("result"), list) and data["result"]:
+                    item = data["result"][0]
+                    titulo = item.get("title") or item.get("name")
+                    imagem = item.get("image") or item.get("thumbnail")
+                    p = item.get("price") or {}
+                    best_price = p.get("best_price") or p.get("sale_price") or item.get("price_in_cash")
+                    orig_price = p.get("original_price")
+
+                if titulo and best_price:
+                    logger.info(f"[MAGALU_API] ✅ Sucesso | Título: {titulo[:50]} | Preço: {best_price}")
+                    return {
+                        "titulo": titulo,
+                        "imagem": imagem,
+                        "preco": _clean_price(str(best_price)),
+                        "preco_original": _clean_price(str(orig_price)) if orig_price else None,
+                        "source_method": "MAGALU_API_INTERNA",
+                        "is_pix_price": True,
+                    }
+                else:
+                    logger.warning(f"[MAGALU_API] ⚠️ Dados incompletos neste endpoint (título={titulo}, preço={best_price})")
+
+            except Exception as e:
+                logger.warning(f"[MAGALU_API] ❌ Exceção no endpoint {endpoint}: {str(e)[:80]}")
+                continue
+
+    # --- Fallback Camada 0b: JSON-LD leve da página ---
+    try:
+        logger.info("[MAGALU_API] ℹ️ Tentando JSON-LD leve da página...")
+        headers_html = {
+            "User-Agent": _HEADERS["User-Agent"],
+            "Accept-Language": "pt-BR,pt;q=0.9",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        }
+        async with httpx.AsyncClient(timeout=12, follow_redirects=True) as client:
+            resp = await client.get(url, headers=headers_html)
+            if resp.status_code == 200 and "radware" not in resp.text.lower():
+                soup = BeautifulSoup(resp.text, "html.parser")
+                preco_schema = _extract_price_from_schema(soup)
+                titulo_tag = soup.select_one("h1[itemprop='name'], h1.header-product__title, h1")
+                titulo_schema = titulo_tag.get_text(strip=True)[:80] if titulo_tag else None
+                meta_img = soup.find("meta", attrs={"property": "og:image"})
+                imagem_schema = meta_img["content"] if meta_img and meta_img.get("content") else None
+
+                if titulo_schema and preco_schema:
+                    logger.info(f"[MAGALU_API] ✅ JSON-LD/HTML leve OK | {titulo_schema[:40]}")
+                    return {
+                        "titulo": titulo_schema,
+                        "imagem": imagem_schema,
+                        "preco": preco_schema,
+                        "preco_original": None,
+                        "source_method": "MAGALU_HTML_LEVE",
+                        "is_pix_price": False,
+                    }
     except Exception as e:
-        logger.warning(f"[MAGALU_API] ❌ Exceção Crítica: {str(e)[:100]}")
+        logger.warning(f"[MAGALU_API] ⚠️ JSON-LD leve falhou: {str(e)[:80]}")
+
+    logger.warning("[MAGALU_API] ❌ Todos os endpoints falharam → caindo para Camada 1")
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Camada 0: API Interna da Netshoes — extração por SKU
+# ---------------------------------------------------------------------------
+
+async def fetch_netshoes_api(url: str) -> dict | None:
+    """
+    Extrai dados da Netshoes sem scraping usando a API interna por SKU.
+    Padrão de URL: /nome-do-produto/NKB-4396-001-M (SKU é o último segmento)
+    Tenta 2 endpoints em cascata + fallback HTML leve.
+    """
+    # Extrai SKU do último segmento da URL
+    path = urlparse(url).path.rstrip("/")
+    sku_match = re.search(r'/([A-Z0-9]{2,6}-[\w-]{4,30})$', path)
+    if not sku_match:
+        logger.warning("[NETSHOES_API] ⚠️ SKU não encontrado na URL")
+        return None
+
+    sku = sku_match.group(1)
+    logger.info(f"[NETSHOES_API] ℹ️ SKU extraído: {sku}")
+
+    headers_json = {
+        "User-Agent": "Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36",
+        "Accept": "application/json",
+        "Accept-Language": "pt-BR,pt;q=0.9",
+        "Referer": "https://www.netshoes.com.br/",
+    }
+
+    _ENDPOINTS_NETSHOES = [
+        # Endpoint 1: API de produto por SKU (app mobile)
+        f"https://api.netshoes.com.br/v1/products/{sku}",
+        # Endpoint 2: API catalog
+        f"https://www.netshoes.com.br/api/catalog/product/{sku}",
+    ]
+
+    async with httpx.AsyncClient(timeout=12, follow_redirects=True) as client:
+        for endpoint in _ENDPOINTS_NETSHOES:
+            try:
+                logger.info(f"[NETSHOES_API] ℹ️ Tentando: {endpoint}")
+                resp = await client.get(endpoint, headers=headers_json)
+                logger.info(f"[NETSHOES_API] ℹ️ Status: {resp.status_code}")
+
+                if resp.status_code != 200:
+                    continue
+                ct = resp.headers.get("content-type", "")
+                if "json" not in ct:
+                    continue
+
+                data = resp.json()
+
+                titulo = (
+                    data.get("name")
+                    or data.get("title")
+                    or data.get("product", {}).get("name")
+                )
+                imagem = (
+                    data.get("image")
+                    or data.get("thumbnail")
+                    or data.get("images", [{}])[0].get("url")
+                )
+                price_obj = data.get("price") or data.get("pricing") or {}
+                best_price = (
+                    price_obj.get("sale_price")
+                    or price_obj.get("best_price")
+                    or price_obj.get("price")
+                    or data.get("finalPrice")
+                )
+                orig_price = price_obj.get("list_price") or price_obj.get("original_price")
+
+                if titulo and best_price:
+                    logger.info(f"[NETSHOES_API] ✅ Sucesso | {titulo[:50]} | Preço: {best_price}")
+                    return {
+                        "titulo": titulo,
+                        "imagem": imagem,
+                        "preco": _clean_price(str(best_price)),
+                        "preco_original": _clean_price(str(orig_price)) if orig_price else None,
+                        "source_method": "NETSHOES_API_INTERNA",
+                        "is_pix_price": False,
+                    }
+                else:
+                    logger.warning(f"[NETSHOES_API] ⚠️ Dados incompletos neste endpoint")
+
+            except Exception as e:
+                logger.warning(f"[NETSHOES_API] ❌ Exceção: {str(e)[:80]}")
+                continue
+
+    # --- Fallback Camada 0b: HTML leve + JSON-LD ---
+    try:
+        logger.info("[NETSHOES_API] ℹ️ Tentando HTML leve + JSON-LD...")
+        headers_html = {
+            "User-Agent": _HEADERS["User-Agent"],
+            "Accept-Language": "pt-BR,pt;q=0.9",
+            "Accept": "text/html,application/xhtml+xml,*/*;q=0.8",
+        }
+        async with httpx.AsyncClient(timeout=12, follow_redirects=True) as client:
+            resp = await client.get(url, headers=headers_html)
+            if resp.status_code == 200 and "radware" not in resp.text.lower() and "blocked" not in resp.text.lower():
+                soup = BeautifulSoup(resp.text, "html.parser")
+                preco_schema = _extract_price_from_schema(soup) or _extract_price_netshoes(soup)[0]
+                titulo_tag = soup.select_one(".header-product__title, h1")
+                titulo_schema = titulo_tag.get_text(strip=True)[:80] if titulo_tag else None
+                meta_img = soup.find("meta", attrs={"property": "og:image"})
+                imagem_schema = meta_img["content"] if meta_img and meta_img.get("content") else None
+
+                if titulo_schema and preco_schema:
+                    logger.info(f"[NETSHOES_API] ✅ HTML leve OK | {titulo_schema[:40]}")
+                    return {
+                        "titulo": titulo_schema,
+                        "imagem": imagem_schema,
+                        "preco": preco_schema,
+                        "preco_original": None,
+                        "source_method": "NETSHOES_HTML_LEVE",
+                        "is_pix_price": False,
+                    }
+    except Exception as e:
+        logger.warning(f"[NETSHOES_API] ⚠️ HTML leve falhou: {str(e)[:80]}")
+
+    logger.warning("[NETSHOES_API] ❌ Todos os endpoints falharam → caindo para Camada 1")
     return None
 
 
@@ -765,16 +968,26 @@ async def extract_product_data_v2(url: str) -> dict:
     
     logger.info(f"[EXTRATOR] Loja detectada: {store_key}")
 
-    # ── CAMADA 0: API INTERNA (Apenas Magalu) ──────────────────────────────
+    # ── CAMADA 0: API INTERNA (Magalu e Netshoes) ─────────────────────────
     if store_key == "magalu":
         logger.info("[EXTRATOR] Camada 0: Tentando Magalu API Interna...")
         api_data = await fetch_magalu_api(final_url)
         if api_data:
-            logger.info("[EXTRATOR] Camada 0 (MAGALU_API): ✅ Sucesso")
+            logger.info(f"[EXTRATOR] Camada 0 (MAGALU): ✅ Sucesso via {api_data.get('source_method')}")
             result.update(api_data)
             return result
         else:
-            logger.info("[EXTRATOR] Camada 0 (MAGALU_API): ❌ Falhou")
+            logger.warning("[EXTRATOR] Camada 0 (MAGALU): ❌ Falhou — caindo para Camada 1")
+
+    elif store_key == "netshoes":
+        logger.info("[EXTRATOR] Camada 0: Tentando Netshoes API Interna...")
+        api_data = await fetch_netshoes_api(final_url)
+        if api_data:
+            logger.info(f"[EXTRATOR] Camada 0 (NETSHOES): ✅ Sucesso via {api_data.get('source_method')}")
+            result.update(api_data)
+            return result
+        else:
+            logger.warning("[EXTRATOR] Camada 0 (NETSHOES): ❌ Falhou — caindo para Camada 1")
 
     # ── CAMADA 1-3: Fluxo de HTML ──────────────────────────────────────────
     html, method = await get_page_html(final_url)
