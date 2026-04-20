@@ -173,7 +173,9 @@ def build_main_handler() -> ConversationHandler:
             CommandHandler("start", start_command),
         ],
         allow_reentry=True,
-        per_message=True, # Silencia avisos e resolve conflitos de botões inline
+        per_message=False,  # CRÍTICO: True quebra MessageHandlers de texto (estado rastreado por msg_id, não por user)
+        per_chat=True,      # Mantém estado por conversa (padrão correto para bots admin)
+        per_user=True,      # Garante isolamento por usuário
     )
 
 
