@@ -7,7 +7,7 @@ from telegram.ext import ContextTypes
 from telegram.constants import ParseMode
 
 from bot.utils.constants import (
-    CB_PUBLICAR_MANUAL, CB_PUBLICAR_LINK, CB_CANCELAR_MENU, CB_MONITOR_MENU, CB_GERENCIAR_WHATS
+    CB_PUBLICAR_ENCAMINHAMENTO, CB_PUBLICAR_MANUAL, CB_PUBLICAR_LINK, CB_CANCELAR_MENU, CB_MONITOR_MENU, CB_GERENCIAR_WHATS
 )
 
 logger = logging.getLogger(__name__)
@@ -18,8 +18,9 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     logger.info(f"[START] Usuário: {user.id} ({user.username}) abriu o menu.")
 
     keyboard = [
-        [InlineKeyboardButton("📢 Publicar Oferta Manual", callback_data=CB_PUBLICAR_MANUAL)],
+        [InlineKeyboardButton("📨 Publicar por Encaminhamento", callback_data=CB_PUBLICAR_ENCAMINHAMENTO)],
         [InlineKeyboardButton("🔗 Publicar por Link", callback_data=CB_PUBLICAR_LINK)],
+        [InlineKeyboardButton("📢 Publicar Oferta Manual", callback_data=CB_PUBLICAR_MANUAL)],
         [InlineKeyboardButton("⚙️ Configurar Afiliado", callback_data="menu_config_afiliado")],
         [InlineKeyboardButton("🟢 Gerenciar WhatsApp", callback_data=CB_GERENCIAR_WHATS)],
         [InlineKeyboardButton("🤖 Configurar Monitor (Fase 3)", callback_data=CB_MONITOR_MENU)],

@@ -1,6 +1,7 @@
 LOJAS = ["Shopee", "Mercado Livre", "Amazon", "Outra"]
 
 # Menu principal
+CB_PUBLICAR_ENCAMINHAMENTO = "menu_publicar_encaminhamento"
 CB_PUBLICAR_MANUAL = "menu_publicar_manual"
 CB_PUBLICAR_LINK = "menu_publicar_link"
 CB_GERENCIAR_CANAIS = "menu_gerenciar_canais"
