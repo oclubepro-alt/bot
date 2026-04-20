@@ -940,6 +940,32 @@ async def get_page_html(url: str) -> tuple[str | None, str]:
     return None, "FALHA_TOTAL"
 
 
+def _extract_search_term_from_url(url: str) -> str | None:
+    """Extrai o nome do produto da URL para usar como busca na Lomadee."""
+    try:
+        path = urlparse(url).path.strip("/")
+        segments = path.split("/")
+        if not segments:
+            return None
+        
+        # O slug costuma estar no primeiro segmento significativo
+        slug = segments[0]
+        
+        # Se for Magalu, às vezes o primeiro segmento é 'p' ou algo assim, mas geralmente é o slug
+        # Filtra termos conhecidos que não são produto
+        if slug in ["p", "l", "selecao"]:
+            if len(segments) > 1:
+                slug = segments[1]
+        
+        term = slug.replace("-", " ").strip()
+        if len(term) < 3:
+            return None
+            
+        return term
+    except Exception:
+        return None
+
+
 async def extract_product_data_v2(url: str) -> dict:
     """Orquestrador do Pipeline Híbrido V5 (5 Camadas)."""
     from bot.utils.detect_store import detect_store
@@ -968,7 +994,33 @@ async def extract_product_data_v2(url: str) -> dict:
     
     logger.info(f"[EXTRATOR] Loja detectada: {store_key}")
 
-    # ── CAMADA 0: API INTERNA (Magalu e Netshoes) ─────────────────────────
+    # ── CAMADA 0: LOMADEE API (Prioridade para Magalu e Netshoes) ─────────
+    if store_key in ["magalu", "netshoes"]:
+        search_term = _extract_search_term_from_url(final_url)
+        if search_term:
+            logger.info(f"[EXTRATOR] Camada 0: Tentando Lomadee API para '{search_term}'...")
+            try:
+                from bot.services.lomadee_service import buscar_produto_lomadee
+                # Como a função de busca é síncrona, rodamos em thread para não bloquear o loop
+                lomadee_results = await asyncio.to_thread(buscar_produto_lomadee, search_term, 1)
+                
+                if lomadee_results:
+                    p = lomadee_results[0]
+                    logger.info(f"[EXTRATOR] Camada 0 (LOMADEE): ✅ Sucesso | {p['nome'][:50]}")
+                    result.update({
+                        "titulo": p["nome"],
+                        "imagem": p["imagem"],
+                        "preco": p["preco"],
+                        "source_method": "LOMADEE_API",
+                        "is_pix_price": False,
+                    })
+                    return result
+                else:
+                    logger.warning(f"[EXTRATOR] Camada 0 (LOMADEE): ❌ Nenhum resultado para '{search_term}'")
+            except Exception as e:
+                logger.error(f"[EXTRATOR] Camada 0 (LOMADEE): ❌ Erro: {e}")
+
+    # ── CAMADA 0b: API INTERNA (Magalu e Netshoes) ─────────────────────────
     if store_key == "magalu":
         logger.info("[EXTRATOR] Camada 0: Tentando Magalu API Interna...")
         api_data = await fetch_magalu_api(final_url)
