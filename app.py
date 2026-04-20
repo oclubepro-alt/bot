@@ -93,7 +93,16 @@ def main() -> None:
     app.add_handler(CallbackQueryHandler(frev_corrigir_link, pattern=r"^frev_corrigir_link$"))
     app.add_handler(CallbackQueryHandler(frev_corrigir_texto, pattern=r"^frev_corrigir_texto$"))
     
-    app.add_handler(MessageHandler((filters.TEXT | filters.PHOTO) & ~filters.COMMAND, receive_forwarded_message), group=1)
+    app.add_handler(MessageHandler(
+        filters.FORWARDED & (
+            filters.PHOTO |
+            filters.TEXT |
+            filters.Document.IMAGE |
+            filters.VIDEO |
+            filters.ANIMATION
+        ),
+        receive_forwarded_message
+    ), group=1)
     app.add_handler(MessageHandler((filters.TEXT | filters.PHOTO) & ~filters.COMMAND, receive_correction), group=2)
 
     # Handler de aprovação manual das ofertas automáticas (Fase 3)

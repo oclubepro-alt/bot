@@ -14,6 +14,122 @@ logger = logging.getLogger(__name__)
 CB_PROCESSAR_TUDO = "encam_processar_tudo"
 CB_CANCELAR_ENCAM = "encam_cancelar"
 
+def extrair_texto_mensagem(message) -> str:
+    """
+    Extrai texto de qualquer tipo de mensagem.
+    Mensagem só de texto → message.text
+    Mensagem com foto/video → message.caption
+    """
+    texto = message.text or message.caption or ""
+    print(f"[TEXTO] Extraído ({len(texto)} chars): {texto[:80]}...")
+    return texto
+
+async def capturar_midia_completa(message) -> dict:
+    """
+    Captura mídia de qualquer tipo de mensagem encaminhada.
+    Retorna dict com tipo e file_id.
+    """
+    midia = {"tipo": None, "file_id": None}
+
+    try:
+        # CASO 1: Foto direta (mais comum em canais de promoção)
+        if message.photo and len(message.photo) > 0:
+            foto = message.photo[-1]  # sempre a maior resolução
+            midia["tipo"] = "photo"
+            midia["file_id"] = foto.file_id
+            print(f"[MIDIA] ✅ Foto capturada | Resolução: {foto.width}x{foto.height}")
+
+        # CASO 2: Documento que é imagem
+        elif message.document and getattr(message.document, "mime_type", ""):
+            if message.document.mime_type.startswith("image/"):
+                midia["tipo"] = "photo"
+                midia["file_id"] = message.document.file_id
+                print(f"[MIDIA] ✅ Imagem como documento capturada")
+
+        # CASO 3: Vídeo
+        elif message.video:
+            midia["tipo"] = "video"
+            midia["file_id"] = message.video.file_id
+            print(f"[MIDIA] ✅ Vídeo capturado")
+
+        # CASO 4: GIF animado
+        elif message.animation:
+            midia["tipo"] = "animation"
+            midia["file_id"] = message.animation.file_id
+            print(f"[MIDIA] ✅ GIF capturado")
+
+        else:
+            print(f"[MIDIA] ℹ️ Mensagem sem mídia — apenas texto")
+
+    except Exception as e:
+        print(f"[MIDIA] ❌ Erro ao capturar mídia: {e}")
+
+    return midia
+
+async def enviar_com_midia(
+    bot,
+    chat_id,
+    midia: dict,
+    texto: str,
+    keyboard=None,
+    parse_mode: str = "HTML"
+):
+    tipo = midia.get("tipo")
+    file_id = midia.get("file_id")
+
+    try:
+        if tipo == "photo" and file_id:
+            await bot.send_photo(
+                chat_id=chat_id,
+                photo=file_id,
+                caption=texto,
+                parse_mode=parse_mode,
+                reply_markup=keyboard
+            )
+            print(f"[ENVIO] ✅ Foto enviada para {chat_id}")
+
+        elif tipo == "video" and file_id:
+            await bot.send_video(
+                chat_id=chat_id,
+                video=file_id,
+                caption=texto,
+                parse_mode=parse_mode,
+                reply_markup=keyboard
+            )
+            print(f"[ENVIO] ✅ Vídeo enviado para {chat_id}")
+
+        elif tipo == "animation" and file_id:
+            await bot.send_animation(
+                chat_id=chat_id,
+                animation=file_id,
+                caption=texto,
+                parse_mode=parse_mode,
+                reply_markup=keyboard
+            )
+            print(f"[ENVIO] ✅ GIF enviado para {chat_id}")
+
+        else:
+            await bot.send_message(
+                chat_id=chat_id,
+                text=texto,
+                parse_mode=parse_mode,
+                reply_markup=keyboard
+            )
+            print(f"[ENVIO] ℹ️ Texto enviado para {chat_id} sem mídia")
+
+    except Exception as e:
+        print(f"[ENVIO] ❌ Erro no envio: {e}")
+        # Fallback seguro: envia só o texto
+        try:
+            await bot.send_message(
+                chat_id=chat_id,
+                text=texto,
+                parse_mode=parse_mode,
+                reply_markup=keyboard
+            )
+        except Exception as e2:
+            print(f"[ENVIO] ❌ Fallback também falhou: {e2}")
+
 async def start_forward_mode(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -38,6 +154,19 @@ async def start_forward_mode(update: Update, context: ContextTypes.DEFAULT_TYPE)
     context.user_data["encam_chat_id"] = msg.chat_id
 
 async def receive_forwarded_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    message = update.message
+
+    print("=" * 50)
+    print(f"[DEBUG MIDIA] message.photo: {message.photo}")
+    print(f"[DEBUG MIDIA] message.caption: {message.caption}")
+    print(f"[DEBUG MIDIA] message.text: {message.text}")
+    print(f"[DEBUG MIDIA] message.document: {message.document}")
+    print(f"[DEBUG MIDIA] message.video: {message.video}")
+    print(f"[DEBUG MIDIA] message.animation: {message.animation}")
+    print(f"[DEBUG MIDIA] effective_attachment: {message.effective_attachment}")
+    print(f"[DEBUG MIDIA] forward_from_chat: {message.forward_from_chat}")
+    print("=" * 50)
+
     if not context.user_data.get("modo_encaminhamento"):
         return
 
@@ -53,18 +182,18 @@ async def receive_forwarded_message(update: Update, context: ContextTypes.DEFAUL
     if not msg:
         return
 
-    texto = msg.text or msg.caption or ""
-    foto = msg.photo[-1].file_id if msg.photo else None
+    texto = extrair_texto_mensagem(msg)
+    midia = await capturar_midia_completa(msg)
     
-    # Se nem texto nem foto tem (só uma mensagem muito atípica), ignoramos
-    if not texto and not foto:
+    # Se nem texto nem midia tem (só uma mensagem muito atípica), ignoramos
+    if not texto and not midia.get("file_id"):
         return
 
     primeira_linha = texto.split('\n')[0][:50] if texto else "Produto sem texto"
 
     fila.append({
         "texto": texto,
-        "foto": foto,
+        "midia": midia,
         "nome_curto": primeira_linha
     })
 
@@ -164,7 +293,7 @@ async def process_all_forwardings(update: Update, context: ContextTypes.DEFAULT_
     for i, item in enumerate(fila):
         atual = i + 1
         texto = item["texto"]
-        foto = item["foto"]
+        midia = item.get("midia", {})
         nome_curto = item["nome_curto"]
 
         # Inicia atualização
@@ -184,7 +313,7 @@ async def process_all_forwardings(update: Update, context: ContextTypes.DEFAULT_
         if not link_original:
             sem_link_qtd += 1
             context.user_data["fila_revisao"].append({
-                "foto": foto,
+                "midia": midia,
                 "copy": texto,
                 "link_afiliado": None,
                 "link_cru": None,
@@ -221,7 +350,7 @@ async def process_all_forwardings(update: Update, context: ContextTypes.DEFAULT_
         copy_gerada = gerar_copy_encaminhamento(titulo, preco, cupom, link_afiliado)
 
         context.user_data["fila_revisao"].append({
-            "foto": foto,
+            "midia": midia,
             "copy": copy_gerada,
             "link_afiliado": link_afiliado,
             "link_cru": link_afiliado,
@@ -293,10 +422,14 @@ async def show_next_review(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg_texto += f"\n\n--- <i>Prévia Interna (Sem Link Encurtado)</i> ---\nLink: {item.get('link_cru', 'Sem link')}"
 
     chat_id = update.callback_query.message.chat_id if update.callback_query else update.effective_chat.id
-    if item.get("foto"):
-        await context.bot.send_photo(chat_id=chat_id, photo=item["foto"], caption=msg_texto, parse_mode=ParseMode.HTML, reply_markup=reply_markup)
-    else:
-        await context.bot.send_message(chat_id=chat_id, text=msg_texto, parse_mode=ParseMode.HTML, reply_markup=reply_markup)
+    await enviar_com_midia(
+        bot=context.bot,
+        chat_id=chat_id,
+        midia=item.get("midia", {}),
+        texto=msg_texto,
+        keyboard=reply_markup,
+        parse_mode=ParseMode.HTML
+    )
 
 async def frev_aprovar(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -308,9 +441,19 @@ async def frev_aprovar(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     item = fila.pop(0)
 
-    from bot.services.publisher_router import publish_offer
+    from bot.utils.config import TELEGRAM_CHANNEL_ID
+    from bot.utils.channel_store import get_channels
+    from bot.utils.telegram_utils import normalize_chat_id
+    
+    canais_destino = [TELEGRAM_CHANNEL_ID]
+    for ch in get_channels():
+        if ch not in canais_destino:
+            canais_destino.append(ch)
+
     try:
-        await publish_offer(context.bot, item["copy"], item["foto"])
+        for chat_id in canais_destino:
+            cid = normalize_chat_id(chat_id)
+            await enviar_com_midia(context.bot, cid, item.get("midia", {}), item["copy"])
         await query.message.reply_text("✅ Oferta postada com sucesso!")
     except Exception as e:
         await query.message.reply_text(f"❌ Erro ao postar: {e}")
