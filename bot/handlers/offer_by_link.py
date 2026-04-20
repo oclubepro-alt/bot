@@ -430,24 +430,55 @@ async def receber_link_produto(update: Update, context: ContextTypes.DEFAULT_TYP
         except Exception as e:
             logger.warning(f"[OFERTA_LINK] Playwright falhou ao resolver: {e}")
 
-    # ── 2. Extração + resolução adicional ────────────────────────────────────
-    await msg_aguardo.edit_text(
-        "⏳ <b>Processando...</b>\n"
-        "✅ Link resolvido\n"
-        "🛍️ <b>Extraindo informações (Híbrido ScraperAPI + PW)...</b>",
-        parse_mode=ParseMode.HTML
-    )
+    # ── 2. Extração com timeout global e feedback por loja ──────────────────
+    from bot.utils.detect_store import detect_store as _detect_s
+    _store_display_pre, _store_key_pre = _detect_s(final_url)
+    import asyncio
+
+    # Mensagem de progresso específica por loja
+    if _store_key_pre in ("magalu", "netshoes"):
+        prog_msg = (
+            f"⏳ <b>Processando link {_store_display_pre}...</b>\n"
+            f"🔍 Tentando API interna ({_store_display_pre}) → ScraperAPI → Playwright\n"
+            f"<i>Pode levar até 60s. Aguarde...</i>"
+        )
+    else:
+        prog_msg = (
+            "⏳ <b>Processando...</b>\n"
+            "✅ Link resolvido\n"
+            "🛍️ <b>Extraindo informações (Híbrido ScraperAPI + PW)...</b>"
+        )
+
+    await msg_aguardo.edit_text(prog_msg, parse_mode=ParseMode.HTML)
     logger.info(f"[OFERTA_LINK] EXTRACAO_INICIADA: {final_url[:80]}")
+
     try:
         from bot.services.product_extractor_v2 import extract_product_data_v2
-        dados = await extract_product_data_v2(final_url)
+        # Timeout global de 90s — nunca trava silenciosamente
+        dados = await asyncio.wait_for(extract_product_data_v2(final_url), timeout=90)
         final_url = dados.get("final_url", final_url)
+        logger.info(f"[OFERTA_LINK] Extração OK | Método: {dados.get('source_method')} | Título: {dados.get('titulo', '')[:40]}")
+    except asyncio.TimeoutError:
+        logger.error(f"[OFERTA_LINK] ⏱️ TIMEOUT na extração ({_store_display_pre}) após 90s")
+        dados = {
+            "titulo": None, "preco": None, "imagem": None,
+            "preco_original": None, "source_method": "TIMEOUT",
+            "is_pix_price": False,
+            "store": _store_display_pre, "store_key": _store_key_pre,
+        }
+        await msg_aguardo.edit_text(
+            f"⚠️ <b>Extração automática lenta ({_store_display_pre}).</b>\n\n"
+            "Vou pedir os dados manualmente para não travar.\n"
+            "<i>Os links de afiliado serão aplicados normalmente.</i>",
+            parse_mode=ParseMode.HTML
+        )
     except Exception as e:
         logger.error(f"[OFERTA_LINK] Erro crítico na extração: {e}")
         dados = {
-            "titulo": "Produto", "preco": "Preço não disponível", "imagem": None,
-            "preco_original": None, "source_method": "FALLBACK_SEM_PRECO",
-            "erro": str(e), "is_pix_price": False,
+            "titulo": None, "preco": None, "imagem": None,
+            "preco_original": None, "source_method": f"ERRO: {str(e)[:50]}",
+            "is_pix_price": False,
+            "store": _store_display_pre, "store_key": _store_key_pre,
         }
 
     # ── 2. Injeta afiliado na URL final (sem sobrescrever depois) ────────────
