@@ -79,8 +79,10 @@ async def fetch_magalu_api(url: str) -> dict | None:
             "Referer": "https://www.magazineluiza.com.br/"
         }
 
-        async with httpx.AsyncClient(timeout=15) as client:
+        async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
             resp = await client.get(api_url, headers=headers)
+            
+            # Se der 404 ou 500, a URL pode estar errada ou o produto expirou
             if resp.status_code == 200:
                 data = resp.json()
                 logger.info(f"[MAGALU_API] ✅ Sucesso no endpoint: {api_url}")
@@ -95,10 +97,11 @@ async def fetch_magalu_api(url: str) -> dict | None:
                     "preco": _clean_price(str(best_price)) if best_price else "Preço não disponível",
                     "preco_original": _clean_price(str(original_price)) if original_price else None,
                     "source_method": "MAGALU_API_INTERNA",
-                    "is_pix_price": True # Geralmente o best_price da API é o à vista
+                    "is_pix_price": True
                 }
             else:
-                logger.warning(f"[MAGALU_API] ❌ Falha: Status {resp.status_code} | Body: {resp.text[:150]}")
+                logger.warning(f"[MAGALU_API] ❌ Falha: Status {resp.status_code} | Produto: {product_id}")
+
     except Exception as e:
         logger.warning(f"[MAGALU_API] ❌ Exceção Crítica: {str(e)[:100]}")
     return None
@@ -608,8 +611,12 @@ async def get_page_html(url: str) -> tuple[str | None, str]:
     2. Playwright Local (Anti-Detecção)
     3. Requests Simples (Fallback)
     """
-    # [DEBUG] Presença da chave no início da execução
-    logger.info(f"[EXTRATOR V5] Pipeline Ativo | SCRAPERAPI_KEY: {bool(SCRAPERAPI_KEY)}")
+    # [DEBUG] Diagnóstico de Bypass
+    if not SCRAPERAPI_KEY:
+        logger.info("[EXTRATOR V5] ℹ️ SCRAPERAPI_KEY ausente. Camada de bypass premium desativada.")
+    else:
+        logger.info("[EXTRATOR V5] ✅ SCRAPERAPI_KEY detectada. Iniciando Camada 1.")
+
 
     # ── TENTATIVA 1: ScraperAPI ───────────────────────────────────────────
     if SCRAPERAPI_KEY:

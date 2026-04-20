@@ -100,19 +100,30 @@ def main() -> None:
             ],
         },
         fallbacks=[CommandHandler("cancelar", cancelar_config)],
-        per_message=True, # Silencia avisos de CallbackQueryHandler
+        per_message=False, # CORRIGIDO: Per-user tracking para evitar perda de estado
     )
     app.add_handler(config_handler)
 
-    # Registra o scheduler de varredura automática (Fase 3) - PAUSADO TEMPORARIAMENTE
-    # setup_scheduler(app)
+    logger.info("[APP] Handlers e scheduler registrados. Iniciando polling...")
+    
+    # ── ESTABILIDADE E CONFLITOS ──────────────────────────────────────────
+    # Railway pode levar alguns segundos para encerrar instâncias antigas.
+    # Aumentamos o delay para 10s e adicionamos tratamento de sinais para Railway.
+    import time
+    import signal
+    
+    logger.info("[ESTABILIDADE] Aguardando 10 segundos para garantir limpeza de conexões antigas...")
+    time.sleep(10)
+    
+    def handle_signal(sig, frame):
+        logger.info(f"[SINAL] Recebido sinal {sig}. Encerrando bot...")
+        sys.exit(0)
 
-    # AUTO-START: Inicia monitoramento na inicialização - PAUSADO TEMPORARIAMENTE
-    # from bot.services.scheduler_service import start_monitor
-    # start_monitor(app)
-
-    logger.info("[APP] Handlers e scheduler registrados. Bot em execução... (Ctrl+C para parar)")
+    signal.signal(signal.SIGINT, handle_signal)
+    signal.signal(signal.SIGTERM, handle_signal)
+    
     app.run_polling(drop_pending_updates=True)
+
 
 
 if __name__ == "__main__":
