@@ -192,6 +192,10 @@ async def process_all_forwardings(update: Update, context: ContextTypes.DEFAULT_
         return
 
     context.user_data["fila_revisao"] = []
+    # Salva o total ANTES de processar para o contador da revisão não quebrar
+    context.user_data["encam_total_processado"] = total
+    # Zera a fila de encaminhamentos agora que o total foi salvo
+    context.user_data["fila_encaminhamentos"] = []
     
     chat_id = query.message.chat_id
     msg_id = query.message.message_id
@@ -339,13 +343,9 @@ async def show_next_review(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     item = fila[0]
-    total_original = len(context.user_data.get("fila_encaminhamentos", []))
-    if total_original == 0: total_original = len(fila) 
-    
-    if "encam_total_processado" not in context.user_data:
-        context.user_data["encam_total_processado"] = max(total_original, len(fila))
-        
-    total = context.user_data.get("encam_total_processado", len(fila))
+    # Total sempre vem de encam_total_processado (salvo antes de zerar a fila)
+    # Fallback: usa o tamanho atual da fila de revisão se por algum motivo não foi salvo
+    total = context.user_data.get("encam_total_processado") or len(fila)
     atual = total - len(fila) + 1
     
     msg_texto = (
