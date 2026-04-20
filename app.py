@@ -102,7 +102,19 @@ def main() -> None:
         fallbacks=[CommandHandler("cancelar", cancelar_config)],
         per_message=False, # CORRIGIDO: Per-user tracking para evitar perda de estado
     )
+
+    async def global_error_handler(update, context):
+        from telegram.error import Conflict, NetworkError
+        if isinstance(context.error, Conflict):
+            logger.error("[CONFLITO] ❌ Instância duplicada detectada! Verifique se seu bot local está desligado.")
+        elif isinstance(context.error, NetworkError):
+            logger.warning(f"[REDE] Erro de rede: {context.error}")
+        else:
+            logger.error(f"[ERRO GERAL] Exceção não tratada: {context.error}", exc_info=context.error)
+
+    app.add_error_handler(global_error_handler)
     app.add_handler(config_handler)
+
 
     logger.info("[APP] Handlers e scheduler registrados. Iniciando polling...")
     
