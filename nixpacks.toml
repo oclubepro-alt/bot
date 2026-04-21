@@ -1,12 +1,35 @@
 [phases.setup]
-nixPkgs = ["python311", "gcc", "libgbm", "nss", "atk", "at-spi2-atk", "libdrm", "libxcomposite", "libxdamage", "libxext", "libxfixes", "libxrandr", "libasound2", "libpangocairo-1.0-0"]
+nixPkgs = [
+    "python311",
+    "gcc",
+    "libgbm",
+    "nss",
+    "atk",
+    "at-spi2-atk",
+    "libdrm",
+    "libxcomposite",
+    "libxdamage",
+    "libxext",
+    "libxfixes",
+    "libxrandr",
+    "libasound2",
+    "libpangocairo-1.0-0",
+    "chromium",
+    "nspr",
+    "xorg.libX11",
+    "xorg.libxcb",
+    "libxkbcommon",
+    "mesa",
+    "pango",
+    "cairo",
+    "alsa-lib"
+]
 
-[phases.build]
+[phases.install]
 cmds = [
-  "pip install -r requirements.txt",
-  "export PLAYWRIGHT_BROWSERS_PATH=/app/.cache/ms-playwright",
-  "playwright install chromium",
-  "playwright install-deps chromium"
+    "pip install -r requirements.txt",
+    "playwright install chromium",
+    "playwright install-deps chromium"
 ]
 
 [start]

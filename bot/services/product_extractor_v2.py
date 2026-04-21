@@ -829,6 +829,7 @@ async def get_page_html(url: str) -> tuple[str | None, str]:
             is_amazon = "amazon" in url.lower() or "amzn.to" in url.lower()
             is_magalu = "magazineluiza" in url.lower() or "magalu" in url.lower()
             is_shopee = "shopee" in url.lower()
+            is_netshoes = "netshoes" in url.lower()
             
             payload = {
                 'api_key': SCRAPERAPI_KEY,
@@ -838,8 +839,13 @@ async def get_page_html(url: str) -> tuple[str | None, str]:
                 'device_type': 'desktop' # Magalu bloqueia mobile frequentemente
             }
 
-            # Amazon e Magalu exigem proxies premium
-            if is_amazon or is_magalu:
+            # Magalu e Netshoes exigem ultra_premium
+            if is_magalu or is_netshoes:
+                payload['ultra_premium'] = 'true'
+                logger.info("[SCRAPERAPI] ⚡ Usando ultra_premium para domínio protegido")
+            
+            # Amazon exige premium
+            elif is_amazon:
                 payload['premium'] = 'true'
             
             # Shopee precisa de sessão mantida
@@ -868,6 +874,8 @@ async def get_page_html(url: str) -> tuple[str | None, str]:
                         logger.warning(f"[SCRAPERAPI] ❌ BLOQUEIO DETECTADO: '{found_block}' — indo para Playwright")
                 else:
                     logger.warning(f"[SCRAPERAPI] ❌ Falhou com status {resp.status_code}: {resp.text[:200]}")
+                    if resp.status_code in [403, 500]:
+                        logger.warning("[SCRAPERAPI] ⚠️ Plano pode precisar de upgrade para suportar 'ultra_premium' ou 'premium'. Caindo pro Playwright.")
         except Exception as e:
             logger.warning(f"[SCRAPERAPI] ❌ Exceção: {str(e)[:100]}")
 
@@ -942,26 +950,10 @@ async def get_page_html(url: str) -> tuple[str | None, str]:
 
 def _extract_search_term_from_url(url: str) -> str | None:
     """Extrai o nome do produto da URL para usar como busca na Lomadee."""
+    from bot.services.lomadee_service import extrair_termo_busca
     try:
-        path = urlparse(url).path.strip("/")
-        segments = path.split("/")
-        if not segments:
-            return None
-        
-        # O slug costuma estar no primeiro segmento significativo
-        slug = segments[0]
-        
-        # Se for Magalu, às vezes o primeiro segmento é 'p' ou algo assim, mas geralmente é o slug
-        # Filtra termos conhecidos que não são produto
-        if slug in ["p", "l", "selecao"]:
-            if len(segments) > 1:
-                slug = segments[1]
-        
-        term = slug.replace("-", " ").strip()
-        if len(term) < 3:
-            return None
-            
-        return term
+        termo = extrair_termo_busca(url)
+        return termo if len(termo) >= 3 else None
     except Exception:
         return None
 

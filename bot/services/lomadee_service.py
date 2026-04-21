@@ -1,10 +1,28 @@
 import os
 import requests
 import logging
+import re
+from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
 
 LOMADEE_BASE_URL = "https://api-beta.lomadee.com.br"
+
+# Palavras a ignorar na busca
+STOPWORDS = {
+    "de", "do", "da", "em", "com", "para", "por", "e", "a", "o",
+    "um", "uma", "no", "na", "os", "as", "se", "ao", "bar", "ml",
+    "cm", "kg", "p", "s", "g", "l"
+}
+
+def extrair_termo_busca(url: str) -> str:
+    path = urlparse(url).path
+    slug = path.strip("/").split("/")[0]  # pegar só o primeiro segmento
+    palavras = slug.replace("-", " ").split()
+    palavras_filtradas = [p for p in palavras if p.lower() not in STOPWORDS and len(p) > 2]
+    termo = " ".join(palavras_filtradas[:4])  # máximo 4 palavras
+    logger.info(f"[LOMADEE] 🔍 Termo de busca gerado: '{termo}'")
+    return termo
 
 def get_headers():
     return {"x-api-key": os.getenv("LOMADEE_API_KEY")}
