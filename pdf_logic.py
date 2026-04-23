@@ -327,51 +327,37 @@ def preencher_pagina_dependentes(page, dependentes: list):
         if not dep or not dep.get("nome"):
             continue
 
-        # Localizar o label do nome para este bloco
-        resultados = page.search_for(label_text)
-        if not resultados:
+        # 1. Localizar o label do nome para este bloco
+        res_nomes = page.search_for(label_text)
+        if not res_nomes:
             continue
+        r_nome = res_nomes[0]
+        
+        # POSICIONAMENTO DO NOME: 10pt abaixo do label para cair na célula
+        y_nome = r_nome.y1 + 10
+        tx(page, r_nome.x0 + 5, y_nome, normalizar(dep.get("nome")), size=8)
+
+        # 2. Localizar o label de "Data de nascimento" deste bloco (i-ésimo na página)
+        res_data_labels = page.search_for("Data de nascimento")
+        if len(res_data_labels) > i:
+            r_data = res_data_labels[i]
+            y_dados = r_data.y1 + 10
             
-        r_nome = resultados[0]
-        
-        # REGRA 1 — POSICIONAMENTO DO NOME:
-        # X = x0 do label + 5pt, Y = centralizado verticalmente na linha do label
-        x_nome = r_nome.x0 + 5
-        y_nome = r_nome.y0 + (r_nome.y1 - r_nome.y0) / 2 - 3
-        
-        tx(page, x_nome, y_nome, normalizar(dep.get("nome")), size=8)
+            tx(page, COLUNAS_X["data_nascimento"], y_dados, normalizar(dep.get("data_nascimento")), size=8)
+            tx(page, COLUNAS_X["sexo"],            y_dados, normalizar(dep.get("sexo")),            size=8)
+            tx(page, COLUNAS_X["estado_civil"],    y_dados, normalizar(dep.get("estado_civil")),    size=8)
+            tx(page, COLUNAS_X["parentesco"],      y_dados, normalizar(dep.get("parentesco")),      size=8)
+            tx(page, COLUNAS_X["cpf"],             y_dados, formatar_cpf(dep.get("cpf")),           size=8)
 
-        # REGRA 2 — POSICIONAMENTO DE DATA, SEXO, ESTADO CIVIL, PARENTESCO, CPF:
-        # Y da linha de dados = y1 do label "N - Nome Completo" + 8pt
-        y_dados = r_nome.y1 + 8
-        
-        tx(page, COLUNAS_X["data_nascimento"], y_dados, normalizar(dep.get("data_nascimento")), size=8)
-        tx(page, COLUNAS_X["sexo"],            y_dados, normalizar(dep.get("sexo")),            size=8)
-        tx(page, COLUNAS_X["estado_civil"],    y_dados, normalizar(dep.get("estado_civil")),    size=8)
-        tx(page, COLUNAS_X["parentesco"],      y_dados, normalizar(dep.get("parentesco")),      size=8)
-        tx(page, COLUNAS_X["cpf"],             y_dados, formatar_cpf(dep.get("cpf")),           size=8)
-
-        # REGRA 3 — POSICIONAMENTO DO NOME DA MÃE:
-        # Busca aproximada para lidar com caracteres especiais (mãe)
+        # 3. Localizar o label de "Nome da mãe" deste bloco (i-ésimo na página)
         labels_mae = page.search_for("Nome da m" + chr(227) + "e completo")
         if not labels_mae:
             labels_mae = page.search_for("Nome da mae completo")
             
-        if labels_mae:
-            # Seleciona o label de mãe correspondente a este bloco
-            r_mae = None
-            for lm in labels_mae:
-                if lm.y0 > r_nome.y1:
-                    # Garante que não pulou para o bloco do próximo dependente
-                    res_prox = page.search_for(LABELS_NOME[i+1]) if i < 4 else None
-                    if not res_prox or lm.y1 < res_prox[0].y0:
-                        r_mae = lm
-                        break
-            
-            if r_mae:
-                x_mae = r_mae.x0 + 5
-                y_mae = r_mae.y0 + (r_mae.y1 - r_mae.y0) / 2 - 3
-                tx(page, x_mae, y_mae, normalizar(dep.get("nome_mae")), size=8)
+        if len(labels_mae) > i:
+            r_mae = labels_mae[i]
+            y_mae = r_mae.y1 + 12
+            tx(page, r_mae.x0 + 5, y_mae, normalizar(dep.get("nome_mae")), size=8)
 
 
 def _pagina2(page: fitz.Page, d: dict):
