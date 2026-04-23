@@ -367,32 +367,128 @@ def _pagina2(page: fitz.Page, d: dict):
 
 def _pagina3(page: fitz.Page, d: dict):
     """
-    Página 3 — Representante financeiro.
-    Por padrão usa dados do próprio titular.
+    Página 3 — Representante financeiro e Forma de Pagamento.
+    Estratégia: Localizar label -> Limpar área (Redação) -> Escrever valor calibrado.
     """
-    nome  = normalizar(d.get("rep_financeiro_nome")  or d.get("titular_nome"))
-    email = normalizar(d.get("rep_financeiro_email") or d.get("titular_email"))
-    cpf   = normalizar(d.get("rep_financeiro_cpf")   or d.get("titular_cpf"))
-    tel   = formatar_telefone(
-        d.get("rep_financeiro_telefone") or d.get("titular_telefone")
-    )
 
-    # Checkbox "próprio titular"
-    cobrir(page, 225, 370, 265, 392)
-    tx(page, 239, 385, "X", size=9, bold=True)
+    def escrever(x, y, valor, bold=False, fontsize=8):
+        if not valor or str(valor).strip() == "":
+            return
+        fonte = HEBO if bold else HELV
+        page.insert_text(
+            (x, y),
+            str(valor).strip(),
+            fontname=fonte,
+            fontsize=fontsize,
+            color=BLACK,
+        )
 
-    campo(page, 30, 410, 530, 428, nome)
-    campo(page, 30, 437, 530, 455, email)
-    campo(page, 30, 462, 278, 480, cpf)
-    campo(page, 278, 462, 530, 480, tel)
+    def limpar_e_escrever(label_name, valor, index=1, off_x=5, off_y=12, bold=False, w=400):
+        res = page.search_for(label_name)
+        if len(res) > index:
+            r = res[index]
+            # Define área de limpeza (generosa para apagar placeholders)
+            area = fitz.Rect(r.x1 + 1, r.y0 - 2, min(r.x1 + w, 560), r.y1 + 10)
+            page.add_redact_annot(area, fill=WHITE)
+            if valor:
+                # Armazenar para escrever após apply_redactions
+                return (r.x1 + off_x, r.y0 + off_y, str(valor), bold)
+        return None
 
-    # Forma de pagamento — Boleto
-    # ERRO 5: "X" oleto bancário cortando o B -> Mover X para a esquerda
-    cobrir(page, 10, 548, 35, 580)
-    tx(page, 13, 568, "X", size=9, bold=True)
+    comandos_escrita = []
 
-    campo(page, 28, 622, 200, 640, normalizar(d.get("data_inicio_beneficio")))
-    campo(page, 28, 652, 100, 670, normalizar(d.get("data_vencimento_boleto")))
+    # 1. Marcador "Titular é Financeiro"
+    if d.get("titular_e_financeiro"):
+        res_sim = page.search_for("Sim")
+        if res_sim:
+            r = res_sim[0]
+            # O box está à esquerda do "Sim". x0-12 é o centro do box.
+            # No screenshot, y0+10 parece ideal para o centro do box.
+            area = fitz.Rect(r.x0 - 15, r.y0 - 2, r.x0 - 2, r.y1 + 2)
+            page.add_redact_annot(area, fill=WHITE)
+            comandos_escrita.append((r.x0 - 12.5, r.y0 + 9.5, "X", True))
+
+    # 2. Campos de Texto (Rep Financeiro)
+    # Nota: index=1 para pegar a ocorrência da seção Rep Financeiro
+    
+    # Nome
+    res = limpar_e_escrever("Nome Completo", d.get("rep_financeiro_nome", ""), index=1, off_y=5.0)
+    if res: comandos_escrita.append(res)
+    
+    # Email (Label 'Mail')
+    res = limpar_e_escrever("Mail", d.get("rep_financeiro_email", ""), index=1, off_y=5.0)
+    if res: comandos_escrita.append(res)
+
+    # CPF / RG / Data Nasc
+    res = limpar_e_escrever("CPF", formatar_cpf(d.get("rep_financeiro_cpf", "")), index=1, off_y=5.0, w=130)
+    if res: comandos_escrita.append(res)
+    
+    res = limpar_e_escrever("RG", d.get("rep_financeiro_rg", ""), index=1, off_y=5.0, w=130)
+    if res: comandos_escrita.append(res)
+    
+    res = limpar_e_escrever("Data de nascimento", d.get("rep_financeiro_data_nascimento", ""), index=1, off_y=5.0, w=130)
+    if res: comandos_escrita.append(res)
+
+    # Sexo / Estado Civil / Parentesco / Telefone
+    res = limpar_e_escrever("Sexo", d.get("rep_financeiro_sexo", ""), index=1, off_y=5.0, w=60)
+    if res: comandos_escrita.append(res)
+    
+    res = limpar_e_escrever("Estado Civil", d.get("rep_financeiro_estado_civil", ""), index=1, off_y=5.0, w=100)
+    if res: comandos_escrita.append(res)
+    
+    res = limpar_e_escrever("Grau de Parentesco", d.get("rep_financeiro_grau_parentesco", ""), index=1, off_y=5.0, w=100)
+    if res: comandos_escrita.append(res)
+    
+    # Telefone (precisa limpar o ( ) que fica abaixo)
+    res_tel = page.search_for("Telefone Celular")
+    if len(res_tel) > 1:
+        r = res_tel[1]
+        # Limpa área maior para pegar o ( ) abaixo
+        area_tel = fitz.Rect(r.x0, r.y1 - 2, r.x1 + 150, r.y1 + 15)
+        page.add_redact_annot(area_tel, fill=WHITE)
+        # Limpa à direita
+        area_dir = fitz.Rect(r.x1 + 1, r.y0 - 2, 560, r.y1 + 5)
+        page.add_redact_annot(area_dir, fill=WHITE)
+        tel_f = formatar_telefone(d.get("rep_financeiro_telefone", ""))
+        if tel_f:
+            comandos_escrita.append((r.x1 + 5, r.y0 + 13, tel_f, False))
+
+    # 3. Forma de Pagamento e Datas (Caixas à direita)
+    # Calibração radical - o texto está saindo muito baixo.
+    # Usando y0 + 4.0 para forçar o texto para cima (dentro da caixa).
+    X_DATA = 190
+
+    if "boleto" in str(d.get("forma_pagamento", "")).lower():
+        res_bol = page.search_for("Boleto bancário")
+        if res_bol:
+            r = res_bol[0]
+            # Mover para x=108 e subir o Y
+            comandos_escrita.append((108, r.y0 + 4.0, "X", True))
+
+    # Data Início
+    res_ini = page.search_for("Data De Início")
+    if res_ini:
+        r = res_ini[0]
+        area = fitz.Rect(165, r.y0 - 5, 500, r.y1 + 10)
+        page.add_redact_annot(area, fill=WHITE)
+        val = d.get("data_inicio_beneficio", "")
+        if val: comandos_escrita.append((X_DATA, r.y0 + 4.0, val, False))
+
+    # Data Vencimento
+    res_venc = page.search_for("Data de vencimento")
+    if res_venc:
+        r = res_venc[0]
+        area = fitz.Rect(165, r.y0 - 5, 500, r.y1 + 10)
+        page.add_redact_annot(area, fill=WHITE)
+        val = d.get("data_vencimento_boleto", "")
+        if val: comandos_escrita.append((X_DATA, r.y0 + 4.0, val, False))
+
+    # Aplicar todas as limpezas de uma vez
+    page.apply_redactions()
+
+    # Escrever os valores
+    for x, y, texto, bold in comandos_escrita:
+        escrever(x, y, texto, bold=bold)
 
 
 def _bloco_assinatura(page: fitz.Page, d: dict,
@@ -688,6 +784,56 @@ def _preencher_sn(page: fitz.Page, d: dict,
             # ERRO 7: Cobre a célula com margem maior para evitar "N N" duplicado
             cobrir(page, col_x - 4, y - 12, col_x + 16, y + 4)
             tx(page, col_x, y, sn, size=8, bold=True)
+
+
+def _pagina4(page: fitz.Page, d: dict):
+    """
+    Página 4 — Autorização para Envio de Informações.
+    Localiza os textos e insere o X no quadrado à esquerda se autorizado.
+    """
+
+    def inserir_x(x, y):
+        page.insert_text(
+            (x, y),
+            "X",
+            fontname="Helvetica-Bold",
+            fontsize=8,
+            color=(0, 0, 0),
+        )
+
+    # 1. Autorização de Comunicações
+    r1 = page.search_for("Autorizo receber comunicações")
+    if not r1:
+        r1 = page.search_for("Autorizo receber comunica")
+        
+    if r1:
+        # centro_y diagnosticado foi 238.63. Usando offset -1pt conforme solicitado.
+        y1 = (r1[0].y0 + r1[0].y1) / 2 - 1
+        x1 = r1[0].x0 - 15  # 64.94 - 15 = 49.94
+        if d.get("autoriza_comunicacoes"):
+            inserir_x(x1, y1)
+            print(f"[PDF] Checkbox 1 MARCADO em x={x1:.2f}, y={y1:.2f}")
+        else:
+            print("[PDF] Checkbox 1 VAZIO")
+    else:
+        print("[ERRO] Texto do checkbox 1 não encontrado na Página 4")
+
+    # 2. Autorização de Newsletters
+    r2 = page.search_for("Autorizo receber newletters")
+    if not r2:
+        r2 = page.search_for("newsletters")
+        
+    if r2:
+        # centro_y diagnosticado foi 285.22. Usando offset -1pt.
+        y2 = (r2[0].y0 + r2[0].y1) / 2 - 1
+        x2 = r2[0].x0 - 15  # 64.94 - 15 = 49.94
+        if d.get("autoriza_newsletters"):
+            inserir_x(x2, y2)
+            print(f"[PDF] Checkbox 2 MARCADO em x={x2:.2f}, y={y2:.2f}")
+        else:
+            print("[PDF] Checkbox 2 VAZIO")
+    else:
+        print("[ERRO] Texto do checkbox 2 não encontrado na Página 4")
 
 
 # ═══════════════════════════════════════════════════════════════════════
