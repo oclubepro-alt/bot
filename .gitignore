@@ -1,0 +1,33 @@
+.env
+venv/
+.venv/
+env/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.DS_Store
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Playwright / Debug
+amazon_debug.html
+resolved_urls.txt
+test-results/
+playwright-report/
+blob-report/
+playwright/.cache/
+
+# Data
+data/*.json
+data/*.db
+!data/.gitkeep
+
+# Node.js (Dashboard)
+node_modules/
+.next/
+out/
+build/
+dist/
+.vercel

@@ -1,0 +1,9 @@
+python-telegram-bot[job-queue]
+openai
+python-dotenv
+requests
+httpx
+beautifulsoup4
+lxml
+playwright
+playwright-stealth
