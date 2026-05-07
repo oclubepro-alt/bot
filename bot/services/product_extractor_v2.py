@@ -529,61 +529,153 @@ def _is_valid_price_tag(tag) -> bool:
         text_context += ' ' + p.get_text(strip=True).lower()
         p = p.parent
     
-    # Palavras-chave que indicam preço unitário
-    unit_keywords = ["/ unidade", "/unidade", "por unidade", "/ unit", " ml", " kg"]
+    # Palavras-chave que indicam preço unitário (Amazon / ML / Magalu)
+    unit_keywords = [
+        "/ unidade", "/unidade", "por unidade", "/ unit", 
+        " ml", " kg", " g ", " metros", "/m", " cada",
+        " preço por", " valor por", " unid", "(unid"
+    ]
     return not any(k in text_context for k in unit_keywords)
 
 
 def _extract_price_amazon(soup: BeautifulSoup) -> tuple[str | None, str | None]:
-    """Amazon: promocional < original."""
+    """
+    Amazon: Extração robusta combinando JSON-LD, scripts internos e seletores.
+    Prioriza dados estruturados (JSON) antes de seletores CSS voláteis.
+    """
     preco_promo = None
     preco_orig  = None
 
-    # Preço promocional (seletores em ordem de confiança)
-    # PRIORIDADE: Usar .a-offscreen antes de .a-price-whole para capturar os centavos
-    promo_selectors = [
-        "#corePrice_feature_div .a-offscreen",
-        "#corePrice_feature_div .a-price-whole",
-        "#priceblock_dealprice",
-        "#priceblock_ourprice",
-        ".a-price.priceToPay .a-offscreen",
-        ".a-price .a-offscreen",
-    ]
-    for sel in promo_selectors:
-        # Pega todos os matches e filtra os de 'unidade'
-        for tag in soup.select(sel):
-            if not _is_valid_price_tag(tag):
-                continue
-                
-            val = tag.get_text(strip=True)
+    # 1. TENTA EXTRAIR VIA SCRIPTS DE ESTADO (JSON INTERNO)
+    # Amazon costuma colocar os dados de oferta em scripts 'text/a-state' ou 'application/ld+json'
+    scripts = soup.find_all("script")
+    for script in scripts:
+        try:
+            content = script.string or ""
+            if not content: continue
             
-            # Especial para Amazon: se pegou o 'whole', tenta achar os centavos no vizinho
-            if "a-price-whole" in sel:
-                parent = tag.parent
-                fraction = parent.select_one(".a-price-fraction") if parent else None
-                if fraction:
-                    val = f"{val.replace(',', '').replace('.', '')},{fraction.get_text(strip=True)}"
+            # Padrão 1: JSON-LD (Standard)
+            if script.get("type") == "application/ld+json":
+                data = json.loads(content)
+                items = data if isinstance(data, list) else [data]
+                for item in items:
+                    if item.get("@type") == "Product":
+                        offers = item.get("offers", {})
+                        if isinstance(offers, dict):
+                            p = offers.get("price")
+                            if p and _parse_price_to_float(str(p)):
+                                preco_promo = str(p)
+                                # Preço original no JSON-LD às vezes não existe ou está em highPrice
+                                break
             
-            if _parse_price_to_float(val):
-                preco_promo = val
-                logger.info(f"[EXTRACTOR_V2] Amazon preço promo via '{sel}': {preco_promo}")
-                break
-        if preco_promo:
-            break
+            # Padrão 2: Amazon a-state (Data do BuyBox)
+            if "desktop-dp-price-detail" in content or "Offers" in content:
+                # Tenta localizar um bloco JSON que pareça com PA-API
+                match = re.search(r'({.*"Offers":.*})', content)
+                if match:
+                    data = json.loads(match.group(1))
+                    p, o = _parse_amazon_paapi_dict(data)
+                    if p:
+                        logger.info(f"[EXTRACTOR_V2] Amazon preço via JSON a-state: {p}")
+                        preco_promo = p
+                        if o: preco_orig = o
+                        break
+        except:
+            continue
+        if preco_promo: break
 
-    # Preço original/riscado
-    orig_selectors = [".a-text-price .a-offscreen", "#listPrice", ".basisPrice .a-offscreen"]
-    for sel in orig_selectors:
-        for tag in soup.select(sel):
-             if _is_valid_price_tag(tag):
+    # 2. SELETORES CSS (FALLBACK SE O JSON FALHAR)
+    if not preco_promo:
+        # Preço promocional
+        promo_selectors = [
+            "#corePrice_feature_div .a-offscreen",
+            "#corePriceDisplay_desktop_feature_div .a-offscreen",
+            "#corePrice_feature_div .a-price-whole",
+            "#priceblock_dealprice",
+            "#priceblock_ourprice",
+            ".a-price.priceToPay .a-offscreen",
+            ".a-price .a-offscreen",
+            "#price_inside_buybox",
+        ]
+        for sel in promo_selectors:
+            for tag in soup.select(sel):
+                if not _is_valid_price_tag(tag): continue
                 val = tag.get_text(strip=True)
+                
+                # Recompõe centavos se pegou só a parte inteira
+                if "a-price-whole" in sel:
+                    parent = tag.parent
+                    fraction = parent.select_one(".a-price-fraction") if parent else None
+                    if fraction:
+                        val = f"{val.replace(',', '').replace('.', '')},{fraction.get_text(strip=True)}"
+                
                 if _parse_price_to_float(val):
-                    preco_orig = val
+                    preco_promo = val
+                    logger.info(f"[EXTRACTOR_V2] Amazon preço promo via '{sel}': {preco_promo}")
                     break
-        if preco_orig:
-            break
+            if preco_promo: break
+
+    # 3. PREÇO ORIGINAL (Riscado)
+    if not preco_orig:
+        orig_selectors = [
+            ".a-text-price .a-offscreen", 
+            "#listPrice", 
+            ".basisPrice .a-offscreen",
+            "#priceBlockStrikePriceString",
+            ".a-price.a-text-price span.a-offscreen"
+        ]
+        for sel in orig_selectors:
+            for tag in soup.select(sel):
+                if _is_valid_price_tag(tag):
+                    val = tag.get_text(strip=True)
+                    if _parse_price_to_float(val):
+                        preco_orig = val
+                        break
+            if preco_orig: break
 
     return _choose_lower_price(preco_promo, preco_orig)
+
+
+def _parse_amazon_paapi_dict(item: dict) -> tuple[str | None, str | None]:
+    """
+    Processa um dicionário no formato Amazon PA-API v5 ou similar (a-state).
+    Lógica baseada na sugestão do usuário.
+    """
+    try:
+        # Suporte a múltiplos níveis de aninhamento comuns em a-state
+        offers = item.get("Offers") or item.get("offers")
+        if not offers and "desktop-dp-price-detail" in item:
+            offers = item["desktop-dp-price-detail"].get("Offers")
+        
+        if not offers:
+            # Tenta busca recursiva simples por 'Listings'
+            if "Listings" in str(item):
+                pass # Poderia implementar, mas vamos focar no óbvio primeiro
+            else:
+                return None, None
+
+        listings = (offers.get("Listings") or []) or offers.get("listings") or []
+        if not listings:
+            return None, None
+
+        listing = listings[0]
+        
+        # Preço Atual (Price)
+        price_obj = listing.get("Price") or listing.get("price") or {}
+        p_promo = price_obj.get("DisplayAmount") or price_obj.get("Amount")
+
+        # Preço Original (SavingBasis)
+        saving_obj = listing.get("SavingBasis") or listing.get("savingBasis") or {}
+        p_orig = saving_obj.get("DisplayAmount") or saving_obj.get("Amount")
+
+        # Fallback se DisplayAmount vier vazio mas Amount tiver número
+        if p_promo and not isinstance(p_promo, str): p_promo = str(p_promo)
+        if p_orig and not isinstance(p_orig, str): p_orig = str(p_orig)
+
+        return p_promo, p_orig
+    except Exception as e:
+        logger.debug(f"[AMAZON_JSON] Erro no parse PA-API: {e}")
+        return None, None
 
 
 def _extract_price_ml(soup: BeautifulSoup) -> tuple[str | None, str | None]:

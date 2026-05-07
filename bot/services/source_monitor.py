@@ -8,10 +8,11 @@ import re
 from pathlib import Path
 from urllib.parse import urljoin, urlparse
 
-import requests
+import httpx
 from bs4 import BeautifulSoup
-
 from bot.services.dedup_store import is_seen
+# Importamos o buscador de HTML robusto para fontes protegidas como Amazon
+from bot.services.product_extractor_v2 import get_page_html
 
 logger = logging.getLogger(__name__)
 
@@ -55,29 +56,43 @@ def _is_product_link(url: str) -> bool:
     return bool(_PRODUCT_URL_PATTERNS.search(url))
 
 
-def _collect_links_from_page(source_url: str) -> list[str]:
+async def _collect_links_from_page(source_url: str) -> list[str]:
     """
-    Visita uma URL de fonte e coleta todos os links que parecem ser de produto.
-    Retorna lista de URLs absolutas únicas.
+    Visita uma URL de fonte e coleta links de produto.
+    Usa pipeline robusto para Amazon e httpx para o resto.
     """
     collected = []
     base = f"{urlparse(source_url).scheme}://{urlparse(source_url).netloc}"
+    is_amazon = "amazon" in source_url.lower()
 
     try:
-        resp = requests.get(source_url, headers=_HEADERS, timeout=20)
-        resp.raise_for_status()
-        soup = BeautifulSoup(resp.text, "html.parser")
+        html = None
+        if is_amazon:
+            logger.info(f"[MONITOR] 🛡️ Usando pipeline robusto para fonte Amazon: {source_url[:50]}")
+            html, method = await get_page_html(source_url)
+        else:
+            async with httpx.AsyncClient(headers=_HEADERS, timeout=20, follow_redirects=True) as client:
+                resp = await client.get(source_url)
+                if resp.status_code == 200:
+                    html = resp.text
 
+        if not html:
+            logger.warning(f"[MONITOR] ❌ Falha ao obter HTML da fonte: {source_url}")
+            return []
+
+        soup = BeautifulSoup(html, "html.parser")
         seen_hrefs: set[str] = set()
+
+        # Amazon Goldbox às vezes esconde links em data-attributes ou widgets
+        # Mas o render=true do ScraperAPI costuma expandir os <a> tags
         for tag in soup.find_all("a", href=True):
             href = tag["href"].strip()
             if not href or href.startswith("#") or href.startswith("javascript"):
                 continue
 
-            # Converte para URL absoluta
             full_url = urljoin(base, href)
-
-            # Remove query strings e fragmentos para deduplicar
+            # Normalização básica para evitar duplicatas por query string irrelevante
+            # Mantemos 'id' para ML e 'p' para Shopee se necessário, mas removemos trackers
             clean = full_url.split("#")[0].split("?")[0]
 
             if clean in seen_hrefs:
@@ -88,42 +103,38 @@ def _collect_links_from_page(source_url: str) -> list[str]:
                 collected.append(full_url)
 
         logger.info(
-            f"[MONITOR] Fonte '{source_url}': {len(collected)} links de produto encontrados."
+            f"[MONITOR] Fonte '{source_url}': {len(collected)} links encontrados."
         )
-    except requests.exceptions.RequestException as e:
-        logger.error(f"[MONITOR] Falha ao acessar fonte '{source_url}': {e}")
     except Exception as e:
-        logger.error(f"[MONITOR] Erro inesperado na fonte '{source_url}': {e}")
+        logger.error(f"[MONITOR] Erro na fonte '{source_url}': {e}")
 
     return collected
 
 
-def scan_sources() -> list[dict]:
+async def scan_sources() -> list[dict]:
     """
-    Verifica todas as fontes ativas.
-    Retorna lista de dicts {url, source_name} com links NOVOS (não vistos antes).
+    Verifica todas as fontes ativas (Async).
+    Retorna lista de links novos.
     """
     sources = load_sources()
     active = [s for s in sources if s.get("active", False)]
 
     if not active:
-        logger.info("[MONITOR] Nenhuma fonte ativa encontrada. Configure data/sources.json.")
+        logger.info("[MONITOR] Nenhuma fonte ativa encontrada.")
         return []
 
-    logger.info(f"[MONITOR] Iniciando varredura de {len(active)} fonte(s) ativa(s)...")
+    logger.info(f"[MONITOR] Iniciando varredura de {len(active)} fonte(s)...")
     new_items = []
 
     for source in active:
         source_name = source.get("name", source["url"])
-        logger.info(f"[MONITOR] Verificando fonte: {source_name}")
+        logger.info(f"[MONITOR] Varrendo: {source_name}")
 
-        links = _collect_links_from_page(source["url"])
+        links = await _collect_links_from_page(source["url"])
 
         for link in links:
             if is_seen(link):
-                logger.debug(f"[MONITOR] Ignorado (já visto): {link[:80]}")
                 continue
             new_items.append({"url": link, "source_name": source_name})
 
-    logger.info(f"[MONITOR] Varredura concluída. {len(new_items)} novos item(ns) encontrado(s).")
     return new_items

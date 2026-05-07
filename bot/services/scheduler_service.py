@@ -14,7 +14,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 from bot.utils.config import ADMIN_IDS, MONITOR_INTERVAL_MINUTES, AUTO_APPROVE
 from bot.services.source_monitor import scan_sources
-from bot.services.product_extractor import extract_product_data
+from bot.services.product_extractor_v2 import extract_product_data_v2
 from bot.services.ai_writer import generate_caption
 from bot.services.affiliate_links import get_final_link
 from bot.services.dedup_store import is_seen, mark_seen
@@ -51,8 +51,8 @@ async def _run_scan(context, limit: int = 10, manual: bool = False, trigger_user
         return 0
 
     try:
-        # Causa 3: Executa scraping síncrono em thread para não travar o bot
-        all_found_items = await asyncio.to_thread(scan_sources)
+        # A varredura agora é assíncrona e usa pipeline robusto para Amazon
+        all_found_items = await scan_sources()
     except Exception as e:
         logger.error(f"[SCHEDULER] Erro ao escanear fontes: {e}")
         if manual and trigger_user_id:
@@ -83,12 +83,17 @@ async def _run_scan(context, limit: int = 10, manual: bool = False, trigger_user
             logger.info(f"--- [PROCESSO {count+1}/{limit}] ---")
             logger.info(f"[SCHEDULER] Extraindo: {product_url[:60]}")
             
-            # 1. Extração Mestra (Síncrono -> Thread)
-            dados = await asyncio.to_thread(extract_product_data, product_url)
+            # 1. Extração Mestra V2 (Já é async)
+            dados = await extract_product_data_v2(product_url)
 
-            if not dados.get("title") or dados.get("title") == "Produto":
+            if not dados.get("titulo") or dados.get("titulo") == "Produto":
                 logger.warning(f"[SCHEDULER] Falha ao extrair título para {product_url}. Pulando.")
                 continue
+            
+            # Padronização de nomes para o resto do pipeline
+            dados["title"] = dados.get("titulo")
+            dados["image_url"] = dados.get("imagem")
+            dados["loja"] = dados.get("store", "Loja")
 
             # 2. Injeção de Afiliado e Encurtamento (Síncrono -> Thread)
             store_key = dados.get("store_key", "other")
