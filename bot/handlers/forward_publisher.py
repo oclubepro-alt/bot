@@ -158,6 +158,8 @@ async def finalizar_lote_encaminhamento(context, chat_id, user_id):
     fila = user_data.get("fila_encaminhamentos", [])
     if not fila:
         return
+    
+    qtd = len(fila)
 
     msg_id = user_data.get("msg_contador_id")
     
