@@ -295,16 +295,12 @@ async def _send_previa(message, context: ContextTypes.DEFAULT_TYPE) -> int:
 
     preview_text = (
         "💎 <b>PRÉVIA — Confirme antes de publicar</b>\n\n"
-        f"🏷️ <b>{_escape_html(titulo)}</b>\n"
-        f"{preco_display}\n"
-        f"{cupom_linha}"
-        f"🏪 Loja: <b>{_escape_html(dados.get('store', store_key))}</b>\n"
-        f"📡 Método: <i>{_escape_html(source_method)}</i>\n\n"
-        "🔗 <b>Link de afiliado (CRUE — verifique sua tag!):</b>\n"
-        f"<code>{_escape_html(affiliate_url)}</code>\n\n"
-        "━━━━━━━━━━━━━━━\n"
-        "<b>Texto que será publicado no canal:</b>\n\n"
         f"{copy_canal}"
+        "\n\n━━━━━━━━━━━━━━━\n"
+        f"🏪 Loja: <b>{_escape_html(dados.get('store', store_key))}</b>\n"
+        f"📡 Método: <i>{_escape_html(source_method)}</i>\n"
+        "🔗 <b>Link CRUE (verifique sua tag!):</b>\n"
+        f"<code>{_escape_html(affiliate_url)}</code>"
     )
 
     # Telegram: caption ≤ 1024, texto ≤ 4096
@@ -378,9 +374,7 @@ async def start_offer_by_link(update: Update, context: ContextTypes.DEFAULT_TYPE
     context.user_data.clear()
 
     await query.edit_message_text(
-        "🔗 <b>Publicar por Link</b>\n\n"
-        "Cole o link do produto abaixo:\n"
-        "<i>Aceito links encurtados (amzn.to, shope.ee, bit.ly, etc.).</i>",
+        "🔗 Me manda o link do produto (Amazon, Shopee, Mercado Livre, etc.)",
         parse_mode=ParseMode.HTML,
     )
     return LINK_PRODUTO
@@ -407,9 +401,7 @@ async def receber_link_produto(update: Update, context: ContextTypes.DEFAULT_TYP
     context.user_data["original_url"] = original_link
 
     msg_aguardo = await update.message.reply_text(
-        "⏳ <b>Processando...</b>\n"
-        "🔎 Resolvendo link → Injetando afiliado → Extraindo produto...\n"
-        "<i>Aguarde, isso pode levar até 1 minuto para garantir a melhor extração.</i>",
+        "⏳ Buscando informações do produto...",
         parse_mode=ParseMode.HTML,
     )
 

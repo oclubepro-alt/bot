@@ -28,25 +28,31 @@ async def start_config_afiliado(update: Update, context: ContextTypes.DEFAULT_TY
         return ConversationHandler.END
 
     texto = (
-        "⚙️ *Configuração Automática de Afiliado*\n\n"
-        "Escolha a loja que deseja configurar a sua credencial ou link-base:\n"
+        "⚙️ <b>Configuração de Afiliados</b>\n\n"
+        "Selecione a loja para configurar sua <b>Tag</b> ou <b>Link de Afiliado</b> base.\n"
+        "Isso garante que todas as ofertas geradas usem seu link!"
     )
     
     keyboard = [
-        [InlineKeyboardButton("Amazon (Tag)", callback_data="config_afiliado_amazon")],
-        [InlineKeyboardButton("Magalu (Link Afiliado)", callback_data="config_afiliado_magalu")],
-        [InlineKeyboardButton("Netshoes (Link Afiliado)", callback_data="config_afiliado_netshoes")],
-        [InlineKeyboardButton("Mercado Livre (Link Afiliado)", callback_data="config_afiliado_mercadolivre")],
-        [InlineKeyboardButton("Outra (Base link)", callback_data="config_afiliado_other")],
-        [InlineKeyboardButton("⬅️ Voltar ao Menu", callback_data=CB_MENU_PRINCIPAL)]
+        [
+            InlineKeyboardButton("📦 Amazon", callback_data="config_afiliado_amazon"),
+            InlineKeyboardButton("🏬 Magalu", callback_data="config_afiliado_magalu")
+        ],
+        [
+            InlineKeyboardButton("👟 Netshoes", callback_data="config_afiliado_netshoes"),
+            InlineKeyboardButton("🛒 M. Livre", callback_data="config_afiliado_mercadolivre")
+        ],
+        [InlineKeyboardButton("🌐 Outra Loja (Base)", callback_data="config_afiliado_other")],
+        [InlineKeyboardButton("🏠 Voltar ao Menu", callback_data=CB_MENU_PRINCIPAL)]
     ]
 
     if update.message:
         await update.message.reply_text(
             texto, 
-            parse_mode=ParseMode.MARKDOWN,
+            parse_mode=ParseMode.HTML,
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
+
     elif update.callback_query:
         await update.callback_query.answer()
         await update.callback_query.message.reply_text(

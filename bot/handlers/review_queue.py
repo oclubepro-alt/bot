@@ -52,15 +52,14 @@ async def handle_review_callback(
         return
 
     product_url: str = offer.get("product_url", "")
-    mensagem: str = offer.get("mensagem", "")
+    copies: dict | str = offer.get("copies") or offer.get("mensagem", "")
     imagem: str | None = offer.get("imagem")
     nome: str = offer.get("nome", "produto")
-    source_name: str = offer.get("source_name", "—")
 
     if action == CB_REVIEW_APPROVE:
         logger.info(f"[REVIEW] Admin {query.from_user.id} APROVOU oferta: '{nome}'")
         try:
-            await publish_offer(context.bot, mensagem, imagem)
+            await publish_offer(context.bot, copies, imagem)
             mark_seen(product_url)
 
             success_text = f"✅ <b>Oferta publicada no canal!</b>\n\n🔹 <b>Produto:</b> {nome}"
@@ -142,7 +141,9 @@ async def handle_review_bulk_callback(
             if not offer: continue
             
             try:
-                await publish_offer(context.bot, offer["mensagem"], offer.get("imagem"))
+                # Usa copies se disponível (Fase 4/5)
+                msg_to_pub = offer.get("copies") or offer.get("mensagem")
+                await publish_offer(context.bot, msg_to_pub, offer.get("imagem"))
                 mark_seen(offer.get("product_url", ""))
                 success_count += 1
                 # Pequeno delay para evitar rate limit

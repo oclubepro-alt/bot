@@ -10,6 +10,7 @@ from bot.services.affiliate_link_service import injetar_link_afiliado, _detectar
 from bot.utils.channel_store import get_channels
 from bot.utils.config import TELEGRAM_CHANNEL_ID
 from bot.utils.telegram_utils import normalize_chat_id
+from bot.services.copy_builder import build_copy
 
 logger = logging.getLogger(__name__)
 
@@ -166,15 +167,26 @@ def barra_progresso(atual: float, total: int) -> str:
     barra = "█" * preenchido + "░" * vazio
     return f"[{barra}] {porcentagem}%"
 
-def gerar_copy(titulo: str, preco: str, link: str, cupom: str = None) -> str:
-    cupom_linha = f"\n🎟️ Cupom: <b>{cupom}</b>" if cupom else ""
-    return (
-        f"🔥 <b>{titulo}</b>\n\n"
-        f"💰 <b>{preco}</b>"
-        f"{cupom_linha}\n\n"
-        f"👉 <a href='{link}'>GARANTIR OFERTA AGORA</a>\n\n"
-        f"⚡ Oferta por tempo limitado!"
+def gerar_copy(titulo: str, preco: str, loja: str, link: str, cupom: str = None) -> str:
+    # Busca emoji adequado
+    from bot.services.copy_builder import _detect_emoji
+    emoji = _detect_emoji(titulo, loja)
+    
+    # Prepara legenda básica se houver cupom
+    legenda = None
+    if cupom:
+        legenda = f"🎟️ Use o cupom: <b>{cupom}</b>\n\n✅ Produto original\n✅ Melhor preço do dia"
+    
+    # Usa o construtor centralizado para garantir o estilo "OFERTA IMPERDÍVEL"
+    copy_dict = build_copy(
+        nome=titulo,
+        preco=preco,
+        loja=loja,
+        store_key=loja.lower(),
+        short_url=link,
+        legenda_ia=legenda
     )
+    return copy_dict["telegram"]
 
 async def process_all_forwardings(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -211,9 +223,9 @@ async def process_all_forwardings(update: Update, context: ContextTypes.DEFAULT_
         
         # Passo 1
         prog_texto = (
-            "⚙️ <b>Processando suas promoções...</b>\n\n"
+            "💎 <b>Modernizando suas promoções...</b>\n\n"
             f"📦 Processando <b>{atual}/{total}</b>: {titulo_resumo}...\n"
-            f"🔍 Identificando loja...\n\n"
+            f"🔍 Identificando loja e links...\n\n"
             f"{barra_progresso((atual-1) + 0.1, total)}"
         )
         await context.bot.edit_message_text(chat_id=chat_id, message_id=msg_id, text=prog_texto, parse_mode="HTML")
@@ -232,10 +244,10 @@ async def process_all_forwardings(update: Update, context: ContextTypes.DEFAULT_
         
         # Passo 2
         prog_texto = (
-            "⚙️ <b>Processando suas promoções...</b>\n\n"
+            "💎 <b>Modernizando suas promoções...</b>\n\n"
             f"📦 Processando <b>{atual}/{total}</b>: {titulo_resumo}...\n"
-            f"🏪 Loja: {loja_detectada.capitalize()} ✅\n"
-            f"🔑 Aplicando link afiliado...\n\n"
+            f"🏪 Loja: <b>{loja_detectada.upper()}</b> ✅\n"
+            f"🔑 Aplicando seu link de afiliado...\n\n"
             f"{barra_progresso((atual-1) + 0.5, total)}"
         )
         await context.bot.edit_message_text(chat_id=chat_id, message_id=msg_id, text=prog_texto, parse_mode="HTML")
@@ -256,7 +268,7 @@ async def process_all_forwardings(update: Update, context: ContextTypes.DEFAULT_
         if len(texto_original.split('\n')) > 1:
             titulo_copy = texto_original.split('\n')[0]
             
-        copy_gerada = gerar_copy(titulo_copy, preco, link_final, cupom)
+        copy_gerada = gerar_copy(titulo_copy, preco, loja_detectada, link_final, cupom)
 
         # Passo 3
         prog_texto = (
@@ -349,9 +361,11 @@ async def show_next_review(update: Update, context: ContextTypes.DEFAULT_TYPE):
     atual = total - len(fila) + 1
     
     msg_texto = (
-        f"👀 <b>Revisão — Promoção {atual} de {total}</b>\n\n"
+        f"💎 <b>PRÉVIA — {atual} de {total}</b>\n\n"
         f"{item['copy']}\n\n"
-        f"🔗 Link afiliado: {item.get('link_afiliado') or 'Sem link'}"
+        "━━━━━━━━━━━━━━━\n"
+        f"🔗 <b>Link de conferência:</b>\n"
+        f"<code>{item.get('link_afiliado') or 'Sem link'}</code>"
     )
 
     keyboard = [

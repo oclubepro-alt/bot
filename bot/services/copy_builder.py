@@ -161,34 +161,35 @@ def _build_telegram(
     linhas = []
     
     # Cabeçalho Principal
+    linhas.append("🔥 <b>OFERTA IMPERDÍVEL!</b> 🔥")
     linhas.append(f"{emoji} <b>{nome_e}</b>")
     linhas.append("")
 
-    # Seção de Preço
-    p_line = f"💰 <b>Preço:</b> {preco_e}"
-    if preco_original and preco_original != preco:
-        orig_e = _escape_html(preco_original)
-        p_line += f" <s>{orig_e}</s>"
-    
-    if desconto:
-        desc_e = _escape_html(desconto)
-        p_line += f" ({desc_e})"
-    
-    linhas.append(p_line)
-
-    # Loja e Contexto
-    linhas.append(f"🏪 <b>Loja:</b> {loja_e}")
-
     # IA / Legenda (se houver)
     if legenda_ia and legenda_ia.strip():
+        linhas.append(f"{_escape_html(legenda_ia.strip())}")
         linhas.append("")
-        linhas.append(f"✨ <i>{_escape_html(legenda_ia.strip())}</i>")
+
+    # Seção de Preço
+    if preco_original and preco_original != preco:
+        orig_e = _escape_html(preco_original)
+        linhas.append(f"De: <s>{orig_e}</s>")
+    
+    p_line = f"💰 <b>Por: {preco_e}</b>"
+    if desconto:
+        desc_e = _escape_html(desconto)
+        p_line += f" 😱 ({desc_e} OFF)"
+    else:
+        p_line += " 😱"
+    
+    linhas.append(p_line)
+    linhas.append(f"🏪 Loja: <b>{loja_e}</b>")
 
     # Call to Action
     linhas.append("")
     linhas.append(f"🛒 <a href='{short_url}'><b>CLIQUE AQUI PARA COMPRAR</b></a>")
     linhas.append("")
-    linhas.append("🚨 <i>Preços sujeitos a alteração a qualquer momento!</i>")
+    linhas.append("🚨 <i>Preços sujeitos a alteração!</i>")
 
     return "\n".join(linhas)
 

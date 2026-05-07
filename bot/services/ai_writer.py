@@ -21,19 +21,19 @@ _client = AsyncOpenAI(**client_kwargs)
 
 _SYSTEM_PROMPT = """
 Você é um copywriter especialista em grupos de "achadinhos" do Telegram.
-Sua missão: escrever legendas curtas, envolventes e autênticas para ofertas.
+Sua missão: escrever legendas profissionais, curtas e extremamente persuasivas para ofertas.
+
+ESTRUTURA DESEJADA:
+1. Uma frase curta de impacto/introdução (ex: "A revolução na sua cozinha!", "O melhor custo-benefício do ano!").
+2. De 2 a 3 tópicos (usando o emoji ✅) destacando os principais diferenciais ou benefícios do produto.
 
 REGRAS OBRIGATÓRIAS:
-- Escrever em português do Brasil
-- Máximo 5 linhas
-- Tom informal, focado em "achadinhos" (use termos como "Olha isso!", "Preção!", "Corre!")
-- Se houver preço original e preço atual, calcule mentalmente ou destaque que está em PROMOÇÃO/DESCONTO.
-- Seja coerente: se o desconto for grande, use emojis de fogo 🔥 ou espanto 😱.
-- CTA leve no final (ex: "Corre!" / "Vale muito!" / "Não perde!")
-- NÃO invente preço nem frete grátis.
+- Escrever em português do Brasil.
+- Tom entusiasta, mas sem exageros infantis.
+- NÃO invente preços, fretes nem links.
 - NÃO altere o nome do produto nem a loja.
-- NÃO inclua o link na sua resposta.
 - NÃO use markdown com asteriscos (ex: **texto** é proibido).
+- Seja breve: o texto completo deve ter entre 3 a 6 linhas.
 """.strip()
 
 
@@ -87,13 +87,9 @@ async def generate_caption(
 def _fallback_caption(nome: str, preco: str, loja: str, preco_original: str | None = None) -> str:
     """Texto padrão usado quando a IA não está disponível."""
     logger.warning("[IA] Usando legenda padrão (fallback)")
-    if preco_original:
-        return (
-            f"🔥 OPORTUNIDADE: {nome}\n"
-            f"De {preco_original} por APENAS {preco} na {loja}!\n"
-            "Corre pra aproveitar esse descontão! 🏃‍♂️💨"
-        )
     return (
-        f"Encontramos uma oferta incrível de {nome} por apenas {preco} na {loja}!\n"
-        "Essa é uma oportunidade que não dá pra perder. Corre antes que acabe! 🏃‍♂️"
+        "Oportunidade incrível detectada! Aproveite esse preço especial por tempo limitado.\n\n"
+        "✅ Produto original\n"
+        "✅ Melhor preço do dia\n"
+        "✅ Entrega garantida"
     )

@@ -18,19 +18,28 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     logger.info(f"[START] Usuário: {user.id} ({user.username}) abriu o menu.")
 
     keyboard = [
-        [InlineKeyboardButton("📨 Publicar por Encaminhamento", callback_data=CB_PUBLICAR_ENCAMINHAMENTO)],
-        [InlineKeyboardButton("🔗 Publicar por Link", callback_data=CB_PUBLICAR_LINK)],
-        [InlineKeyboardButton("📢 Publicar Oferta Manual", callback_data=CB_PUBLICAR_MANUAL)],
-        [InlineKeyboardButton("⚙️ Configurar Afiliado", callback_data="menu_config_afiliado")],
-        [InlineKeyboardButton("🟢 Gerenciar WhatsApp", callback_data=CB_GERENCIAR_WHATS)],
-        [InlineKeyboardButton("🤖 Configurar Monitor (Fase 3)", callback_data=CB_MONITOR_MENU)],
-        [InlineKeyboardButton("❌ Cancelar", callback_data=CB_CANCELAR_MENU)],
+        [
+            InlineKeyboardButton("💎 Postar por Link", callback_data=CB_PUBLICAR_LINK),
+            InlineKeyboardButton("📥 Encaminhar", callback_data=CB_PUBLICAR_ENCAMINHAMENTO)
+        ],
+        [
+            InlineKeyboardButton("✍️ Publicar Manual", callback_data=CB_PUBLICAR_MANUAL),
+            InlineKeyboardButton("⚙️ Monitoramento", callback_data=CB_MONITOR_MENU)
+        ],
+        [
+            InlineKeyboardButton("💼 Afiliados", callback_data="menu_config_afiliado"),
+            InlineKeyboardButton("📲 WhatsApp", callback_data=CB_GERENCIAR_WHATS)
+        ],
+        [InlineKeyboardButton("❌ Fechar Menu", callback_data=CB_CANCELAR_MENU)],
     ]
 
     texto = (
-        f"👋 Olá, <b>{user.first_name}</b>!\n\n"
-        "Eu sou o <b>Bot de Achadinhos</b> 🛍️\n\n"
-        "O que você deseja fazer?"
+        f"💎 <b>SNIPER OFERTAS — PAINEL ADMIN</b>\n\n"
+        f"Olá, <b>{user.first_name}</b>! Bem-vindo ao centro de comando.\n"
+        "Selecione uma ação abaixo para gerenciar suas ofertas:\n\n"
+        "📦 <b>Publicação:</b> Link, Manual ou Encaminhamento.\n"
+        "🏪 <b>Lojas:</b> Configuração de IDs de Afiliado.\n"
+        "🛰️ <b>Automação:</b> Monitoramento de fontes externas."
     )
 
     if update.message:

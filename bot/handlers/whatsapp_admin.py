@@ -26,25 +26,26 @@ async def menu_whatsapp(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
 
     channels = get_whatsapp_channels()
     
-    texto = "🟢 *GERENCIAR WHATSAPP*\n\n"
+    texto = "🟢 <b>GERENCIAR WHATSAPP</b>\n\n"
     if not channels:
         texto += "Nenhum destino (grupo/canal) cadastrado."
     else:
         for idx, c in enumerate(channels, 1):
-            texto += f"{idx}\\. *{c['name']}*\n`{c['jid']}`\n\n"
+            texto += f"{idx}. <b>{c['name']}</b>\n<code>{c['jid']}</code>\n\n"
 
     keyboard = []
     if channels:
         for c in channels:
-            keyboard.append([InlineKeyboardButton(f"❌ Remover {c['name']}", callback_data=f"del_wpp|{c['jid']}")])
+            keyboard.append([InlineKeyboardButton(f"🗑️ Remover {c['name']}", callback_data=f"del_wpp|{c['jid']}")])
     
-    keyboard.append([InlineKeyboardButton("➕ Adicionar Destino", callback_data="add_wpp")])
-    keyboard.append([InlineKeyboardButton("⬅️ Voltar ao Menu", callback_data="menu_principal")])
+    keyboard.append([InlineKeyboardButton("➕ Adicionar Novo Destino", callback_data="add_wpp")])
+    keyboard.append([InlineKeyboardButton("🏠 Voltar ao Menu", callback_data="menu_principal")])
 
     if query:
-        await query.edit_message_text(texto, parse_mode="MarkdownV2", reply_markup=InlineKeyboardMarkup(keyboard))
+        await query.edit_message_text(texto, parse_mode=ParseMode.HTML, reply_markup=InlineKeyboardMarkup(keyboard))
     else:
-        await update.message.reply_text(texto, parse_mode="MarkdownV2", reply_markup=InlineKeyboardMarkup(keyboard))
+        await update.message.reply_text(texto, parse_mode=ParseMode.HTML, reply_markup=InlineKeyboardMarkup(keyboard))
+
     
     return ConversationHandler.END
 

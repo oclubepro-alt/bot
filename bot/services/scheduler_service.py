@@ -19,7 +19,7 @@ from bot.services.ai_writer import generate_caption
 from bot.services.affiliate_links import get_final_link
 from bot.services.dedup_store import is_seen, mark_seen
 from bot.services.affiliate_links import resolve_final_url
-from bot.utils.formatter import build_offer_message, build_preview_message, escape_html
+from bot.utils.formatter import escape_html
 
 logger = logging.getLogger(__name__)
 
@@ -131,22 +131,21 @@ async def _run_scan(context, limit: int = 10, manual: bool = False, trigger_user
                 await asyncio.sleep(3) 
 
             else:
-                # Modo de Aprovação Manual
-                offer_id = uuid.uuid4().hex[:12]
-                if "pending_offers" not in context.bot_data:
-                    context.bot_data["pending_offers"] = {}
-
-                mensagem_prev = build_offer_message(
-                    nome=dados["title"], 
-                    preco=dados["price"], 
-                    loja=dados.get("loja", "Loja"), 
-                    link=final_link, 
-                    legenda_ia=copy_ia
+                from bot.services.copy_builder import build_copy
+                copies = build_copy(
+                    nome=dados["title"],
+                    preco=dados["price"],
+                    loja=dados.get("loja", "Loja"),
+                    store_key=store_key,
+                    short_url=final_link,
+                    legenda_ia=copy_ia,
+                    preco_original=dados.get("preco_original")
                 )
 
                 context.bot_data["pending_offers"][offer_id] = {
                     "product_url": product_url,
-                    "mensagem":    mensagem_prev,
+                    "mensagem":    copies["telegram"],
+                    "copies":      copies,
                     "imagem":      dados.get("image_url"),
                     "nome":        dados["title"],
                 }
@@ -156,7 +155,14 @@ async def _run_scan(context, limit: int = 10, manual: bool = False, trigger_user
                      InlineKeyboardButton("❌ Rejeitar", callback_data=f"review_rejeitar:{offer_id}")]
                 ])
 
-                preview_text = f"🔍 <b>Oferta Automática ({source_name})</b>\n\n" + build_preview_message(mensagem_prev)
+                preview_text = (
+                    f"💎 <b>OFERTA DESCOBERTA — {source_name}</b>\n\n"
+                    f"{copies['telegram']}\n\n"
+                    "━━━━━━━━━━━━━━━\n"
+                    f"🔗 <b>Link para conferência:</b>\n"
+                    f"<code>{final_link}</code>"
+                )
+
 
                 for admin_id in ADMIN_IDS:
                     try:

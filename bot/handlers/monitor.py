@@ -22,22 +22,23 @@ async def monitor_menu_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     status_text = "🟢 <b>ATIVO</b>" if active else "🔴 <b>PARADO</b>"
     
     texto = (
-        f"⚙️ <b>Controle de Monitoramento (Fase 3)</b>\n\n"
-        f"Status atual: {status_text}\n\n"
-        "O monitor varre as fontes em busca de novos produtos. "
-        "Você pode iniciar o monitoramento cíclico ou buscar 10 ofertas agora."
+        "🔍 <b>Monitoramento Automático</b>\n\n"
+        f"Status: {status_text}\n\n"
+        "O monitor busca novas ofertas automaticamente nas fontes configuradas. "
+        "Você pode iniciar o ciclo ou fazer uma busca manual agora."
     )
     
     keyboard = []
-    # Botão de Varredura Imediata (Problema 3)
-    keyboard.append([InlineKeyboardButton("🔍 Buscar 10 Ofertas Agora", callback_data="monitor_scrape_now")])
+    # Botão de Varredura Imediata
+    keyboard.append([InlineKeyboardButton("⚡ Buscar 10 Ofertas Agora", callback_data="monitor_scrape_now")])
 
     if not active:
-        keyboard.append([InlineKeyboardButton("🚀 Iniciar Ciclo Automático", callback_data=CB_MONITOR_START)])
+        keyboard.append([InlineKeyboardButton("🚀 Iniciar Ciclo de Varredura", callback_data=CB_MONITOR_START)])
     else:
-        keyboard.append([InlineKeyboardButton("🛑 Parar Ciclo Automático", callback_data=CB_MONITOR_STOP)])
+        keyboard.append([InlineKeyboardButton("🛑 Parar Ciclo de Varredura", callback_data=CB_MONITOR_STOP)])
         
-    keyboard.append([InlineKeyboardButton("🔙 Voltar ao Menu Principal", callback_data=CB_MENU_PRINCIPAL)])
+    keyboard.append([InlineKeyboardButton("🏠 Voltar ao Menu Principal", callback_data=CB_MENU_PRINCIPAL)])
+
     
     reply_markup = InlineKeyboardMarkup(keyboard)
     

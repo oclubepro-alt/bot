@@ -12,7 +12,7 @@ from bot.utils.constants import (
 )
 from bot.services.ai_writer import generate_caption
 from bot.services.publisher_router import publish_offer
-from bot.utils.formatter import build_offer_message, build_preview_message
+from bot.services.copy_builder import build_copy, _detect_emoji
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +32,9 @@ async def start_offer_manual(update: Update, context: ContextTypes.DEFAULT_TYPE)
     context.user_data.clear()
 
     await query.edit_message_text(
-        "📦 <b>Passo 1/6</b> — Qual é o <b>nome do produto</b>?",
+        "💎 <b>OFERTA MANUAL — Passo 1/6</b>\n\n"
+        "📝 Qual é o <b>nome do produto</b>?\n"
+        "<i>Ex: iPhone 15 Pro Max 256GB</i>",
         parse_mode=ParseMode.HTML,
     )
     return NOME
@@ -41,7 +43,9 @@ async def receber_nome(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     nome = update.message.text.strip()
     context.user_data["nome"] = nome
     await update.message.reply_text(
-        f"✅ Produto: <b>{nome}</b>\n\n💰 <b>Passo 2/6</b> — Qual é o <b>preço</b>? (ex: R$ 49,90)",
+        f"✅ Produto: <b>{nome}</b>\n\n"
+        "💰 <b>Passo 2/6</b> — Qual é o <b>preço</b>?\n"
+        "<i>Ex: R$ 7.499,00</i>",
         parse_mode=ParseMode.HTML,
     )
     return PRECO
@@ -104,7 +108,7 @@ async def pular_descricao(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
 async def _processar_e_exibir_previa(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     dados = context.user_data
-    aguardo = await update.message.reply_text("⏳ Gerando legenda com IA... aguarde!")
+    aguardo = await update.message.reply_text("⏳ <b>Refinando sua oferta com IA...</b>", parse_mode=ParseMode.HTML)
 
     legenda = await generate_caption(
         nome=dados["nome"],
@@ -113,11 +117,18 @@ async def _processar_e_exibir_previa(update: Update, context: ContextTypes.DEFAU
         descricao=dados.get("descricao"),
     )
     
-    mensagem_final = build_offer_message(
-        nome=dados["nome"], preco=dados["preco"],
-        loja=dados["loja"], link=dados["link"], legenda_ia=legenda
+    # Usa o construtor centralizado
+    copy_dict = build_copy(
+        nome=dados["nome"],
+        preco=dados["preco"],
+        loja=dados["loja"],
+        store_key=dados["loja"].lower(),
+        short_url=dados["link"],
+        legenda_ia=legenda
     )
-    context.user_data["mensagem_final"] = mensagem_final
+    
+    context.user_data["mensagem_final"] = copy_dict["telegram"]
+    context.user_data["copy_dict"] = copy_dict
 
     await aguardo.delete()
 
@@ -129,16 +140,24 @@ async def _processar_e_exibir_previa(update: Update, context: ContextTypes.DEFAU
         [InlineKeyboardButton("⬅️ Voltar ao Menu", callback_data=CB_VOLTAR_MENU)]
     ]
 
+    preview_text = (
+        "💎 <b>PRÉVIA — Confirme os detalhes</b>\n\n"
+        f"{context.user_data['mensagem_final']}\n\n"
+        "━━━━━━━━━━━━━━━\n"
+        f"🔗 <b>Link de conferência:</b>\n"
+        f"<code>{dados['link']}</code>"
+    )
+
     if dados.get("foto_id"):
         await update.message.reply_photo(
             photo=dados["foto_id"],
-            caption=build_preview_message(mensagem_final),
+            caption=preview_text,
             parse_mode=ParseMode.HTML,
             reply_markup=InlineKeyboardMarkup(keyboard),
         )
     else:
         await update.message.reply_text(
-            build_preview_message(mensagem_final),
+            preview_text,
             parse_mode=ParseMode.HTML,
             reply_markup=InlineKeyboardMarkup(keyboard),
             disable_web_page_preview=True,
@@ -165,10 +184,10 @@ async def confirmar_envio(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     foto_id = context.user_data.get("foto_id")
 
     # Garante que passamos um dict p/ o publisher_router
-    copies = {
-        "telegram": mensagem,
-        "whatsapp": mensagem  # Simplificado para manual
-    }
+    copy_dict = context.user_data.get("copy_dict", {
+        "telegram": context.user_data.get("mensagem_final", ""),
+        "whatsapp": context.user_data.get("mensagem_final", "")
+    })
 
     try:
         await publish_offer(context.bot, copies, foto_id)

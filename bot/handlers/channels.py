@@ -24,23 +24,24 @@ async def menu_canais(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
         return ConversationHandler.END
 
     canais = get_channels()
-    texto = "📢 *CANAIS CADASTRADOS:*\n\n"
+    texto = "📢 <b>CANAIS CADASTRADOS</b>\n\n"
     if not canais:
-        texto += "Nenhum canal extra cadastrado.\n(O canal base configurado no .env sempre será usado)."
+        texto += "Nenhum canal extra cadastrado.\n<i>(O canal base do .env é usado por padrão).</i>"
     else:
         for idx, ch in enumerate(canais, 1):
-            texto += f"{idx}\\. `{ch}`\n"
+            texto += f"{idx}. <code>{ch}</code>\n"
     
     keyboard = []
     if canais:
         # Cria botão de remoção para cada canal
         for ch in canais:
-            keyboard.append([InlineKeyboardButton(f"❌ Remover {ch}", callback_data=f"remove_chan|{ch}")])
+            keyboard.append([InlineKeyboardButton(f"🗑️ Remover {ch}", callback_data=f"remove_chan|{ch}")])
             
-    keyboard.append([InlineKeyboardButton("➕ Adicionar Canal", callback_data="add_chan")])
-    keyboard.append([InlineKeyboardButton("⬅️ Voltar ao Menu", callback_data="menu_principal")])
+    keyboard.append([InlineKeyboardButton("➕ Adicionar Novo Canal", callback_data="add_chan")])
+    keyboard.append([InlineKeyboardButton("🏠 Voltar ao Menu", callback_data="menu_principal")])
+
     
-    await query.edit_message_text(texto, parse_mode="MarkdownV2", reply_markup=InlineKeyboardMarkup(keyboard))
+    await query.edit_message_text(texto, parse_mode=ParseMode.HTML, reply_markup=InlineKeyboardMarkup(keyboard))
     return ConversationHandler.END
 
 async def btn_add_canal(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
