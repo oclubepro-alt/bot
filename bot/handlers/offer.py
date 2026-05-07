@@ -12,7 +12,7 @@ from bot.utils.constants import (
 )
 from bot.services.ai_writer import generate_caption
 from bot.services.publisher_router import publish_offer
-from bot.services.copy_builder import build_copy, _detect_emoji
+from bot.services.copy_builder import build_copy
 
 logger = logging.getLogger(__name__)
 

@@ -168,10 +168,6 @@ def barra_progresso(atual: float, total: int) -> str:
     return f"[{barra}] {porcentagem}%"
 
 def gerar_copy(titulo: str, preco: str, loja: str, link: str, cupom: str = None) -> str:
-    # Busca emoji adequado
-    from bot.services.copy_builder import _detect_emoji
-    emoji = _detect_emoji(titulo, loja)
-    
     # Prepara legenda básica se houver cupom
     legenda = None
     if cupom:
