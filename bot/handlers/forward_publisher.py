@@ -58,18 +58,14 @@ async def start_forward_mode(update: Update, context: ContextTypes.DEFAULT_TYPE)
     context.user_data["fila_encaminhamentos"] = []
 
     keyboard = [
-        [InlineKeyboardButton("✅ Processar Tudo", callback_data=CB_PROCESSAR_TUDO)],
-        [InlineKeyboardButton("❌ Cancelar", callback_data=CB_CANCELAR_ENCAM),
-         InlineKeyboardButton("🏠 Voltar ao Menu", callback_data="menu_principal")]
+        [InlineKeyboardButton("⚙️ Processar Tudo", callback_data=CB_PROCESSAR_TUDO)],
+        [InlineKeyboardButton("✏️ Corrigir", callback_data="frev_corrigir")],
+        [InlineKeyboardButton("❌ Cancelar", callback_data=CB_CANCELAR_ENCAM)]
     ]
 
     text = (
-        "📨 <b>Modo Encaminhamento Ativado!</b>\n\n"
-        "Encaminhe até <b>20 mensagens</b> de promoções de qualquer canal do Telegram diretamente aqui.\n\n"
-        "ℹ️ <b>Como funciona:</b>\n"
-        "• Encaminhe as mensagens uma a uma\n"
-        "• O bot extrai imagem, preço e link automaticamente\n"
-        "• Você revisa e aprova antes de publicar no canal\n\n"
+        "📩 <b>Encaminhe as ofertas que você quer postar.</b>\n\n"
+        "Pode enviar várias — eu organizo tudo pra você.\n\n"
         "📊 Aguardando mensagens... <b>0/20</b>"
     )
 
@@ -110,9 +106,9 @@ async def receive_forwarded_message(update: Update, context: ContextTypes.DEFAUL
     msg_id = context.user_data.get("msg_contador_id")
 
     keyboard = [
-        [InlineKeyboardButton("✅ Processar Tudo", callback_data=CB_PROCESSAR_TUDO)],
-        [InlineKeyboardButton("❌ Cancelar", callback_data=CB_CANCELAR_ENCAM),
-         InlineKeyboardButton("🏠 Voltar ao Menu", callback_data="menu_principal")]
+        [InlineKeyboardButton("⚙️ Processar Tudo", callback_data=CB_PROCESSAR_TUDO)],
+        [InlineKeyboardButton("✏️ Corrigir", callback_data="frev_corrigir")],
+        [InlineKeyboardButton("❌ Cancelar", callback_data=CB_CANCELAR_ENCAM)]
     ]
 
     if qtd >= 20:
@@ -129,10 +125,9 @@ async def receive_forwarded_message(update: Update, context: ContextTypes.DEFAUL
             
         mensagens_texto = "\n".join(linhas)
         text = (
-            f"📨 <b>Modo Encaminhamento Ativado!</b>\n\n"
-            f"📊 Mensagens recebidas: <b>{qtd}/20</b>\n\n"
+            f"📊 <b>Mensagens recebidas: {qtd}/20</b>\n\n"
             f"{mensagens_texto}\n\n"
-            f"Encaminhe mais ou clique em ✅ Processar Tudo."
+            f"Encaminhe mais ou clique em ⚙️ <b>Processar Tudo</b>."
         )
 
     try:
@@ -219,8 +214,8 @@ async def process_all_forwardings(update: Update, context: ContextTypes.DEFAULT_
         
         # Passo 1
         prog_texto = (
-            "💎 <b>Modernizando suas promoções...</b>\n\n"
-            f"📦 Processando <b>{atual}/{total}</b>: {titulo_resumo}...\n"
+            "⚙️ <b>Processando suas ofertas...</b>\n\n"
+            f"📦 Analisando item <b>{atual}/{total}</b>: {titulo_resumo}...\n"
             f"🔍 Identificando loja e links...\n\n"
             f"{barra_progresso((atual-1) + 0.1, total)}"
         )
@@ -240,7 +235,7 @@ async def process_all_forwardings(update: Update, context: ContextTypes.DEFAULT_
         
         # Passo 2
         prog_texto = (
-            "💎 <b>Modernizando suas promoções...</b>\n\n"
+            "⚙️ <b>Processando suas ofertas...</b>\n\n"
             f"📦 Processando <b>{atual}/{total}</b>: {titulo_resumo}...\n"
             f"🏪 Loja: <b>{loja_detectada.upper()}</b> ✅\n"
             f"🔑 Aplicando seu link de afiliado...\n\n"
@@ -303,11 +298,11 @@ async def process_all_forwardings(update: Update, context: ContextTypes.DEFAULT_
     # Conclusão do Processamento
     sucesso_qtd = total - sem_link_qtd
     res_texto = (
-        "✅ <b>Processamento Concluído!</b>\n\n"
-        "📊 Resultado:\n"
-        f"✅ {sucesso_qtd} promoções prontas para revisar\n"
-        f"⚠️ {sem_link_qtd} sem link identificado\n\n"
-        "O que deseja fazer?"
+        "✅ <b>Pronto! Ofertas organizadas.</b>\n\n"
+        "📊 Resultado do Processamento:\n"
+        f"✅ {sucesso_qtd} promoções identificadas\n"
+        f"⚠️ {sem_link_qtd} sem link detectado\n\n"
+        "O que deseja fazer agora?"
     )
     
     keyboard = [
