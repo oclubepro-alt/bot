@@ -113,10 +113,16 @@ async def receive_forwarded_message(update: Update, context: ContextTypes.DEFAUL
         await finalizar_lote_encaminhamento(context, update.effective_chat.id, update.effective_user.id)
     else:
         # Agenda finalização do lote em 4 segundos
+        if not context.job_queue:
+            logger.error("[ENCAM] JobQueue não disponível!")
+            await finalizar_lote_encaminhamento(context, update.effective_chat.id, update.effective_user.id)
+            return
+
         context.job_queue.run_once(
             callback=lote_timer_callback,
             when=4,
             chat_id=update.effective_chat.id,
+            user_id=update.effective_user.id,
             name=job_key,
             data={"user_id": update.effective_user.id}
         )
@@ -150,12 +156,15 @@ async def atualizar_status_coleta(context: ContextTypes.DEFAULT_TYPE, chat_id: i
     except: pass
 
 async def finalizar_lote_encaminhamento(context, chat_id, user_id):
-    # Recupera user_data (no job context.user_data já está mapeado se chat_id/user_id baterem)
-    fila = context.user_data.get("fila_encaminhamentos", [])
-    qtd = len(fila)
-    if qtd == 0: return
+    # Força a recuperação do user_data correto da aplicação
+    user_data = context.application.user_data.get(user_id, {})
+    fila = user_data.get("fila_encaminhamentos", [])
+    
+    if not fila:
+        return
 
-    msg_id = context.user_data.get("msg_contador_id")
+    qtd = len(fila)
+    msg_id = user_data.get("msg_contador_id")
     
     keyboard = [
         [InlineKeyboardButton("⚙️ Processar Tudo", callback_data=CB_PROCESSAR_TUDO)],
@@ -164,7 +173,7 @@ async def finalizar_lote_encaminhamento(context, chat_id, user_id):
     ]
 
     if qtd >= 20:
-        context.user_data["modo_encaminhamento"] = False
+        user_data["modo_encaminhamento"] = False
         text = (
             "⚠️ <b>Limite de 20 mensagens atingido!</b>\n\n"
             f"✅ <b>{qtd} mensagens prontas para processar.</b>\n"
@@ -184,13 +193,21 @@ async def finalizar_lote_encaminhamento(context, chat_id, user_id):
         )
 
     try:
-        await context.bot.edit_message_text(
-            chat_id=chat_id,
-            message_id=msg_id,
-            text=text,
-            parse_mode="HTML",
-            reply_markup=InlineKeyboardMarkup(keyboard)
-        )
+        if msg_id:
+            await context.bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=msg_id,
+                text=text,
+                parse_mode="HTML",
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
+        else:
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text=text,
+                parse_mode="HTML",
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
     except Exception as e:
         logger.error(f"Erro ao finalizar lote: {e}")
 
