@@ -102,48 +102,42 @@ async def receive_forwarded_message(update: Update, context: ContextTypes.DEFAUL
     context.user_data["fila_encaminhamentos"] = fila
     qtd = len(fila)
 
-    # Cancelar job anterior se existir
-    job_key = f"batch_{update.effective_user.id}"
-    current_jobs = context.job_queue.get_jobs_by_name(job_key)
-    for job in current_jobs:
-        job.schedule_removal()
+    # Gerenciamento de Lote via asyncio (Debounce)
+    # Cancela timer anterior se houver
+    antigo_timer = context.user_data.get("timer_lote")
+    if antigo_timer:
+        antigo_timer.cancel()
 
-    # Se chegou a 20, finaliza na hora
+    async def wait_timer(ctx, c_id, u_id):
+        try:
+            await asyncio.sleep(4)
+            await finalizar_lote_encaminhamento(ctx, c_id, u_id)
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            logger.error(f"[ENCAM] Erro no timer: {e}")
+
     if qtd >= 20:
         await finalizar_lote_encaminhamento(context, update.effective_chat.id, update.effective_user.id)
     else:
-        # Agenda finalização do lote em 4 segundos
-        if not context.job_queue:
-            logger.error("[ENCAM] JobQueue não disponível!")
-            await finalizar_lote_encaminhamento(context, update.effective_chat.id, update.effective_user.id)
-            return
-
-        context.job_queue.run_once(
-            callback=lote_timer_callback,
-            when=4,
-            chat_id=update.effective_chat.id,
-            user_id=update.effective_user.id,
-            name=job_key,
-            data={"user_id": update.effective_user.id}
+        # Agenda o novo timer
+        context.user_data["timer_lote"] = asyncio.create_task(
+            wait_timer(context, update.effective_chat.id, update.effective_user.id)
         )
         
-        # Feedback visual rápido (opcional, mas bom para UX)
-        # Para evitar spam de edit, só editamos a cada 2 mensagens ou se for a primeira
+        # Feedback visual rápido
         if qtd == 1 or qtd % 3 == 0:
             await atualizar_status_coleta(context, update.effective_chat.id, qtd)
 
-async def lote_timer_callback(context: ContextTypes.DEFAULT_TYPE):
-    job = context.job
-    await finalizar_lote_encaminhamento(context, job.chat_id, job.data["user_id"])
-
 async def atualizar_status_coleta(context: ContextTypes.DEFAULT_TYPE, chat_id: int, qtd: int):
+    # Usa o user_data do contexto atual (MessageHandler)
     msg_id = context.user_data.get("msg_contador_id")
     if not msg_id: return
     
     text = (
         f"📊 <b>Mensagens recebidas: {qtd}/20</b>\n\n"
         "Continuando a coletar...\n"
-        "Encaminhe mais ou aguarde para processar."
+        "Encaminhe mais ou aguarde 4s para processar."
     )
     
     try:
@@ -156,14 +150,15 @@ async def atualizar_status_coleta(context: ContextTypes.DEFAULT_TYPE, chat_id: i
     except: pass
 
 async def finalizar_lote_encaminhamento(context, chat_id, user_id):
-    # Força a recuperação do user_data correto da aplicação
-    user_data = context.application.user_data.get(user_id, {})
+    # Tenta pegar o user_data do contexto ou da aplicação (fallback)
+    user_data = getattr(context, "user_data", None)
+    if user_data is None:
+        user_data = context.application.user_data.get(user_id, {})
+        
     fila = user_data.get("fila_encaminhamentos", [])
-    
     if not fila:
         return
 
-    qtd = len(fila)
     msg_id = user_data.get("msg_contador_id")
     
     keyboard = [
