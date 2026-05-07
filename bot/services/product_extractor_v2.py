@@ -517,23 +517,45 @@ def _extract_pix_price_magalu(soup: BeautifulSoup) -> str | None:
 # ---------------------------------------------------------------------------
 
 def _is_valid_price_tag(tag) -> bool:
-    """Verifica se a tag não pertence a um preço unitário (ex: R$ 0,26 / unidade)."""
+    """Verifica se a tag não pertence a um preço unitário ou a um preço riscado/tachado."""
     if not tag: return False
-    # Verifica o contexto do PAI (onde a Amazon coloca '/ unidade')
-    # mas também o texto da própria tag para tags 'a-offscreen' que só contam o número
+
+    # Verifica se a própria tag ou um pai imediato tem classe de preço tachado (a-text-price)
+    # Isso exclui o preço original que aparece riscado antes do preço real
+    tag_classes = set(tag.get("class") or [])
+    parent = tag.parent
+    parent_classes = set(parent.get("class") or []) if parent else set()
+    grandparent = parent.parent if parent else None
+    grandparent_classes = set(grandparent.get("class") or []) if grandparent else set()
+
+    # Exclui se está dentro de elemento de preço riscado (mas só nas baixas-confiança)
+    # Nota: a-text-price é o container do preço original na Amazon
+    if "a-text-price" in parent_classes or "a-text-price" in grandparent_classes:
+        # Permite apenas se também tiver 'priceToPay' no contexto (é o preço real)
+        has_price_to_pay = (
+            "priceToPay" in parent_classes or
+            "priceToPay" in grandparent_classes or
+            (grandparent and grandparent.parent and 
+             "priceToPay" in set(grandparent.parent.get("class") or []))
+        )
+        if not has_price_to_pay:
+            return False
+
+    # Sobe até 5 níveis para buscar contexto de 'unidade'
     text_context = tag.get_text(strip=True).lower()
-    # Sobe até 4 níveis para buscar contexto de 'unidade'
     p = tag.parent
-    for _ in range(4):
+    for _ in range(5):
         if p is None: break
-        text_context += ' ' + p.get_text(strip=True).lower()
+        # Coleta só o texto direto (não o texto de todos os filhos)
+        direct_text = " ".join(t for t in p.strings if t.strip()).lower()
+        text_context += " " + direct_text
         p = p.parent
     
     # Palavras-chave que indicam preço unitário (Amazon / ML / Magalu)
     unit_keywords = [
-        "/ unidade", "/unidade", "por unidade", "/ unit", 
-        " ml", " kg", " g ", " metros", "/m", " cada",
-        " preço por", " valor por", " unid", "(unid"
+        "/ unidade", "/unidade", "por unidade", "/ unit",
+        "por ml", "por kg", "por g ", "por metro", "/m ", " cada",
+        "preço por", "valor por", " unid", "(unid", "por litro", "por l "
     ]
     return not any(k in text_context for k in unit_keywords)
 
@@ -569,33 +591,41 @@ def _extract_price_amazon(soup: BeautifulSoup) -> tuple[str | None, str | None]:
                                 break
             
             # Padrão 2: Amazon a-state (Data do BuyBox)
-            if "desktop-dp-price-detail" in content or "Offers" in content:
-                # Tenta localizar um bloco JSON que pareça com PA-API
-                match = re.search(r'({.*"Offers":.*})', content)
-                if match:
-                    data = json.loads(match.group(1))
-                    p, o = _parse_amazon_paapi_dict(data)
-                    if p:
-                        logger.info(f"[EXTRACTOR_V2] Amazon preço via JSON a-state: {p}")
-                        preco_promo = p
-                        if o: preco_orig = o
-                        break
-        except:
+            # Usa regex não-greedy e com limite de tamanho para evitar JSON corrompido
+            if "desktop-dp-price-detail" in content or ("Offers" in content and "DisplayAmount" in content):
+                # Regex não-greedy com lookahead para JSON bem-formado
+                for m in re.finditer(r'(\{[^{]{0,5000}"Offers"[^}]{0,5000}\})', content):
+                    try:
+                        data = json.loads(m.group(1))
+                        p, o = _parse_amazon_paapi_dict(data)
+                        if p:
+                            logger.info(f"[EXTRACTOR_V2] Amazon preço via JSON a-state: {p}")
+                            preco_promo = p
+                            if o: preco_orig = o
+                            break
+                    except Exception:
+                        continue
+                if preco_promo: break
+        except Exception:
             continue
         if preco_promo: break
 
     # 2. SELETORES CSS (FALLBACK SE O JSON FALHAR)
+    # ORDEM IMPORTA: seletores mais específicos (buybox) antes dos genéricos
     if not preco_promo:
-        # Preço promocional
         promo_selectors = [
-            "#corePrice_feature_div .a-offscreen",
-            "#corePriceDisplay_desktop_feature_div .a-offscreen",
-            "#corePrice_feature_div .a-price-whole",
+            # Seletores de alta confiança (buybox principal)
+            ".a-price.priceToPay .a-offscreen",
+            "#corePrice_feature_div .priceToPay .a-offscreen",
+            "#corePriceDisplay_desktop_feature_div .priceToPay .a-offscreen",
             "#priceblock_dealprice",
             "#priceblock_ourprice",
-            ".a-price.priceToPay .a-offscreen",
-            ".a-price .a-offscreen",
             "#price_inside_buybox",
+            # Seletores de média confiança (podem pegar preço riscado se .priceToPay falhar)
+            "#corePrice_feature_div .a-offscreen",
+            "#corePriceDisplay_desktop_feature_div .a-offscreen",
+            # Fallback genérico (baixa confiança — só se tudo acima falhar)
+            "#corePrice_feature_div .a-price-whole",
         ]
         for sel in promo_selectors:
             for tag in soup.select(sel):
@@ -1084,6 +1114,48 @@ def _extract_search_term_from_url(url: str) -> str | None:
         return None
 
 
+def _normalize_amazon_url(url: str) -> str:
+    """
+    Extrai o ASIN de qualquer variante de URL Amazon e retorna
+    uma URL limpa: https://www.amazon.com.br/dp/{ASIN}
+    
+    Suporta:
+      - amazon.com.br/dp/XXXXXXXXXX
+      - amazon.com.br/gp/product/XXXXXXXXXX
+      - amazon.com.br/gp/aw/d/XXXXXXXXXX
+      - amazon.com.br/exec/obidos/ASIN/XXXXXXXXXX
+      - amazon.com.br/o/ASIN/XXXXXXXXXX
+      - amzn.to/XXXXX  (após resolução já foi convertido)
+    """
+    if not url or "amazon" not in url.lower():
+        return url
+
+    # Padrões para capturar ASIN (10 caracteres alfanuméricos)
+    _ASIN_PATTERNS = [
+        r"/dp/([A-Z0-9]{10})",
+        r"/gp/product/([A-Z0-9]{10})",
+        r"/gp/aw/d/([A-Z0-9]{10})",
+        r"/exec/obidos/ASIN/([A-Z0-9]{10})",
+        r"/exec/obidos/tg/detail/-/([A-Z0-9]{10})",
+        r"/o/ASIN/([A-Z0-9]{10})",
+        r"[?&]asin=([A-Z0-9]{10})",
+        r"/([A-Z0-9]{10})(?:[/?#]|$)",  # fallback genérico
+    ]
+
+    for pattern in _ASIN_PATTERNS:
+        m = re.search(pattern, url, re.IGNORECASE)
+        if m:
+            asin = m.group(1).upper()
+            clean = f"https://www.amazon.com.br/dp/{asin}"
+            if clean != url:
+                logger.info(f"[AMAZON_NORM] ASIN extraído: {asin} → {clean}")
+            return clean
+
+    # Sem ASIN identificado — retorna original
+    logger.debug(f"[AMAZON_NORM] Nenhum ASIN encontrado em: {url[:80]}")
+    return url
+
+
 async def extract_product_data_v2(url: str) -> dict:
     """Orquestrador do Pipeline Híbrido V5 (5 Camadas)."""
     from bot.utils.detect_store import detect_store
@@ -1101,16 +1173,26 @@ async def extract_product_data_v2(url: str) -> dict:
     # Resolve encurtadores simples antes de começar
     final_url = url
     try:
-        # Se for Magalu curta (magalu.me) ou encurtadores comuns, resolve para pegar o ID
-        if any(x in url for x in ["magalu.me", "t.co", "bit.ly", "tinyurl.com"]):
+        # Resolve amzn.to, magalu.me e encurtadores comuns
+        _SHORTENERS = ["amzn.to", "amzn.com/gp/r.", "magalu.me", "t.co", "bit.ly", "tinyurl.com", "ow.ly", "is.gd"]
+        if any(x in url for x in _SHORTENERS):
+            logger.info(f"[EXTRATOR] Resolvendo encurtador: {url[:60]}")
             final_url = await asyncio.to_thread(resolve_url, url)
-    except: pass
+            logger.info(f"[EXTRATOR] URL resolvida: {final_url[:80]}")
+    except Exception as e:
+        logger.warning(f"[EXTRATOR] Falha ao resolver encurtador: {e}")
 
+    # Normaliza URLs Amazon para /dp/ASIN (remove parâmetros sujos, gp/product, etc.)
+    if "amazon" in final_url.lower() or "amzn" in final_url.lower():
+        final_url = _normalize_amazon_url(final_url)
+
+    result["final_url"] = final_url
     store_display, store_key = detect_store(final_url)
     result["store"] = store_display
     result["store_key"] = store_key
     
-    logger.info(f"[EXTRATOR] Loja detectada: {store_key}")
+    logger.info(f"[EXTRATOR] Loja detectada: {store_key} | URL: {final_url[:80]}")
+
 
     # ── CAMADA 0: LOMADEE API (Prioridade para Magalu e Netshoes) ─────────
     if store_key in ["magalu", "netshoes"]:
