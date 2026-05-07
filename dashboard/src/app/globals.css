@@ -1,0 +1,85 @@
+@import "tailwindcss";
+
+@theme {
+  --color-background: #101418;
+  --color-foreground: #e0e2e9;
+  --color-primary: #2481cc;
+  --color-surface: #1c2025;
+  --color-surface-high: #272a2f;
+  --color-outline: #404751;
+  --color-telegram: #2481cc;
+  
+  --font-inter: "Inter", sans-serif;
+}
+
+:root {
+  --background: #101418;
+  --foreground: #e0e2e9;
+  --primary: #2481cc;
+  --surface: #1c2025;
+  --surface-high: #272a2f;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #101418;
+    --foreground: #e0e2e9;
+  }
+}
+
+body {
+  background-color: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-inter);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Telegram Style Message Bubble */
+.tg-bubble {
+  background-color: #18222d;
+  border-radius: 12px;
+  padding: 12px;
+  max-width: 85%;
+  position: relative;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+.tg-bubble::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  left: -8px;
+  width: 0;
+  height: 0;
+  border-left: 10px solid transparent;
+  border-right: 10px solid transparent;
+  border-bottom: 10px solid #18222d;
+}
+
+.tg-link {
+  color: #2481cc;
+  text-decoration: none;
+}
+
+.tg-link:hover {
+  text-decoration: underline;
+}
+
+/* Glassmorphism Sidebar */
+.sidebar {
+  background-color: rgba(23, 33, 43, 0.8);
+  backdrop-filter: blur(10px);
+  border-right: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+/* Animation */
+@keyframes pulse {
+  0% { opacity: 1; }
+  50% { opacity: 0.5; }
+  100% { opacity: 1; }
+}
+
+.animate-pulse-fast {
+  animation: pulse 1s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}

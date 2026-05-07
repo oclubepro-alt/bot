@@ -7,3 +7,8 @@ beautifulsoup4
 lxml
 playwright
 playwright-stealth
+fastapi
+uvicorn
+python-multipart
+pydantic
+pydantic-settings

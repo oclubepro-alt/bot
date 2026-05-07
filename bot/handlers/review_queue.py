@@ -15,6 +15,7 @@ from telegram.constants import ParseMode
 from bot.utils.constants import CB_REVIEW_APPROVE, CB_REVIEW_REJECT, CB_MENU_PRINCIPAL
 from bot.services.dedup_store import mark_seen
 from bot.services.publisher_router import publish_offer
+from bot.utils.review_store import save_review_queue
 
 logger = logging.getLogger(__name__)
 
@@ -91,6 +92,7 @@ async def handle_review_callback(
     if action in [CB_REVIEW_APPROVE, CB_REVIEW_REJECT]:
         pending.pop(offer_id, None)
         context.bot_data["pending_offers"] = pending
+        save_review_queue(pending)
 
 
 async def handle_review_bulk_callback(
@@ -118,6 +120,7 @@ async def handle_review_bulk_callback(
             mark_seen(offer.get("product_url", ""))
         
         context.bot_data["pending_offers"] = {}
+        save_review_queue({})
         await query.edit_message_text(
             f"🚫 <b>Fila limpa!</b>\n{count} ofertas foram descartadas e marcadas como vistas.",
             parse_mode=ParseMode.HTML,
@@ -149,6 +152,8 @@ async def handle_review_bulk_callback(
                 logger.error(f"[REVIEW] Falha ao aprovar em massa item {oid}: {e}")
 
         context.bot_data["pending_offers"] = {}
+        save_review_queue({})
+
         await query.message.reply_text(
             f"✅ <b>Sucesso!</b>\n{success_count} ofertas publicadas no canal de um total de {count}.",
             parse_mode=ParseMode.HTML,
