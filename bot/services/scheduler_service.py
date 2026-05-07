@@ -131,6 +131,11 @@ async def _run_scan(context, limit: int = 10, manual: bool = False, trigger_user
                 await asyncio.sleep(3) 
 
             else:
+                # Modo de Aprovação Manual
+                offer_id = uuid.uuid4().hex[:12]
+                if "pending_offers" not in context.bot_data:
+                    context.bot_data["pending_offers"] = {}
+
                 from bot.services.copy_builder import build_copy
                 copies = build_copy(
                     nome=dados["title"],

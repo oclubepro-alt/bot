@@ -85,7 +85,6 @@ _CATEGORY_EMOJIS: list[tuple[list[str], str]] = [
     (["amazon"], "📦"),
     (["mercado livre", "mercadolivre"], "🟡"),
 ]
-]
 
 _DEFAULT_EMOJI = "🔥"
 
