@@ -100,7 +100,7 @@ async def _run_scan(context, limit: int = 10, manual: bool = False, trigger_user
             affiliate_url = await asyncio.to_thread(
                 get_affiliate_url,
                 original_url=product_url,
-                resolved_url=dados.get("product_url"),
+                resolved_url=dados.get("final_url"),
                 store_key=store_key
             )
             final_link = await asyncio.to_thread(shorten_for_publication, affiliate_url)
@@ -108,7 +108,7 @@ async def _run_scan(context, limit: int = 10, manual: bool = False, trigger_user
             # 3. Geração de Copy IA (Já é async)
             copy_ia = await generate_caption(
                 nome=dados["title"], 
-                preco=dados["price"], 
+                preco=dados.get("preco", "Preço não disponível"), 
                 loja=dados.get("loja", "Loja"), 
                 descricao=dados.get("descricao")
             )
@@ -120,7 +120,7 @@ async def _run_scan(context, limit: int = 10, manual: bool = False, trigger_user
                 from bot.services.copy_builder import build_copy
                 copies = build_copy(
                     nome=dados["title"],
-                    preco=dados["price"],
+                    preco=dados.get("preco", "Preço não disponível"),
                     loja=dados.get("loja", "Loja"),
                     store_key=store_key,
                     short_url=final_link,
@@ -145,7 +145,7 @@ async def _run_scan(context, limit: int = 10, manual: bool = False, trigger_user
                 from bot.services.copy_builder import build_copy
                 copies = build_copy(
                     nome=dados["title"],
-                    preco=dados["price"],
+                    preco=dados.get("preco", "Preço não disponível"),
                     loja=dados.get("loja", "Loja"),
                     store_key=store_key,
                     short_url=final_link,

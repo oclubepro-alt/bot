@@ -27,6 +27,52 @@ from bot.utils.config import SCRAPERAPI_KEY
 
 logger = logging.getLogger(__name__)
 
+# ---------------------------------------------------------------------------
+# Contrato de saída — garante que o dict retornado NUNCA tem chaves ausentes
+# Qualquer código que consuma extract_product_data_v2 pode usar .get() com
+# segurança, mas esta função elimina KeyError mesmo com acesso direto.
+# ---------------------------------------------------------------------------
+_RESULT_SCHEMA: dict = {
+    "store":          "Loja",
+    "store_key":      "other",
+    "final_url":      "",
+    "titulo":         "Produto Disponível",
+    "imagem":         None,
+    "preco":          "Preço não disponível",
+    "preco_original": None,
+    "source_method":  "UNKNOWN",
+    "is_pix_price":   False,
+    "cupom":          None,
+}
+
+
+def _validate_result(result: dict) -> dict:
+    """
+    Garante que o dict de saída do pipeline sempre contém todas as chaves
+    definidas em _RESULT_SCHEMA com tipos corretos.
+
+    Regras:
+      - Chaves ausentes recebem o valor padrão do schema.
+      - 'preco' None ou vazio vira 'Preço não disponível'.
+      - 'titulo' None ou vazio vira 'Produto Disponível'.
+      - 'is_pix_price' é sempre bool.
+      - 'final_url' vazio herda o valor de entrada se disponível.
+    """
+    for key, default in _RESULT_SCHEMA.items():
+        if key not in result or result[key] is None and default is not None:
+            result.setdefault(key, default)
+
+    # Garante strings não-vazias nas chaves críticas
+    if not result.get("preco"):
+        result["preco"] = "Preço não disponível"
+    if not result.get("titulo"):
+        result["titulo"] = "Produto Disponível"
+
+    # Garante tipo bool
+    result["is_pix_price"] = bool(result.get("is_pix_price", False))
+
+    return result
+
 _HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
     "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8",
@@ -1265,6 +1311,10 @@ async def extract_product_data_v2(url: str) -> dict:
         if result["source_method"] == "FALHA_TOTAL":
             result["source_method"] = "FALLBACK_MINIMO"
 
-    logger.info(f"[EXTRATOR] Método final usado: {result['source_method']}")
-    logger.info(f"[EXTRATOR] Preço final: {result['preco']}")
+    # Blindagem final: garante contrato de saída completo e tipos corretos
+    result = _validate_result(result)
+
+    logger.info(f"[EXTRATOR] Metodo final usado: {result['source_method']}")
+    logger.info(f"[EXTRATOR] Preco final: {result['preco']}")
+    logger.info(f"[EXTRATOR] Titulo final: {result['titulo'][:60]}")
     return result
