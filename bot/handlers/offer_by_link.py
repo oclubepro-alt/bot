@@ -168,18 +168,16 @@ def _gerar_copy_basica(
     )
 
 
-def _build_previa_keyboard(show_ai_button: bool = False) -> InlineKeyboardMarkup:
+def _build_previa_keyboard() -> InlineKeyboardMarkup:
+    """Teclado premium em 3 níveis conforme solicitado."""
     buttons = [
-        [InlineKeyboardButton("🚀 CONFIRMAR E PUBLICAR AGORA", callback_data=CB_CONFIRMAR_LINK)],
+        [InlineKeyboardButton("🚀 PUBLICAR NO CANAL", callback_data=CB_CONFIRMAR_LINK)],
+        [
+            InlineKeyboardButton("✏️ Editar Copy", callback_data="edit_copy"),
+            InlineKeyboardButton("💰 Ajustar Preço",  callback_data="edit_preco"),
+        ],
+        [InlineKeyboardButton("❌ Cancelar",  callback_data=CB_CANCELAR_OFERTA_LINK)],
     ]
-    
-    if show_ai_button:
-        buttons.append([InlineKeyboardButton("✨ REGERAR LEGENDA IA", callback_data="regen_ia")])
-        
-    buttons.append([
-        InlineKeyboardButton("✏️ CORRIGIR DADOS", callback_data="editar_oferta"),
-        InlineKeyboardButton("🗑️ DESCARTAR",  callback_data=CB_CANCELAR_OFERTA_LINK),
-    ])
     return InlineKeyboardMarkup(buttons)
 
 
@@ -315,8 +313,7 @@ async def _send_previa(message, context: ContextTypes.DEFAULT_TYPE) -> int:
         if "<i>" in preview_text and "</i>" not in preview_text: preview_text += "</i>"
         if "<code>" in preview_text and "</code>" not in preview_text: preview_text += "</code>"
 
-    from bot.utils.config import OPENAI_API_KEY
-    keyboard = _build_previa_keyboard(show_ai_button=bool(OPENAI_API_KEY))
+    keyboard = _build_previa_keyboard()
 
     logger.info(
         f"[OFERTA_LINK] PREVIEW_ENVIADA | imagem={'sim' if imagem else 'não'} "
@@ -374,7 +371,12 @@ async def start_offer_by_link(update: Update, context: ContextTypes.DEFAULT_TYPE
     context.user_data.clear()
 
     await query.edit_message_text(
-        "🔗 Me manda o link do produto (Amazon, Shopee, Mercado Livre, etc.)",
+        "🔗 <b>Me manda o link do produto</b>\n\n"
+        "Eu vou:\n"
+        "• puxar as informações automaticamente\n"
+        "• gerar a copy com IA\n"
+        "• deixar pronto pra postar no canal\n\n"
+        "<i>Pode ser Amazon, Shopee, Mercado Livre, etc.</i>",
         parse_mode=ParseMode.HTML,
     )
     return LINK_PRODUTO
@@ -530,8 +532,8 @@ async def receber_link_produto(update: Update, context: ContextTypes.DEFAULT_TYP
         )
         return PREENCHER_PRECO_FALTANTE
 
-    # Dados completos → pergunta sobre cupom
-    return await _perguntar_cupom(update, context)
+    # Dados completos -> Vai direto para a prévia (experiência premium)
+    return await _gerar_e_enviar_previa(update, context)
 
 
 # ============================================================================
@@ -551,14 +553,14 @@ async def preencher_nome_faltante(update: Update, context: ContextTypes.DEFAULT_
         )
         return PREENCHER_PRECO_FALTANTE
 
-    return await _perguntar_cupom(update, context)
+    return await _gerar_e_enviar_previa(update, context)
 
 
 async def preencher_preco_faltante(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     preco = update.message.text.strip()
     context.user_data["dados_produto"]["preco"] = preco
     logger.info(f"[OFERTA_LINK] Preço preenchido manualmente: {preco}")
-    return await _perguntar_cupom(update, context)
+    return await _gerar_e_enviar_previa(update, context)
 
 
 # ============================================================================
