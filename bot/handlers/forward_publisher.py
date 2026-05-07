@@ -150,6 +150,8 @@ async def atualizar_status_coleta(context: ContextTypes.DEFAULT_TYPE, chat_id: i
     except: pass
 
 async def finalizar_lote_encaminhamento(context, chat_id, user_id):
+    logger.info(f"[TIMER] ⏳ Iniciando finalização de lote para {user_id}")
+    
     # Tenta pegar o user_data do contexto ou da aplicação (fallback)
     user_data = getattr(context, "user_data", None)
     if user_data is None:
@@ -157,10 +159,10 @@ async def finalizar_lote_encaminhamento(context, chat_id, user_id):
         
     fila = user_data.get("fila_encaminhamentos", [])
     if not fila:
+        logger.info(f"[TIMER] ℹ️ Fila vazia para {user_id}, encerrando.")
         return
     
-    qtd = len(fila)
-
+    total_recebido = len(fila)
     msg_id = user_data.get("msg_contador_id")
     
     keyboard = [
@@ -169,11 +171,11 @@ async def finalizar_lote_encaminhamento(context, chat_id, user_id):
         [InlineKeyboardButton("❌ Cancelar", callback_data=CB_CANCELAR_ENCAM)]
     ]
 
-    if qtd >= 20:
+    if total_recebido >= 20:
         user_data["modo_encaminhamento"] = False
         text = (
             "⚠️ <b>Limite de 20 mensagens atingido!</b>\n\n"
-            f"✅ <b>{qtd} mensagens prontas para processar.</b>\n"
+            f"✅ <b>{total_recebido} mensagens prontas para processar.</b>\n"
             "Clique abaixo para transformar tudo em ofertas."
         )
     else:
@@ -184,7 +186,7 @@ async def finalizar_lote_encaminhamento(context, chat_id, user_id):
             
         mensagens_texto = "\n".join(linhas)
         text = (
-            f"📊 <b>Mensagens recebidas: {qtd}/20</b>\n\n"
+            f"📊 <b>Mensagens recebidas: {total_recebido}/20</b>\n\n"
             f"{mensagens_texto}\n\n"
             f"Tudo pronto! Clique em ⚙️ <b>Processar Tudo</b>."
         )
