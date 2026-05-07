@@ -784,12 +784,36 @@ async def btn_editar_oferta(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         ],
         [InlineKeyboardButton("⬅️ Voltar pra Prévia", callback_data=CB_VOLTAR_PREVIA)],
     ])
-    await query.edit_message_text(
+    
+    text = (
         "🛠️ <b>O que você deseja corrigir?</b>\n\n"
-        "Escolha o campo e envie o novo valor em seguida:",
-        parse_mode=ParseMode.HTML,
-        reply_markup=keyboard,
+        "Escolha o campo e envie o novo valor em seguida:"
     )
+
+    try:
+        if getattr(query.message, 'photo', None) or getattr(query.message, 'video', None):
+            await query.message.delete()
+            await context.bot.send_message(
+                chat_id=query.message.chat_id,
+                text=text,
+                parse_mode=ParseMode.HTML,
+                reply_markup=keyboard,
+            )
+        else:
+            await query.edit_message_text(
+                text=text,
+                parse_mode=ParseMode.HTML,
+                reply_markup=keyboard,
+            )
+    except Exception as e:
+        logger.error(f"[EDITAR_OFERTA] Erro ao alterar mensagem: {e}")
+        await context.bot.send_message(
+            chat_id=query.message.chat_id,
+            text=text,
+            parse_mode=ParseMode.HTML,
+            reply_markup=keyboard,
+        )
+
     return EDITAR_CAMPOS
 
 
@@ -823,10 +847,29 @@ async def escolher_campo_edicao(update: Update, context: ContextTypes.DEFAULT_TY
         ),
     }
 
-    await query.edit_message_text(
-        prompts.get(campo, "✍️ Digite o novo valor:") + "\n\n<i>Envie a mensagem abaixo:</i>",
-        parse_mode=ParseMode.HTML,
-    )
+    prompt_text = prompts.get(campo, "✍️ Digite o novo valor:") + "\n\n<i>Envie a mensagem abaixo:</i>"
+    
+    try:
+        if getattr(query.message, 'photo', None) or getattr(query.message, 'video', None):
+            await query.message.delete()
+            await context.bot.send_message(
+                chat_id=query.message.chat_id,
+                text=prompt_text,
+                parse_mode=ParseMode.HTML,
+            )
+        else:
+            await query.edit_message_text(
+                text=prompt_text,
+                parse_mode=ParseMode.HTML,
+            )
+    except Exception as e:
+        logger.error(f"[ESCOLHER_CAMPO] Erro ao alterar mensagem: {e}")
+        await context.bot.send_message(
+            chat_id=query.message.chat_id,
+            text=prompt_text,
+            parse_mode=ParseMode.HTML,
+        )
+
     return AGUARDAR_EDICAO_TEXTO
 
 
@@ -858,7 +901,7 @@ async def salvar_edicao_texto(update: Update, context: ContextTypes.DEFAULT_TYPE
         from bot.services.affiliate_link_service import injetar_link_afiliado, _detectar_loja
         novo_link     = _extrair_primeira_url(novo_valor) or novo_valor.strip()
         store_key     = _detectar_loja(novo_link)
-        affiliate_url = injetar_link_afiliado(novo_link, store_key)
+        affiliate_url = await injetar_link_afiliado(novo_link, store_key)
 
         context.user_data["affiliate_url"] = affiliate_url
         context.user_data["store_key"]     = store_key

@@ -21,8 +21,6 @@ import os
 import random
 from bs4 import BeautifulSoup
 from urllib.parse import urlparse, unquote, urljoin
-from playwright.async_api import async_playwright
-from playwright_stealth import stealth
 from bot.utils.config import SCRAPERAPI_KEY
 
 logger = logging.getLogger(__name__)
@@ -1081,64 +1079,9 @@ async def get_page_html(url: str) -> tuple[str | None, str]:
         except Exception as e:
             logger.warning(f"[SCRAPERAPI] ❌ Exceção: {str(e)[:100]}")
 
-    # ── TENTATIVA 2: Playwright Local (Anti-Detecção) ─────────────────────
+    # ── TENTATIVA 2: Requests Simples (Sem Playwright/Google Chrome) ──────
     try:
-        logger.info(f"[EXTRACTOR_V2] Camada 2: Playwright Local | url={url[:60]}")
-        async with async_playwright() as pw:
-            browser = await pw.chromium.launch(headless=True, args=[
-                '--no-sandbox',
-                '--disable-blink-features=AutomationControlled',
-                '--disable-dev-shm-usage',
-                '--disable-setuid-sandbox'
-            ])
-            
-            context = await browser.new_context(
-                viewport={'width': 1366, 'height': 768},
-                user_agent=_HEADERS["User-Agent"],
-                locale='pt-BR',
-                timezone_id='America/Sao_Paulo',
-                extra_http_headers={
-                    'Accept-Language': 'pt-BR,pt;q=0.9',
-                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8'
-                }
-            )
-
-            # Mascarar propriedades do WebDriver que o Radware detecta
-            await context.add_init_script("""
-                Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
-                Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3]});
-                window.chrome = { runtime: {} };
-            """)
-
-            page = await context.new_page()
-            await stealth(page)
-
-            # Comportamento humano: esperar entre 1 e 3 segundos antes de acessar
-            await asyncio.sleep(random.uniform(1, 3))
-
-            try:
-                await page.goto(url, wait_until='load', timeout=_TIMEOUT_PLAYWRIGHT * 1000)
-                # Espera extra para renderização de JS
-                await page.wait_for_timeout(3000)
-                # Scroll para ativar carregamento lazy
-                await page.evaluate("window.scrollTo(0, 400)")
-                await page.wait_for_timeout(2000)
-            except Exception as e:
-                logger.warning(f"[PLAYWRIGHT] Timeout ou erro no goto (tentando prosseguir): {str(e)[:50]}")
-
-            html = await page.content()
-            await browser.close()
-            
-            if html and not any(k in html.lower() for k in _BLOCK_KEYWORDS):
-                logger.info(f"[PLAYWRIGHT] ✅ Sucesso ({len(html)} chars)")
-                return html, "PLAYWRIGHT"
-            logger.warning("[PLAYWRIGHT] ❌ Bloqueado ou vazio. Indo para Requests.")
-    except Exception as e:
-        logger.warning(f"[PLAYWRIGHT] ❌ Exceção Crítica: {str(e)[:100]}")
-
-    # ── TENTATIVA 3: Requests Simples ─────────────────────────────────────
-    try:
-        logger.info(f"[EXTRACTOR_V2] Camada 3: Requests Simples | url={url[:60]}")
+        logger.info(f"[EXTRACTOR_V2] Camada 2: Requests Simples | url={url[:60]}")
         async with httpx.AsyncClient(timeout=_TIMEOUT_HTTP, follow_redirects=True, headers=_HEADERS) as client:
             resp = await client.get(url)
             if resp.status_code == 200:
