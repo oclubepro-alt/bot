@@ -125,7 +125,8 @@ async def _run_scan(context, limit: int = 10, manual: bool = False, trigger_user
                     store_key=store_key,
                     short_url=final_link,
                     legenda_ia=copy_ia,
-                    preco_original=dados.get("preco_original")
+                    preco_original=dados.get("preco_original"),
+                    cupom=dados.get("cupom")
                 )
 
                 await publish_offer(context.bot, copies, dados.get("image_url"))
@@ -149,7 +150,8 @@ async def _run_scan(context, limit: int = 10, manual: bool = False, trigger_user
                     store_key=store_key,
                     short_url=final_link,
                     legenda_ia=copy_ia,
-                    preco_original=dados.get("preco_original")
+                    preco_original=dados.get("preco_original"),
+                    cupom=dados.get("cupom")
                 )
 
                 context.bot_data["pending_offers"][offer_id] = {

@@ -636,6 +636,36 @@ def _extract_price_amazon(soup: BeautifulSoup) -> tuple[str | None, str | None]:
     return _choose_lower_price(preco_promo, preco_orig)
 
 
+def _extract_coupon_amazon(soup: BeautifulSoup) -> str | None:
+    """
+    Detecta cupons de desconto na página da Amazon.
+    Ex: 'Aplique o cupom de R$ 50,00', 'Economize 10% com cupom'.
+    """
+    coupon_selectors = [
+        "#shoveler-coupon-text",
+        ".cpn-btm-msg",
+        ".ux-coupon-text",
+        ".vpc-coupon-label",
+        "#vcp-coupon-text",
+        ".a-size-base.a-color-success" # Às vezes cupons simples aparecem aqui
+    ]
+    for sel in coupon_selectors:
+        tag = soup.select_one(sel)
+        if tag:
+            text = tag.get_text(strip=True)
+            if "cupom" in text.lower() or "coupon" in text.lower() or "economize" in text.lower():
+                # Limpa excesso de espaços e retorna
+                return re.sub(r"\s+", " ", text).strip()
+                
+    # Busca por texto direto se o seletor falhar
+    for tag in soup.find_all(string=re.compile(r"cupom", re.I)):
+        parent = tag.parent
+        if parent and "economize" in parent.get_text().lower():
+            return parent.get_text(strip=True)
+
+    return None
+
+
 def _parse_amazon_paapi_dict(item: dict) -> tuple[str | None, str | None]:
     """
     Processa um dicionário no formato Amazon PA-API v5 ou similar (a-state).
@@ -800,8 +830,8 @@ def _extract_price_generic(soup: BeautifulSoup) -> tuple[str | None, str | None]
 # ---------------------------------------------------------------------------
 
 def _extract_from_soup(soup: BeautifulSoup, base_url: str, store_key: str = "other") -> dict:
-    """Extrai título, preço promocional, preço original, imagem e flag PIX."""
-    data = {"titulo": None, "preco": None, "preco_original": None, "imagem": None, "is_pix_price": False}
+    """Extrai título, preço promocional, preço original, imagem, cupom e flag PIX."""
+    data = {"titulo": None, "preco": None, "preco_original": None, "imagem": None, "is_pix_price": False, "cupom": None}
 
     # ── DETECÇÃO DE BLOQUEIO ────────────────────────────────────────────────
     page_text_lower = soup.get_text().lower()
@@ -877,6 +907,10 @@ def _extract_from_soup(soup: BeautifulSoup, base_url: str, store_key: str = "oth
 
         data["preco"] = preco
         data["preco_original"] = preco_orig
+
+    # ── CUPOM (Amazon) ──────────────────────────────────────────────────────
+    if store_key == "amazon":
+        data["cupom"] = _extract_coupon_amazon(soup)
 
     # ── ULTIMATO DE PREÇO (Schema / Regex) ───────────────────────────────
     if not data["preco"]:
@@ -1135,7 +1169,7 @@ async def extract_product_data_v2(url: str) -> dict:
         
         # Merge de resultados se não estiver bloqueado no parser
         if "BLOQUEIO" not in (data.get("titulo") or ""):
-            for k in ["titulo", "preco", "preco_original", "imagem", "is_pix_price"]:
+            for k in ["titulo", "preco", "preco_original", "imagem", "is_pix_price", "cupom"]:
                 if data.get(k): result[k] = data[k]
             logger.info(f"[EXTRATOR] Camada {method}: ✅ Sucesso")
         else:

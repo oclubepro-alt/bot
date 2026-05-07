@@ -152,6 +152,7 @@ def _build_telegram(
     legenda_ia: str | None,
     preco_original: str | None,
     desconto: str | None,
+    cupom: str | None = None,
 ) -> str:
     nome_e  = _escape_html(nome)
     preco_e = _escape_html(preco)
@@ -184,6 +185,11 @@ def _build_telegram(
     linhas.append(p_line)
     linhas.append(f"🏪 Loja: <b>{loja_e}</b>")
 
+    # Cupom (se houver)
+    if cupom:
+        cupom_e = _escape_html(cupom)
+        linhas.append(f"🎟️ <b>{cupom_e}</b>")
+
     # Call to Action
     linhas.append("")
     linhas.append(f"🛒 <a href='{short_url}'><b>CLIQUE AQUI PARA COMPRAR</b></a>")
@@ -202,6 +208,7 @@ def _build_whatsapp(
     preco_original: str | None,
     desconto: str | None,
     wa_channel: str,
+    cupom: str | None = None,
 ) -> str:
     """
     Monta copy para WhatsApp em texto simples com negritos via *.
@@ -227,6 +234,9 @@ def _build_whatsapp(
     linhas.append(preco_line)
     linhas.append(f"🏪 {loja}")
 
+    if cupom:
+        linhas.append(f"🎟️ *{cupom}*")
+
     linhas.append("")
     linhas.append(f"👉 {short_url}")
 
@@ -250,6 +260,7 @@ def build_copy(
     *,
     legenda_ia: str | None = None,
     preco_original: str | None = None,
+    cupom: str | None = None,
     whatsapp_channel: str | None = None,
 ) -> dict:
     """
@@ -285,6 +296,7 @@ def build_copy(
         legenda_ia=legenda_ia,
         preco_original=preco_original,
         desconto=desconto,
+        cupom=cupom,
     )
 
     whatsapp_copy = _build_whatsapp(
@@ -296,6 +308,7 @@ def build_copy(
         preco_original=preco_original,
         desconto=desconto,
         wa_channel=wa_ch,
+        cupom=cupom,
     )
 
     logger.info(
@@ -328,5 +341,6 @@ def build_copy_from_pipeline(pipeline_result: dict, short_url: str, **kwargs) ->
         loja      = pipeline_result.get("loja", ""),
         store_key = pipeline_result.get("store_key", "other"),
         short_url = short_url,
+        cupom     = pipeline_result.get("cupom"),
         **kwargs,
     )

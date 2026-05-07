@@ -56,6 +56,49 @@ def _is_product_link(url: str) -> bool:
     return bool(_PRODUCT_URL_PATTERNS.search(url))
 
 
+async def _extract_amazon_links_from_soup(soup: BeautifulSoup, base_url: str) -> list[str]:
+    """
+    Extrai links de produtos da Amazon de forma robusta, 
+    olhando para ASINs e padrões de widgets de ofertas.
+    """
+    collected = set()
+    
+    # 1. Busca por links diretos que contenham ASIN (padrão /dp/ ou /gp/product/)
+    # Ex: https://www.amazon.com.br/dp/B0C2RWN59H
+    for tag in soup.find_all("a", href=True):
+        href = tag["href"]
+        # Tenta extrair ASIN da URL
+        asin_match = re.search(r"/(?:dp|gp/product)/([A-Z0-9]{10})", href)
+        if asin_match:
+            asin = asin_match.group(1)
+            collected.add(f"https://www.amazon.com.br/dp/{asin}")
+            continue
+            
+        # Tenta extrair da query string se for um redirect interno (comum em ads)
+        if "pd_rd_i=" in href:
+            asin_match = re.search(r"pd_rd_i=([A-Z0-9]{10})", href)
+            if asin_match:
+                collected.add(f"https://www.amazon.com.br/dp/{asin_match.group(1)}")
+                continue
+
+    # 2. Busca por elementos com data-asin (comum em grids de ofertas Goldbox)
+    for tag in soup.find_all(attrs={"data-asin": True}):
+        asin = tag["data-asin"].strip()
+        if len(asin) == 10 and asin.isalnum():
+            collected.add(f"https://www.amazon.com.br/dp/{asin}")
+
+    # 3. Busca em widgets de deals (às vezes o link está em um data-attribute)
+    # Procuramos por qualquer coisa que pareça um ASIN de 10 caracteres em atributos
+    for tag in soup.find_all(True):
+        for attr, value in tag.attrs.items():
+            if isinstance(value, str) and len(value) == 10 and value.isalnum() and value.isupper():
+                # Heurística: ASINs da Amazon BR costumam começar com B0
+                if value.startswith("B0") or value.startswith("85"):
+                    collected.add(f"https://www.amazon.com.br/dp/{value}")
+
+    return list(collected)
+
+
 async def _collect_links_from_page(source_url: str) -> list[str]:
     """
     Visita uma URL de fonte e coleta links de produto.
@@ -69,6 +112,7 @@ async def _collect_links_from_page(source_url: str) -> list[str]:
         html = None
         if is_amazon:
             logger.info(f"[MONITOR] 🛡️ Usando pipeline robusto para fonte Amazon: {source_url[:50]}")
+            # get_page_html já lida com ScraperAPI e Playwright
             html, method = await get_page_html(source_url)
         else:
             async with httpx.AsyncClient(headers=_HEADERS, timeout=20, follow_redirects=True) as client:
@@ -81,26 +125,28 @@ async def _collect_links_from_page(source_url: str) -> list[str]:
             return []
 
         soup = BeautifulSoup(html, "html.parser")
-        seen_hrefs: set[str] = set()
+        
+        if is_amazon:
+            # Lógica especializada para Amazon
+            amazon_links = await _extract_amazon_links_from_soup(soup, base)
+            collected.extend(amazon_links)
+        else:
+            # Lógica genérica para outras lojas
+            seen_hrefs: set[str] = set()
+            for tag in soup.find_all("a", href=True):
+                href = tag["href"].strip()
+                if not href or href.startswith("#") or href.startswith("javascript"):
+                    continue
 
-        # Amazon Goldbox às vezes esconde links em data-attributes ou widgets
-        # Mas o render=true do ScraperAPI costuma expandir os <a> tags
-        for tag in soup.find_all("a", href=True):
-            href = tag["href"].strip()
-            if not href or href.startswith("#") or href.startswith("javascript"):
-                continue
+                full_url = urljoin(base, href)
+                clean = full_url.split("#")[0].split("?")[0]
 
-            full_url = urljoin(base, href)
-            # Normalização básica para evitar duplicatas por query string irrelevante
-            # Mantemos 'id' para ML e 'p' para Shopee se necessário, mas removemos trackers
-            clean = full_url.split("#")[0].split("?")[0]
+                if clean in seen_hrefs:
+                    continue
+                seen_hrefs.add(clean)
 
-            if clean in seen_hrefs:
-                continue
-            seen_hrefs.add(clean)
-
-            if _is_product_link(full_url):
-                collected.append(full_url)
+                if _is_product_link(full_url):
+                    collected.append(full_url)
 
         logger.info(
             f"[MONITOR] Fonte '{source_url}': {len(collected)} links encontrados."
