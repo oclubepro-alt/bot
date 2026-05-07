@@ -187,22 +187,23 @@ async def finalizar_lote_encaminhamento(context, chat_id, user_id):
             f"Tudo pronto! Clique em ⚙️ <b>Processar Tudo</b>."
         )
 
+    # Tenta apagar a mensagem de status anterior para não poluir
+    if msg_id:
+        try:
+            await context.bot.delete_message(chat_id=chat_id, message_id=msg_id)
+        except:
+            pass
+
     try:
-        if msg_id:
-            await context.bot.edit_message_text(
-                chat_id=chat_id,
-                message_id=msg_id,
-                text=text,
-                parse_mode="HTML",
-                reply_markup=InlineKeyboardMarkup(keyboard)
-            )
-        else:
-            await context.bot.send_message(
-                chat_id=chat_id,
-                text=text,
-                parse_mode="HTML",
-                reply_markup=InlineKeyboardMarkup(keyboard)
-            )
+        # Sempre envia uma NOVA mensagem no final do lote para ficar no rodapé do chat
+        new_msg = await context.bot.send_message(
+            chat_id=chat_id,
+            text=text,
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+        # Atualiza o ID para que, se ele mandar mais, a gente saiba qual apagar
+        user_data["msg_contador_id"] = new_msg.message_id
     except Exception as e:
         logger.error(f"Erro ao finalizar lote: {e}")
 
