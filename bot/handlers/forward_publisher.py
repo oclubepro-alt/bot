@@ -102,9 +102,61 @@ async def receive_forwarded_message(update: Update, context: ContextTypes.DEFAUL
     context.user_data["fila_encaminhamentos"] = fila
     qtd = len(fila)
 
-    chat_id = context.user_data.get("chat_contador_id")
-    msg_id = context.user_data.get("msg_contador_id")
+    # Cancelar job anterior se existir
+    job_key = f"batch_{update.effective_user.id}"
+    current_jobs = context.job_queue.get_jobs_by_name(job_key)
+    for job in current_jobs:
+        job.schedule_removal()
 
+    # Se chegou a 20, finaliza na hora
+    if qtd >= 20:
+        await finalizar_lote_encaminhamento(context, update.effective_chat.id, update.effective_user.id)
+    else:
+        # Agenda finalização do lote em 4 segundos
+        context.job_queue.run_once(
+            callback=lote_timer_callback,
+            when=4,
+            chat_id=update.effective_chat.id,
+            name=job_key,
+            data={"user_id": update.effective_user.id}
+        )
+        
+        # Feedback visual rápido (opcional, mas bom para UX)
+        # Para evitar spam de edit, só editamos a cada 2 mensagens ou se for a primeira
+        if qtd == 1 or qtd % 3 == 0:
+            await atualizar_status_coleta(context, update.effective_chat.id, qtd)
+
+async def lote_timer_callback(context: ContextTypes.DEFAULT_TYPE):
+    job = context.job
+    await finalizar_lote_encaminhamento(context, job.chat_id, job.data["user_id"])
+
+async def atualizar_status_coleta(context: ContextTypes.DEFAULT_TYPE, chat_id: int, qtd: int):
+    msg_id = context.user_data.get("msg_contador_id")
+    if not msg_id: return
+    
+    text = (
+        f"📊 <b>Mensagens recebidas: {qtd}/20</b>\n\n"
+        "Continuando a coletar...\n"
+        "Encaminhe mais ou aguarde para processar."
+    )
+    
+    try:
+        await context.bot.edit_message_text(
+            chat_id=chat_id,
+            message_id=msg_id,
+            text=text,
+            parse_mode="HTML"
+        )
+    except: pass
+
+async def finalizar_lote_encaminhamento(context, chat_id, user_id):
+    # Recupera user_data (no job context.user_data já está mapeado se chat_id/user_id baterem)
+    fila = context.user_data.get("fila_encaminhamentos", [])
+    qtd = len(fila)
+    if qtd == 0: return
+
+    msg_id = context.user_data.get("msg_contador_id")
+    
     keyboard = [
         [InlineKeyboardButton("⚙️ Processar Tudo", callback_data=CB_PROCESSAR_TUDO)],
         [InlineKeyboardButton("✏️ Corrigir", callback_data="frev_corrigir")],
@@ -114,8 +166,9 @@ async def receive_forwarded_message(update: Update, context: ContextTypes.DEFAUL
     if qtd >= 20:
         context.user_data["modo_encaminhamento"] = False
         text = (
-            "⚠️ <b>Limite de 20 mensagens atingido!</b>\n"
-            "Clique em ✅ Processar Tudo para continuar."
+            "⚠️ <b>Limite de 20 mensagens atingido!</b>\n\n"
+            f"✅ <b>{qtd} mensagens prontas para processar.</b>\n"
+            "Clique abaixo para transformar tudo em ofertas."
         )
     else:
         linhas = []
@@ -127,7 +180,7 @@ async def receive_forwarded_message(update: Update, context: ContextTypes.DEFAUL
         text = (
             f"📊 <b>Mensagens recebidas: {qtd}/20</b>\n\n"
             f"{mensagens_texto}\n\n"
-            f"Encaminhe mais ou clique em ⚙️ <b>Processar Tudo</b>."
+            f"Tudo pronto! Clique em ⚙️ <b>Processar Tudo</b>."
         )
 
     try:
@@ -139,7 +192,7 @@ async def receive_forwarded_message(update: Update, context: ContextTypes.DEFAUL
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
     except Exception as e:
-        logger.error(f"Erro ao editar msg contador: {e}")
+        logger.error(f"Erro ao finalizar lote: {e}")
 
 async def cancel_forward_mode(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
