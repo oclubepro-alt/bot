@@ -79,8 +79,7 @@ def main() -> None:
     
     # Callback para voltar ao menu principal de qualquer lugar
     from bot.handlers.main_menu import menu_principal
-    app.add_handler(CallbackQueryHandler(menu_principal, pattern=r"^menu_principal$"))
-    app.add_handler(CallbackQueryHandler(menu_principal, pattern=r"^monitor_voltar$"))
+    app.add_handler(CallbackQueryHandler(menu_principal, pattern=r"^(menu_principal|monitor_voltar|cancelar_config_afiliado|encam_cancelar)$"))
 
     # Handler de conversão principal (Fases 1 e 2)
     app.add_handler(build_main_handler())

@@ -40,9 +40,12 @@ async def menu_canais(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     keyboard.append([InlineKeyboardButton("➕ Adicionar Novo Canal", callback_data="add_chan")])
     keyboard.append([InlineKeyboardButton("🏠 Voltar ao Menu", callback_data="menu_principal")])
 
-    
-    await query.edit_message_text(texto, parse_mode=ParseMode.HTML, reply_markup=InlineKeyboardMarkup(keyboard))
-    return ConversationHandler.END
+    if query:
+        await query.edit_message_text(texto, parse_mode=ParseMode.HTML, reply_markup=InlineKeyboardMarkup(keyboard))
+    else:
+        await update.message.reply_text(texto, parse_mode=ParseMode.HTML, reply_markup=InlineKeyboardMarkup(keyboard))
+        
+    return AGUARDAR_NOVO_CANAL
 
 async def btn_add_canal(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query

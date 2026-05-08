@@ -46,8 +46,7 @@ async def menu_whatsapp(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     else:
         await update.message.reply_text(texto, parse_mode=ParseMode.HTML, reply_markup=InlineKeyboardMarkup(keyboard))
 
-    
-    return ConversationHandler.END
+    return AGUARDAR_JID_WHATS
 
 async def btn_add_whatsapp(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query

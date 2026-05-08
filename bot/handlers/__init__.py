@@ -96,9 +96,15 @@ def build_main_handler() -> ConversationHandler:
             # ── Canais e WhatsApp ─────────────────────────────────────────────
             AGUARDAR_NOVO_CANAL: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, receber_novo_canal),
+                CallbackQueryHandler(btn_add_canal, pattern=r"^add_chan$"),
+                CallbackQueryHandler(btn_remover_canal, pattern=r"^remove_chan\|"),
+                CallbackQueryHandler(start_command, pattern=f"^({CB_VOLTAR_MENU}|{CB_MENU_PRINCIPAL})$"),
             ],
             AGUARDAR_JID_WHATS: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, receber_jid_whatsapp),
+                CallbackQueryHandler(btn_add_whatsapp, pattern=r"^add_wpp$"),
+                CallbackQueryHandler(btn_remover_whatsapp, pattern=r"^del_wpp\|"),
+                CallbackQueryHandler(start_command, pattern=f"^({CB_VOLTAR_MENU}|{CB_MENU_PRINCIPAL})$"),
             ],
 
             # ── Fluxo Manual (offer.py) ───────────────────────────────────────
