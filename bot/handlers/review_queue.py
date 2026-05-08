@@ -251,36 +251,61 @@ async def handle_review_bulk_callback(
     action = query.data.split(":", 1)[1]
     pending: dict = context.bot_data.get("pending_offers", {})
 
-    if not pending:
-        await query.edit_message_text("⚠️ A fila já está vazia.")
-        return
-
+    # Botão de volta consistente
     back_keyboard = InlineKeyboardMarkup([[
-        InlineKeyboardButton("⬅️ Voltar ao Menu", callback_data=CB_MENU_PRINCIPAL)
+        InlineKeyboardButton("⬅️ Voltar ao Menu", callback_data="monitor_voltar")
     ]])
 
     if action == "clear_all":
         count = len(pending)
         # Marca todos como vistos para não reaparecerem
         for offer in pending.values():
-            mark_seen(offer.get("product_url", ""))
+            try:
+                mark_seen(offer.get("product_url", ""))
+            except: pass
         
         context.bot_data["pending_offers"] = {}
         save_review_queue({})
-        await query.edit_message_text(
-            f"🚫 <b>Fila limpa!</b>\n{count} ofertas foram descartadas e marcadas como vistas.",
-            parse_mode=ParseMode.HTML,
-            reply_markup=back_keyboard
-        )
+        
+        texto_sucesso = f"🚫 <b>Fila limpa!</b>\n{count} ofertas foram descartadas."
+        
+        try:
+            # Se a mensagem original tem foto, não podemos usar edit_message_text
+            if query.message.photo:
+                await query.message.delete()
+                await context.bot.send_message(
+                    chat_id=query.message.chat_id,
+                    text=texto_sucesso,
+                    parse_mode=ParseMode.HTML,
+                    reply_markup=back_keyboard
+                )
+            else:
+                await query.edit_message_text(
+                    texto_sucesso,
+                    parse_mode=ParseMode.HTML,
+                    reply_markup=back_keyboard
+                )
+        except Exception as e:
+            logger.error(f"[REVIEW] Erro ao editar msg de limpeza: {e}")
+            await context.bot.send_message(
+                chat_id=query.message.chat_id,
+                text=texto_sucesso,
+                parse_mode=ParseMode.HTML,
+                reply_markup=back_keyboard
+            )
+        
         logger.warning(f"[REVIEW] Fila de revisão limpa pelo admin {query.from_user.id}.")
 
     elif action == "approve_all":
         count = len(pending)
-        await query.edit_message_text(f"⏳ <b>Aprovando {count} ofertas...</b>\nPode levar alguns segundos.", parse_mode=ParseMode.HTML)
+        try:
+            if query.message.photo:
+                await query.message.edit_caption(f"⏳ <b>Aprovando {count} ofertas...</b>\nPode levar alguns segundos.", parse_mode=ParseMode.HTML)
+            else:
+                await query.edit_message_text(f"⏳ <b>Aprovando {count} ofertas...</b>\nPode levar alguns segundos.", parse_mode=ParseMode.HTML)
+        except: pass
         
         success_count = 0
-        # Copiamos as chaves porque vamos modificar o dict durante a iteração se fôssemos remover, 
-        # mas aqui vamos apenas processar e limpar no final.
         offer_ids = list(pending.keys())
         
         for oid in offer_ids:
@@ -288,11 +313,9 @@ async def handle_review_bulk_callback(
             if not offer: continue
             
             try:
-                # Encurta o link afiliado (longo) antes de publicar
                 aff_url = offer.get("affiliate_url", "")
                 short_url = await asyncio.to_thread(shorten_for_publication, aff_url) if aff_url else ""
 
-                # Reconstrói a copy com o link curto
                 dados     = offer.get("dados_produto", {})
                 store_key = offer.get("store_key", "amazon")
                 copy_ia   = offer.get("copy_ia")
@@ -312,7 +335,6 @@ async def handle_review_bulk_callback(
                 await publish_offer(context.bot, copies_final, offer.get("imagem"))
                 mark_seen(offer.get("product_url", ""))
                 success_count += 1
-                # Pequeno delay para evitar rate limit
                 if success_count % 3 == 0:
                     await asyncio.sleep(1)
             except Exception as e:
@@ -321,11 +343,26 @@ async def handle_review_bulk_callback(
         context.bot_data["pending_offers"] = {}
         save_review_queue({})
 
-        await query.message.reply_text(
-            f"✅ <b>Sucesso!</b>\n{success_count} ofertas publicadas no canal de um total de {count}.",
-            parse_mode=ParseMode.HTML,
-            reply_markup=back_keyboard
-        )
+        texto_final = f"✅ <b>Sucesso!</b>\n{success_count} ofertas publicadas no canal."
+        
+        try:
+            if query.message.photo:
+                await query.message.delete()
+            
+            await context.bot.send_message(
+                chat_id=query.message.chat_id,
+                text=texto_final,
+                parse_mode=ParseMode.HTML,
+                reply_markup=back_keyboard
+            )
+        except:
+            await context.bot.send_message(
+                chat_id=query.message.chat_id,
+                text=texto_final,
+                parse_mode=ParseMode.HTML,
+                reply_markup=back_keyboard
+            )
+            
         logger.info(f"[REVIEW] Aprovação em massa concluída: {success_count}/{count} por admin {query.from_user.id}.")
 
 import asyncio # Ensure asyncio is available for sleep
