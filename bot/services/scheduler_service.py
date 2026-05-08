@@ -86,7 +86,8 @@ async def _run_scan(context, limit: int = 10, manual: bool = False, trigger_user
             # 1. Extração Mestra V2 (Já é async)
             dados = await extract_product_data_v2(product_url)
 
-            if not dados.get("titulo") or dados.get("titulo") == "Produto":
+            titulo_extraido = dados.get("titulo", "")
+            if not titulo_extraido or titulo_extraido in ["Produto", "Produto Disponível"]:
                 logger.warning(f"[SCHEDULER] Falha ao extrair título para {product_url}. Pulando.")
                 continue
             
