@@ -157,6 +157,10 @@ async def handle_review_callback(
         index = int(offer_id) if offer_id else 0
         return await show_next_review_item(update, context, index=index)
 
+    if action == "review_corrigir":
+        from bot.handlers.offer_by_link import review_corrigir_starter
+        return await review_corrigir_starter(update, context)
+
     if not offer_id:
         await query.edit_message_text("⚠️ Não foi possível identificar a oferta.")
         return

@@ -76,6 +76,11 @@ def main() -> None:
     app.add_handler(CommandHandler("debug_link", cmd_debug_link))
     app.add_handler(CommandHandler("revisar", start_review_queue))
     app.add_handler(CallbackQueryHandler(start_review_queue, pattern=r"^menu_revisar$"))
+    
+    # Callback para voltar ao menu principal de qualquer lugar
+    from bot.handlers.main_menu import menu_principal
+    app.add_handler(CallbackQueryHandler(menu_principal, pattern=r"^menu_principal$"))
+    app.add_handler(CallbackQueryHandler(menu_principal, pattern=r"^monitor_voltar$"))
 
     # Handler de conversão principal (Fases 1 e 2)
     app.add_handler(build_main_handler())

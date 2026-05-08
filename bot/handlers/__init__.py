@@ -189,5 +189,5 @@ def build_review_queue_handler() -> CallbackQueryHandler:
     """Handler único para callbacks da fila de aprovação."""
     return CallbackQueryHandler(
         handle_review_callback,
-        pattern=r"^review_(aprovar|rejeitar|bulk):"
+        pattern=r"^review_(aprovar|rejeitar|bulk|view|corrigir):"
     )
