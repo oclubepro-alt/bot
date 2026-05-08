@@ -168,12 +168,13 @@ async def _run_scan(context, limit: int = 10, manual: bool = False, trigger_user
                 )
 
                 context.bot_data["pending_offers"][offer_id] = {
-                    "product_url":   product_url,
+                    "product_url":   product_url,          # URL da fonte (para dedup)
+                    "original_url":  dados.get("final_url", product_url),  # URL canônica Amazon
                     "mensagem":      copies_preview["telegram"],
                     "copies":        copies_preview,
                     "imagem":        dados.get("image_url"),
                     "nome":          dados["title"],
-                    "affiliate_url": affiliate_url,   # link longo COM tag
+                    "affiliate_url": affiliate_url,        # link longo COM tag
                     "store_key":     store_key,
                     "cupom":         dados.get("cupom"),
                     "copy_ia":       copy_ia,
@@ -198,7 +199,8 @@ async def _run_scan(context, limit: int = 10, manual: bool = False, trigger_user
                     [InlineKeyboardButton("✏️ Corrigir",   callback_data=f"review_corrigir:{offer_id}")],
                 ])
 
-                # Prévia enviada AO ADMIN — mostra link longo para conferir a tag
+                # Prévia enviada AO ADMIN — mostra AMBOS os links para auditoria
+                original_url = dados.get("final_url", product_url)
                 preview_text = (
                     f"🔎 <b>OFERTA ENCONTRADA</b> — <i>{escape_html(source_name)}</i>\n"
                     "━━━━━━━━━━━━━━━━━━━━━\n"
@@ -207,7 +209,9 @@ async def _run_scan(context, limit: int = 10, manual: bool = False, trigger_user
                     + (f"  <s>{escape_html(dados.get('preco_original', ''))}</s>" if dados.get('preco_original') else "") + "\n"
                     + (f"🎟️ <b>Cupom:</b> <code>{escape_html(dados.get('cupom', ''))}</code>\n" if dados.get('cupom') else "")
                     + "\n"
-                    f"🔗 <b>Link (com sua tag):</b>\n"
+                    f"🌐 <b>Link original do produto:</b>\n"
+                    f"<code>{escape_html(original_url)}</code>\n\n"
+                    f"🔗 <b>Seu link (com a tag):</b>\n"
                     f"<code>{escape_html(affiliate_url)}</code>\n\n"
                     "⚠️ <i>O link será encurtado apenas ao publicar no canal.</i>"
                 )
