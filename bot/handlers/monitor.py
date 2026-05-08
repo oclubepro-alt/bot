@@ -41,7 +41,7 @@ async def monitor_menu_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     keyboard.append([InlineKeyboardButton("⏰ Ver Fila de Agendamento", callback_data="monitor_view_queue")])
         
     keyboard.append([
-        InlineKeyboardButton("📊 Estatísticas (Stats)", callback_data="stats_summary"),
+        InlineKeyboardButton("📊 Estatísticas", callback_data="stats_summary"),
         InlineKeyboardButton("🏠 Menu Principal", callback_data=CB_MENU_PRINCIPAL)
     ])
 
