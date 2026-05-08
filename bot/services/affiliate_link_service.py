@@ -167,7 +167,7 @@ async def injetar_link_afiliado(url: str, store_key: str | None = None) -> str:
     if is_short:
         logger.info(f"[AFFILIATE_SERVICE] Link curto detectado ({url[:30]}). Expandindo...")
         try:
-            expanded = await resolve_url_playwright(url)
+            expanded = await resolve_short_url_httpx(url)
             if expanded and expanded != url:
                 url = expanded
                 # Redetecta loja após expansão
@@ -221,69 +221,48 @@ async def injetar_link_afiliado(url: str, store_key: str | None = None) -> str:
 # Resolver via Playwright (para shorteners que bloqueiam requests.get)
 # ---------------------------------------------------------------------------
 
-async def resolve_url_playwright(url: str) -> str:
+async def resolve_short_url_httpx(url: str) -> str:
     """
-    Resolve URLs curtas (amzn.to, shope.ee, ml.tidd.ly, etc.) via Playwright.
+    Resolve URLs curtas (amzn.to, shope.ee, ml.tidd.ly, etc.) via httpx.
+    Substitui o Playwright para evitar bloqueios ou uso excessivo de recursos.
 
-    Abre o link num browser headless, aguarda todos os redirecionamentos JS
-    e retorna page.url — a URL final real, com todos os parâmetros.
-
-    SÓ usa Playwright quando requests falha (domínios que bloqueiam bots).
+    SÓ usa httpx (Requests) seguindo os redirecionamentos HTTP (301/302).
 
     Args:
-        url: URL curta ou com redirecionamento JS.
+        url: URL curta.
 
     Returns:
         URL final após redirecionamentos. Retorna a original em caso de falha.
     """
     try:
-        from playwright.async_api import async_playwright
-        import os
+        import httpx
+        logger.info(f"[AFFILIATE_SERVICE] HTTPX resolver iniciando: {url[:80]}")
 
-        logger.info(f"[AFFILIATE_SERVICE] Playwright resolver iniciando: {url[:80]}")
+        headers = {
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/124.0.0.0 Safari/537.36"
+            ),
+            "Accept-Language": "pt-BR,pt;q=0.9",
+        }
 
-        async with async_playwright() as pw:
-            proxy_config = None
-            http_proxy = os.getenv("HTTP_PROXY", "").strip()
-            if http_proxy and http_proxy.lower() not in ("none", "null", "undefined"):
-                proxy_config = {"server": http_proxy}
-
-            browser = await pw.chromium.launch(
-                headless=True,
-                proxy=proxy_config,
-                args=[
-                    "--no-sandbox",
-                    "--disable-setuid-sandbox",
-                    "--disable-dev-shm-usage",
-                    "--disable-gpu",
-                ],
-            )
-            page = await browser.new_page(
-                user_agent=(
-                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                    "AppleWebKit/537.36 (KHTML, like Gecko) "
-                    "Chrome/124.0.0.0 Safari/537.36"
-                ),
-                locale="pt-BR",
-            )
-            # domcontentloaded é suficiente para capturar a URL final
-            await page.goto(url, wait_until="domcontentloaded", timeout=30000)
-            # Aguarda 2s para redirecionamentos JS lentos
-            await page.wait_for_timeout(2000)
-            final_url = page.url
-            await browser.close()
+        # Siga até 5 redirecionamentos
+        async with httpx.AsyncClient(follow_redirects=True, max_redirects=5, timeout=15.0, headers=headers) as client:
+            resp = await client.get(url)
+            final_url = str(resp.url)
 
         if final_url and final_url != url:
-            logger.info(f"[AFFILIATE_SERVICE] Playwright resolveu: {final_url[:100]}")
+            logger.info(f"[AFFILIATE_SERVICE] HTTPX resolveu: {final_url[:100]}")
         else:
-            logger.info("[AFFILIATE_SERVICE] Playwright: URL não redirecionada (já é final).")
+            logger.info("[AFFILIATE_SERVICE] HTTPX: URL não redirecionada (já é final).")
             final_url = url
 
         return final_url
 
     except ImportError:
-        logger.warning("[AFFILIATE_SERVICE] Playwright não instalado. Usando URL original.")
+        logger.warning("[AFFILIATE_SERVICE] httpx não instalado. Usando URL original.")
         return url
     except Exception as e:
-        logger.warning(f"[AFFILIATE_SERVICE] Playwright resolver falhou ({e}). Usando URL original.")
+        logger.warning(f"[AFFILIATE_SERVICE] HTTPX resolver falhou ({e}). Usando URL original.")
         return url

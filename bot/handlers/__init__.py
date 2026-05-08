@@ -151,6 +151,10 @@ def build_main_handler() -> ConversationHandler:
                 CallbackQueryHandler(confirmar_envio_link, pattern=f"^{CB_CANCELAR_OFERTA_LINK}$"),
                 CallbackQueryHandler(btn_editar_oferta,    pattern=r"^editar_oferta$"),
                 CallbackQueryHandler(regen_ia_callback,    pattern=r"^regen_ia$"),
+                CallbackQueryHandler(
+                    escolher_campo_edicao,
+                    pattern=f"^({CB_EDIT_PRECO}|{CB_EDIT_COPY}|{CB_EDIT_LINK}|{CB_EDIT_CUPOM})$",
+                ),
                 CallbackQueryHandler(start_command,        pattern=f"^({CB_VOLTAR_MENU}|{CB_MENU_PRINCIPAL})$"),
             ],
 
