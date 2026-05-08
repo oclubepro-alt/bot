@@ -42,7 +42,10 @@ async def start_config_afiliado(update: Update, context: ContextTypes.DEFAULT_TY
             InlineKeyboardButton("👟 Netshoes", callback_data="config_afiliado_netshoes"),
             InlineKeyboardButton("🛒 M. Livre", callback_data="config_afiliado_mercadolivre")
         ],
-        [InlineKeyboardButton("🌐 Outra Loja (Base)", callback_data="config_afiliado_other")],
+        [
+            InlineKeyboardButton("🟠 Shopee", callback_data="config_afiliado_shopee"),
+            InlineKeyboardButton("🌐 Outra", callback_data="config_afiliado_other")
+        ],
         [InlineKeyboardButton("🏠 Voltar ao Menu", callback_data=CB_MENU_PRINCIPAL)]
     ]
 

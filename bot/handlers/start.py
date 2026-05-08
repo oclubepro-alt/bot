@@ -91,8 +91,6 @@ async def test_id_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 async def check_config_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Comando de diagnóstico para verificar IDs de afiliado (Apenas Admin)."""
     from bot.permissions import is_admin
-    from bot.services.affiliate_link_service import _AFFILIATE_IDS
-
     if not is_admin(update.effective_user.id):
         return
 
@@ -100,7 +98,11 @@ async def check_config_command(update: Update, context: ContextTypes.DEFAULT_TYP
     
     # 1. Verificar IDs de Afiliado
     msg.append("<b>🔗 Afiliados:</b>")
-    for store, aid in _AFFILIATE_IDS.items():
+    from bot.services.affiliate_link_service import get_effective_affiliate_id
+    
+    stores = ["amazon", "mercadolivre", "magalu", "netshoes", "shopee"]
+    for store in stores:
+        aid = get_effective_affiliate_id(store)
         if aid:
             # Mascarar por segurança (mostra só as pontas)
             masked = aid[:4] + "*" * (len(aid)-6) + aid[-2:] if len(aid) > 6 else aid

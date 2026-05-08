@@ -29,6 +29,7 @@ _DEFAULT_CONFIG: dict = {
     "magalu":       {"affiliate_url": ""},
     "netshoes":     {"affiliate_url": ""},
     "mercadolivre": {"affiliate_url": ""},
+    "shopee":       {"affiliate_url": ""},
     "other":        {"affiliate_url": ""},
 }
 

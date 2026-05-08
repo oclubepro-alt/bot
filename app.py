@@ -77,11 +77,7 @@ def main() -> None:
     app.add_handler(CommandHandler("revisar", start_review_queue))
     app.add_handler(CallbackQueryHandler(start_review_queue, pattern=r"^menu_revisar$"))
     
-    # Callback para voltar ao menu principal de qualquer lugar
-    from bot.handlers.main_menu import menu_principal
-    app.add_handler(CallbackQueryHandler(menu_principal, pattern=r"^(menu_principal|monitor_voltar|cancelar_config_afiliado|encam_cancelar)$"))
-
-    # Handler de conversão principal (Fases 1 e 2)
+    # Handlers isolados para modo Encaminhamento
     app.add_handler(build_main_handler())
 
     # Handlers isolados para modo Encaminhamento
@@ -151,6 +147,10 @@ def main() -> None:
 
     app.add_error_handler(global_error_handler)
     app.add_handler(config_handler)
+
+    # Callback CATCH-ALL para voltar ao menu principal de qualquer lugar (Failsafe)
+    # Deve ficar por último para não interceptar ConversationHandlers
+    app.add_handler(CallbackQueryHandler(start_command, pattern=r"^(menu_principal|monitor_voltar|cancelar_config_afiliado|encam_cancelar)$"))
 
     # Iniciar o scheduler para o monitor automático rodar em background
     setup_scheduler(app)
