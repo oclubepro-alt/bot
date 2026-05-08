@@ -23,23 +23,31 @@ from bot.services.copy_builder import build_copy
 logger = logging.getLogger(__name__)
 
 
-async def show_next_review_item(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Mostra o próximo item da fila de revisão para o admin."""
+async def show_next_review_item(update: Update, context: ContextTypes.DEFAULT_TYPE, index: int = 0) -> None:
+    """Mostra um item específico da fila de revisão para o admin (sistema de páginas)."""
     pending: dict = context.bot_data.get("pending_offers", {})
     
     if not pending:
         msg = "✅ <b>Fila de revisão vazia!</b>\nNão há ofertas pendentes no momento."
         keyboard = InlineKeyboardMarkup([[
-            InlineKeyboardButton("⬅️ Voltar ao Menu", callback_data=CB_MENU_PRINCIPAL)
+            InlineKeyboardButton("🏠 Menu Principal", callback_data=CB_MENU_PRINCIPAL)
         ]])
         if update.callback_query:
-            await update.callback_query.edit_message_text(msg, parse_mode=ParseMode.HTML, reply_markup=keyboard)
+            try:
+                await update.callback_query.edit_message_text(msg, parse_mode=ParseMode.HTML, reply_markup=keyboard)
+            except:
+                await context.bot.send_message(chat_id=update.effective_chat.id, text=msg, parse_mode=ParseMode.HTML, reply_markup=keyboard)
         else:
             await update.message.reply_text(msg, parse_mode=ParseMode.HTML, reply_markup=keyboard)
         return
 
-    # Pega o primeiro ID da fila
-    offer_id = next(iter(pending))
+    # Garante que o index está dentro dos limites
+    count = len(pending)
+    if index >= count: index = 0
+    if index < 0: index = count - 1
+
+    # Pega o item pelo index
+    offer_id = list(pending.keys())[index]
     offer = pending[offer_id]
     
     # Prepara a prévia
@@ -49,9 +57,8 @@ async def show_next_review_item(update: Update, context: ContextTypes.DEFAULT_TY
     original_url = offer.get("original_url", offer.get("product_url", ""))
     dados = offer.get("dados_produto", {})
     
-    count = len(pending)
     preview_text = (
-        f"📋 <b>REVISÃO DE FILA</b> ({count} pendentes)\n"
+        f"📋 <b>REVISÃO DE FILA</b> (Página {index + 1} de {count})\n"
         "━━━━━━━━━━━━━━━━━━━━━\n"
         f"📦 <b>{escape_html(nome)}</b>\n"
         f"💰 <b>Preço:</b> {escape_html(dados.get('preco', '—'))}"
@@ -61,16 +68,47 @@ async def show_next_review_item(update: Update, context: ContextTypes.DEFAULT_TY
         "⚠️ <i>O link será encurtado ao publicar.</i>"
     )
 
+    nav_row = []
+    if count > 1:
+        nav_row = [
+            InlineKeyboardButton("⬅️ Anterior", callback_data=f"review_view:{index - 1}"),
+            InlineKeyboardButton("Próxima ➡️",    callback_data=f"review_view:{index + 1}"),
+        ]
+
     keyboard = InlineKeyboardMarkup([
         [
             InlineKeyboardButton("✅ Aprovar",  callback_data=f"review_aprovar:{offer_id}"),
             InlineKeyboardButton("❌ Rejeitar", callback_data=f"review_rejeitar:{offer_id}"),
         ],
         [InlineKeyboardButton("✏️ Corrigir",   callback_data=f"review_corrigir:{offer_id}")],
-        [InlineKeyboardButton("⬅️ Voltar ao Menu", callback_data=CB_MENU_PRINCIPAL)]
+        nav_row if nav_row else [],
+        [
+            InlineKeyboardButton("✅ Aprovar Tudo", callback_data="review_bulk:approve_all"),
+            InlineKeyboardButton("🚫 Limpar Fila",  callback_data="review_bulk:clear_all"),
+        ],
+        [InlineKeyboardButton("🏠 Menu Principal", callback_data=CB_MENU_PRINCIPAL)]
     ])
 
     chat_id = update.effective_chat.id
+    # Se veio de um callback_query (exceto o inicial), tentamos editar a mensagem/foto
+    if update.callback_query:
+        query = update.callback_query
+        try:
+            if imagem and query.message.photo:
+                # Se já tem foto e o novo item tem foto, editamos a media
+                from telegram import InputMediaPhoto
+                await query.edit_message_media(
+                    media=InputMediaPhoto(media=imagem, caption=preview_text, parse_mode=ParseMode.HTML),
+                    reply_markup=keyboard
+                )
+                return
+            else:
+                # Se mudou de 'com foto' para 'sem foto' (ou vice versa), deletamos e enviamos nova
+                await query.message.delete()
+        except Exception:
+            pass
+
+    # Envio normal
     if imagem:
         await context.bot.send_photo(
             chat_id=chat_id,
@@ -114,6 +152,10 @@ async def handle_review_callback(
 
     if action == "review_bulk":
         return await handle_review_bulk_callback(update, context)
+
+    if action == "review_view":
+        index = int(offer_id) if offer_id else 0
+        return await show_next_review_item(update, context, index=index)
 
     if not offer_id:
         await query.edit_message_text("⚠️ Não foi possível identificar a oferta.")
