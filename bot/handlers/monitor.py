@@ -37,8 +37,13 @@ async def monitor_menu_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         keyboard.append([InlineKeyboardButton("🚀 Iniciar Ciclo de Varredura", callback_data=CB_MONITOR_START)])
     else:
         keyboard.append([InlineKeyboardButton("🛑 Parar Ciclo de Varredura", callback_data=CB_MONITOR_STOP)])
+    
+    keyboard.append([InlineKeyboardButton("⏰ Ver Fila de Agendamento", callback_data="monitor_view_queue")])
         
-    keyboard.append([InlineKeyboardButton("🏠 Voltar ao Menu Principal", callback_data=CB_MENU_PRINCIPAL)])
+    keyboard.append([
+        InlineKeyboardButton("📊 Estatísticas (Stats)", callback_data="stats_summary"),
+        InlineKeyboardButton("🏠 Menu Principal", callback_data=CB_MENU_PRINCIPAL)
+    ])
 
     
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -91,7 +96,32 @@ async def monitor_action_handler(update: Update, context: ContextTypes.DEFAULT_T
     await monitor_menu_handler(update, context)
 
 
+async def monitor_view_queue(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Exibe os itens atualmente na fila de agendamento."""
+    query = update.callback_query
+    await query.answer()
+
+    from bot.services.scheduler_queue_service import get_full_queue
+    queue = get_full_queue()
+    
+    if not queue:
+        texto = "⏰ <b>Fila de Agendamento Vazia</b>\n\nNenhuma oferta aguardando postagem no momento."
+    else:
+        texto = f"⏰ <b>Fila de Agendamento ({len(queue)} itens)</b>\n\n"
+        for i, item in enumerate(queue[:10], 1): # Mostra apenas as 10 primeiras
+            offer = item["offer"]
+            nome = offer.get("nome") or offer.get("dados_produto", {}).get("titulo", "Sem nome")
+            texto += f"{i}. {nome[:40]}...\n"
+        
+        if len(queue) > 10:
+            texto += f"\n<i>... e mais {len(queue) - 10} itens.</i>"
+
+    keyboard = [[InlineKeyboardButton("⬅️ Voltar", callback_data=CB_MONITOR_MENU)]]
+    await query.edit_message_text(texto, parse_mode=ParseMode.HTML, reply_markup=InlineKeyboardMarkup(keyboard))
+
+
 async def voltar_menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+
     """Retorna ao menu principal (/start)."""
     from bot.handlers.start import start_command
     query = update.callback_query

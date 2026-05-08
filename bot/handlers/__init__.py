@@ -49,7 +49,7 @@ from bot.handlers.offer_by_link import (
     CB_VOLTAR_PREVIA,         # NOVO
 )
 from bot.handlers.review_queue import handle_review_callback, handle_review_bulk_callback
-from bot.handlers.monitor import monitor_menu_handler, monitor_action_handler, voltar_menu_handler
+from bot.handlers.monitor import monitor_menu_handler, monitor_action_handler, monitor_view_queue, voltar_menu_handler
 from bot.utils.constants import (
     CB_PUBLICAR_MANUAL, CB_PUBLICAR_LINK, CB_CANCELAR_MENU,
     CB_CONFIRMAR, CB_REVIEW_APPROVE, CB_REVIEW_REJECT,
@@ -84,6 +84,7 @@ def build_main_handler() -> ConversationHandler:
             CallbackQueryHandler(review_corrigir_starter, pattern=r"^review_corrigir:"),
             CallbackQueryHandler(monitor_menu_handler,  pattern=f"^{CB_MONITOR_MENU}$"),
             CallbackQueryHandler(monitor_action_handler, pattern=r"^monitor_(start|stop|scrape_now)$"),
+            CallbackQueryHandler(monitor_view_queue, pattern=r"^monitor_view_queue$"),
             CallbackQueryHandler(menu_canais,           pattern=f"^{CB_GERENCIAR_CANAIS}$"),
             CallbackQueryHandler(btn_add_canal,         pattern=r"^add_chan$"),
             CallbackQueryHandler(btn_remover_canal,     pattern=r"^remove_chan\|"),
@@ -195,5 +196,5 @@ def build_review_queue_handler() -> CallbackQueryHandler:
     """Handler único para callbacks da fila de aprovação."""
     return CallbackQueryHandler(
         handle_review_callback,
-        pattern=r"^review_(aprovar|rejeitar|bulk|view|corrigir):"
+        pattern=r"^review_(aprovar|rejeitar|agendar|bulk|view|corrigir):"
     )

@@ -31,7 +31,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             InlineKeyboardButton("📲 WhatsApp", callback_data=CB_GERENCIAR_WHATS)
         ],
         [
-            InlineKeyboardButton("📊 Estatísticas", callback_data="stats_summary"),
+            InlineKeyboardButton("📊 Estatísticas (Dashboard /stats)", callback_data="stats_summary"),
             InlineKeyboardButton("❌ Fechar Menu", callback_data=CB_CANCELAR_MENU)
         ],
     ]

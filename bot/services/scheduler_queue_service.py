@@ -48,3 +48,7 @@ def get_next_from_queue() -> dict | None:
 
 def get_queue_size() -> int:
     return len(_load_queue())
+
+def get_full_queue() -> list:
+    return _load_queue()
+
