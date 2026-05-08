@@ -223,6 +223,10 @@ async def _run_scan(context, limit: int = 10, manual: bool = False, trigger_user
                     "⚠️ <i>O link será encurtado apenas ao publicar no canal.</i>"
                 )
 
+                # Prévia enviada AO ADMIN
+                # Se for busca manual (10 ofertas), removemos os botões individuais conforme solicitado
+                msg_reply_markup = None if manual else keyboard
+
                 for admin_id in ADMIN_IDS:
                     try:
                         if dados.get("image_url"):
@@ -231,14 +235,14 @@ async def _run_scan(context, limit: int = 10, manual: bool = False, trigger_user
                                 photo=dados["image_url"],
                                 caption=preview_text,
                                 parse_mode=ParseMode.HTML,
-                                reply_markup=keyboard,
+                                reply_markup=msg_reply_markup,
                             )
                         else:
                             await context.bot.send_message(
                                 chat_id=admin_id,
                                 text=preview_text,
                                 parse_mode=ParseMode.HTML,
-                                reply_markup=keyboard,
+                                reply_markup=msg_reply_markup,
                             )
                     except Exception as e:
                         logger.warning(f"[SCHEDULER] Falha ao notificar admin {admin_id}: {e}")
@@ -258,14 +262,15 @@ async def _run_scan(context, limit: int = 10, manual: bool = False, trigger_user
         if AUTO_APPROVE:
             status_msg = f"✅ <b>Varredura concluída!</b>\n{count} ofertas publicadas automaticamente."
         else:
-            status_msg = f"✅ <b>Varredura concluída!</b>\n{count} novas ofertas aguardando aprovação."
-            if pending_count > 0:
-                status_msg += f"\n\nTotal na fila de revisão: <b>{pending_count}</b>"
-                keyboard = InlineKeyboardMarkup([
-                    [InlineKeyboardButton("✅ Aprovar Todas", callback_data="review_bulk:approve_all")],
-                    [InlineKeyboardButton("🚫 Limpar Fila", callback_data="review_bulk:clear_all")],
-                    [InlineKeyboardButton("⬅️ Voltar ao Menu", callback_data="monitor_voltar")]
-                ])
+            # Personalização solicitada: exibir count/limit e menu de decisão
+            status_msg = f"✅ <b>{count}/{limit}</b>\n\nO que você deseja fazer?"
+            
+            keyboard = InlineKeyboardMarkup([
+                [InlineKeyboardButton("✅ Aprovar Todos", callback_data="review_bulk:approve_all")],
+                [InlineKeyboardButton("🔍 Revisar",       callback_data="review_view:0")],
+                [InlineKeyboardButton("🗑️ Limpar Fila",  callback_data="review_bulk:clear_all")],
+                [InlineKeyboardButton("⬅️ Voltar ao Menu", callback_data="monitor_voltar")]
+            ])
 
         if count == 0 and pending_count == 0:
             status_msg = "ℹ️ A varredura não encontrou novos itens ou todos já foram processados."
