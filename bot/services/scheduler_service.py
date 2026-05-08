@@ -88,7 +88,6 @@ async def _run_scan(context, limit: int = 10, manual: bool = False, trigger_user
         product_url: str = item["url"]
         source_name: str = item.get("source_name", "—")
 
-        if is_seen(product_url):
         # Pular se já foi visto OU se já está na fila de revisão
         if is_seen(product_url) or product_url in pending_urls:
             continue
