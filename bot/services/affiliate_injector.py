@@ -33,7 +33,17 @@ _IDS: dict[str, str] = {
 # ---------------------------------------------------------------------------
 
 def _inject_amazon(url: str, tag: str) -> str:
-    """Amazon: tag=ID"""
+    """Amazon: canonical /dp/ASIN?tag=ID"""
+    # Tenta extrair o ASIN (10 caracteres alfanuméricos)
+    # Tenta extrair o ASIN (10 caracteres alfanuméricos) de vários formatos comuns
+    asin_match = re.search(r"/(?:dp|gp/product|product-reviews|aw/d|vdp)/([A-Z0-9]{10})", url, re.I)
+    if asin_match:
+        asin = asin_match.group(1).upper()
+        # Força domínio .com.br para consistência se for Amazon Brasil
+        domain = "www.amazon.com.br" if "amazon.com.br" in url.lower() else "www.amazon.com"
+        return f"https://{domain}/dp/{asin}?tag={tag}"
+    
+    # Fallback se não achar ASIN: apenas garante a tag
     url = re.sub(r"[?&]tag=[^&]*", "", url)
     url = re.sub(r"\?&", "?", url).rstrip("?&")
     sep = "&" if "?" in url else "?"

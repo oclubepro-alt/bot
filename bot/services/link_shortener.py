@@ -26,6 +26,7 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 _BACKEND     = os.getenv("SHORTENER_BACKEND", "tinyurl").strip().lower()
+_DISABLE_AMAZON = os.getenv("DISABLE_SHORTENER_AMAZON", "true").strip().lower() in ("true", "1", "yes")
 _TIMEOUT     = 8   # segundos por chamada ao encurtador
 _MAX_RETRIES = 2
 
@@ -99,6 +100,10 @@ def shorten_url(url: str, *, force_backend: str | None = None) -> str:
 
     if backend in ("none", "direct"):
         logger.info("[SHORTENER] Encurtador desativado (direct). Retornando URL original.")
+        return url
+
+    if _DISABLE_AMAZON and "amazon.com" in url.lower():
+        logger.info("[SHORTENER] Encurtador ignorado para Amazon (config).")
         return url
 
     if backend == "tinyurl":

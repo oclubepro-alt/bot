@@ -169,14 +169,14 @@ def _gerar_copy_basica(
 
 
 def _build_previa_keyboard() -> InlineKeyboardMarkup:
-    """Teclado premium em 3 níveis conforme solicitado."""
+    """Teclado premium em 3 níveis: Postar, Corrigir (abre submenu), Cancelar."""
     buttons = [
         [InlineKeyboardButton("🚀 PUBLICAR NO CANAL", callback_data=CB_CONFIRMAR_LINK)],
         [
-            InlineKeyboardButton("✏️ Editar Copy", callback_data="edit_copy"),
-            InlineKeyboardButton("💰 Ajustar Preço",  callback_data="edit_preco"),
+            InlineKeyboardButton("✏️ Corrigir Oferta", callback_data="editar_oferta"),
+            InlineKeyboardButton("✨ IA Caption", callback_data="regen_ia"),
         ],
-        [InlineKeyboardButton("❌ Cancelar",  callback_data=CB_CANCELAR_OFERTA_LINK)],
+        [InlineKeyboardButton("❌ Cancelar", callback_data=CB_CANCELAR_OFERTA_LINK)],
     ]
     return InlineKeyboardMarkup(buttons)
 
@@ -246,10 +246,10 @@ async def _send_previa(message, context: ContextTypes.DEFAULT_TYPE) -> int:
 
             # Ajusta preço PIX na copy
             if is_pix:
-                copy_canal = copy_canal.replace(
-                    "💰 <b>Preço:</b>",
-                    "💰 <b>Preço no PIX:</b>",
-                )
+                # build_copy usa "💰 <b>Por: XXX</b>"
+                search_str = f"💰 <b>Por: {_escape_html(preco)}</b>"
+                replace_str = f"💰 <b>Por: {_escape_html(preco)} no PIX</b> 💳"
+                copy_canal = copy_canal.replace(search_str, replace_str)
 
             # Acrescenta cupom
             if cupom:
@@ -353,6 +353,39 @@ async def _gerar_e_enviar_previa(update: Update, context: ContextTypes.DEFAULT_T
     return await _send_previa(update.message, context)
 
 
+async def review_corrigir_starter(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """
+    Entry point especial para o fluxo de correção vindo da fila de revisão.
+    Sincroniza os dados da fila para o user_data e abre a prévia.
+    """
+    query = update.callback_query
+    await query.answer()
+    
+    # Extrai o ID da oferta: review_corrigir:ID
+    parts = query.data.split(":", 1)
+    offer_id = parts[1] if len(parts) > 1 else None
+    
+    pending = context.bot_data.get("pending_offers", {})
+    offer = pending.get(offer_id)
+    
+    if not offer:
+        await query.edit_message_text("⚠️ Oferta não encontrada ou já processada.")
+        return ConversationHandler.END
+        
+    logger.info(f"[OFERTA_LINK] Admin {query.from_user.id} corrigindo oferta da FILA: {offer_id}")
+    
+    # Popula o user_data com os dados da oferta pendente
+    context.user_data["dados_produto"] = offer.get("dados_produto", {})
+    context.user_data["store_key"]     = offer.get("store_key", "amazon")
+    context.user_data["affiliate_url"] = offer.get("affiliate_url")
+    context.user_data["cupom"]         = offer.get("cupom")
+    context.user_data["is_review"]     = True
+    context.user_data["review_offer_id"] = offer_id
+    
+    # Redireciona para o fluxo de prévia
+    return await _send_previa(query.message, context)
+
+
 # ============================================================================
 # ENTRADA DO FLUXO
 # ============================================================================
@@ -417,9 +450,9 @@ async def receber_link_produto(update: Update, context: ContextTypes.DEFAULT_TYP
                 "📡 <b>Resolvendo link encurtado...</b>",
                 parse_mode=ParseMode.HTML
             )
-            from bot.services.affiliate_link_service import resolve_url_playwright
-            logger.info(f"[OFERTA_LINK] Resolvendo shortener via Playwright: {original_link}")
-            final_url = await resolve_url_playwright(original_link)
+            from bot.services.affiliate_link_service import resolve_short_url_httpx
+            logger.info(f"[OFERTA_LINK] Resolvendo shortener via HTTPX: {original_link}")
+            final_url = await resolve_short_url_httpx(original_link)
         except Exception as e:
             logger.warning(f"[OFERTA_LINK] Playwright falhou ao resolver: {e}")
 
@@ -703,7 +736,10 @@ async def confirmar_envio_link(update: Update, context: ContextTypes.DEFAULT_TYP
             # Aplica PIX e cupom na copy final
             tg = copies_final.get("telegram", "")
             if is_pix:
-                tg = tg.replace("💰 <b>Preço:</b>", "💰 <b>Preço no PIX:</b>")
+                # build_copy usa "💰 <b>Por: XXX</b>"
+                search_str = f"💰 <b>Por: {_escape_html(preco)}</b>"
+                replace_str = f"💰 <b>Por: {_escape_html(preco)} no PIX</b> 💳"
+                tg = tg.replace(search_str, replace_str)
             if cupom:
                 tg += f"\n\n🎟️ Use o cupom: <b>{_escape_html(cupom)}</b>"
 
@@ -728,6 +764,17 @@ async def confirmar_envio_link(update: Update, context: ContextTypes.DEFAULT_TYP
         from bot.services.publisher_router import publish_offer
         logger.info(f"[OFERTA_LINK] Chamando publish_offer (imagem={'sim' if img_url else 'não'})...")
         await publish_offer(context.bot, copies_final, img_url)
+
+        # ── Limpeza da Fila de Revisão (se aplicável) ────────────────────────
+        if context.user_data.get("is_review"):
+            oid = context.user_data.get("review_offer_id")
+            pending = context.bot_data.get("pending_offers", {})
+            if oid and oid in pending:
+                pending.pop(oid)
+                context.bot_data["pending_offers"] = pending
+                from bot.utils.review_store import save_review_queue
+                save_review_queue(pending)
+                logger.info(f"[OFERTA_LINK] Oferta {oid} removida da fila após correção.")
 
         keyboard = InlineKeyboardMarkup([
             [InlineKeyboardButton("🔗 Publicar Outro Link", callback_data=CB_PUBLICAR_LINK)],

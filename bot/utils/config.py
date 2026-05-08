@@ -87,9 +87,20 @@ except ValueError:
     logger.warning("[CONFIG] MONITOR_INTERVAL_MINUTES inválido, usando 60 minutos.")
 
 # Se True, publica automaticamente sem aguardar aprovação do admin. (Fase 4)
+# PADRÃO DE SEGURANÇA: false — admin revisa cada oferta antes de publicar
+# Para mudar: defina AUTO_APPROVE=true no Railway (ou .env)
 _raw_auto = os.getenv("AUTO_APPROVE", "false").strip().lower()
 AUTO_APPROVE: bool = _raw_auto in ("1", "true", "yes")
 
 SCRAPERAPI_KEY: str = os.getenv("SCRAPERAPI_KEY", "").strip()
+
+if AUTO_APPROVE:
+    logger.warning(
+        "[CONFIG] ⚠️  AUTO_APPROVE=true — ATENÇÃO: as ofertas do monitoramento "
+        "serão publicadas AUTOMATICAMENTE no canal SEM revisão do admin! "
+        "Para revisão manual, defina AUTO_APPROVE=false no Railway."
+    )
+else:
+    logger.info("[CONFIG] ✅ AUTO_APPROVE=false — todas as ofertas passarão pela revisão do admin.")
 
 logger.info(f"[CONFIG] Scheduler: a cada {MONITOR_INTERVAL_MINUTES} min | Auto-approve: {AUTO_APPROVE}")

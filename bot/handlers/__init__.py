@@ -12,6 +12,7 @@ from bot.handlers.offer import (
 from bot.handlers.offer_by_link import (
     # Handlers de entrada e fluxo base
     start_offer_by_link,
+    review_corrigir_starter,
     receber_link_produto,
     preencher_nome_faltante,
     preencher_preco_faltante,
@@ -79,7 +80,8 @@ def build_main_handler() -> ConversationHandler:
             CommandHandler("test_link", test_link_command),
             CallbackQueryHandler(start_command, pattern=f"^({CB_VOLTAR_MENU}|{CB_MENU_PRINCIPAL})$"),
             CallbackQueryHandler(start_offer_manual,   pattern=f"^{CB_PUBLICAR_MANUAL}$"),
-            CallbackQueryHandler(start_offer_by_link,  pattern=f"^{CB_PUBLICAR_LINK}$"),
+            CallbackQueryHandler(start_offer_by_link,    pattern=f"^{CB_PUBLICAR_LINK}$"),
+            CallbackQueryHandler(review_corrigir_starter, pattern=r"^review_corrigir:"),
             CallbackQueryHandler(monitor_menu_handler,  pattern=f"^{CB_MONITOR_MENU}$"),
             CallbackQueryHandler(monitor_action_handler, pattern=r"^monitor_(start|stop|scrape_now)$"),
             CallbackQueryHandler(menu_canais,           pattern=f"^{CB_GERENCIAR_CANAIS}$"),

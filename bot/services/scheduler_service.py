@@ -16,7 +16,7 @@ from bot.utils.config import ADMIN_IDS, MONITOR_INTERVAL_MINUTES, AUTO_APPROVE
 from bot.services.source_monitor import scan_sources
 from bot.services.product_extractor_v2 import extract_product_data_v2
 from bot.services.ai_writer import generate_caption
-from bot.services.affiliate_links import get_final_link
+from bot.services.affiliate_link_service import injetar_link_afiliado
 from bot.services.dedup_store import is_seen, mark_seen
 from bot.services.affiliate_links import resolve_final_url
 from bot.utils.formatter import escape_html
@@ -35,9 +35,13 @@ async def _run_scan(context, limit: int = 10, manual: bool = False, trigger_user
     Retorna o total de itens processados com sucesso.
     """
     logger.info(f"[SCHEDULER] Iniciando varredura das fontes (limite pedido: {limit})...")
+    if AUTO_APPROVE:
+        logger.warning("[SCHEDULER] ⚠️  MODO AUTO-APPROVE: ofertas irão DIRETO ao canal sem revisão!")
+    else:
+        logger.info("[SCHEDULER] ✅ MODO REVISÃO: ofertas aguardarão aprovação do admin.")
     
     # Feedback inicial para o usuário no modo manual
-    if manual and trigger_user_id:
+    if trigger_user_id:
         try:
             await context.bot.send_message(
                 chat_id=trigger_user_id,
@@ -55,13 +59,13 @@ async def _run_scan(context, limit: int = 10, manual: bool = False, trigger_user
         all_found_items = await scan_sources()
     except Exception as e:
         logger.error(f"[SCHEDULER] Erro ao escanear fontes: {e}")
-        if manual and trigger_user_id:
+        if trigger_user_id:
             await context.bot.send_message(chat_id=trigger_user_id, text=f"❌ Erro ao escanear fontes: {e}")
         return 0
 
     if not all_found_items:
         logger.info("[SCHEDULER] Nenhum item novo encontrado nesta rodada.")
-        if manual and trigger_user_id:
+        if trigger_user_id:
             await context.bot.send_message(chat_id=trigger_user_id, text="ℹ️ Nenhuma oferta nova encontrada nas fontes cadastradas.")
         return 0
 
@@ -96,15 +100,15 @@ async def _run_scan(context, limit: int = 10, manual: bool = False, trigger_user
             dados["image_url"] = dados.get("imagem")
             dados["loja"] = dados.get("store", "Loja")
 
-            # 2. Injeção de Afiliado e Encurtamento (Síncrono -> Thread)
+            # 2. Injeção de Afiliado (NUNCA encurtar aqui — link longo preserva tag)
             store_key = dados.get("store_key", "other")
-            affiliate_url = await asyncio.to_thread(
-                get_affiliate_url,
-                original_url=product_url,
-                resolved_url=dados.get("final_url"),
+            affiliate_url = await injetar_link_afiliado(
+                url=dados.get("final_url", product_url),
                 store_key=store_key
             )
-            final_link = await asyncio.to_thread(shorten_for_publication, affiliate_url)
+            # IMPORTANTE: encurtamento ocorre SOMENTE na publicação final
+            # Aqui guardamos o link longo para garantir rastreabilidade da tag
+            logger.info(f"[SCHEDULER] Link afiliado gerado (longo): {affiliate_url[:80]}")
 
             # 3. Geração de Copy IA (Já é async)
             copy_ia = await generate_caption(
@@ -114,9 +118,14 @@ async def _run_scan(context, limit: int = 10, manual: bool = False, trigger_user
                 descricao=dados.get("descricao")
             )
 
-            # 4. Publicação (Etapa 5)
-            if manual or AUTO_APPROVE:
-                logger.info(f"[SCHEDULER] Publicando direto no CANAL: '{dados['title'][:40]}'")
+            # 4. Publicação ou Fila de Revisão
+            # AUTO_APPROVE=true → publica direto (encurta aqui)
+            # AUTO_APPROVE=false → manda para o admin aprovar (NÃO encurta ainda)
+            if AUTO_APPROVE:
+                logger.info(f"[SCHEDULER] AUTO_APPROVE ativo — publicando direto: '{dados['title'][:40]}'")
+                
+                # Encurta APENAS aqui, na publicação direta
+                final_link = await asyncio.to_thread(shorten_for_publication, affiliate_url)
                 
                 from bot.services.copy_builder import build_copy
                 copies = build_copy(
@@ -135,64 +144,103 @@ async def _run_scan(context, limit: int = 10, manual: bool = False, trigger_user
                 count += 1
                 
                 logger.info("[SCHEDULER] Aguardando 3s para evitar rate limit...")
-                await asyncio.sleep(3) 
+                await asyncio.sleep(3)
 
             else:
-                # Modo de Aprovação Manual
+                # ── MODO DE APROVAÇÃO MANUAL ─────────────────────────────────
+                # O link afiliado LONGO (com tag) é guardado na fila.
+                # O encurtamento OCORRE SOMENTE quando o admin clica Aprovar.
                 offer_id = uuid.uuid4().hex[:12]
                 if "pending_offers" not in context.bot_data:
                     context.bot_data["pending_offers"] = {}
 
+                # Copy de prévia usa o link longo (para o admin auditar a tag)
                 from bot.services.copy_builder import build_copy
-                copies = build_copy(
+                copies_preview = build_copy(
                     nome=dados["title"],
                     preco=dados.get("preco", "Preço não disponível"),
                     loja=dados.get("loja", "Loja"),
                     store_key=store_key,
-                    short_url=final_link,
+                    short_url=affiliate_url,   # ← link longo na prévia
                     legenda_ia=copy_ia,
                     preco_original=dados.get("preco_original"),
                     cupom=dados.get("cupom")
                 )
 
                 context.bot_data["pending_offers"][offer_id] = {
-                    "product_url": product_url,
-                    "mensagem":    copies["telegram"],
-                    "copies":      copies,
-                    "imagem":      dados.get("image_url"),
-                    "nome":        dados["title"],
+                    "product_url":   product_url,
+                    "mensagem":      copies_preview["telegram"],
+                    "copies":        copies_preview,
+                    "imagem":        dados.get("image_url"),
+                    "nome":          dados["title"],
+                    "affiliate_url": affiliate_url,   # link longo COM tag
+                    "store_key":     store_key,
+                    "cupom":         dados.get("cupom"),
+                    "copy_ia":       copy_ia,
+                    "dados_produto": {
+                        "titulo":        dados["title"],
+                        "preco":         dados.get("preco", "Preço não disponível"),
+                        "preco_original":dados.get("preco_original"),
+                        "imagem":        dados.get("image_url"),
+                        "store":         dados.get("loja", "Amazon"),
+                    },
                 }
 
+                # Salva na fila persistente
+                from bot.utils.review_store import save_review_queue
+                save_review_queue(context.bot_data["pending_offers"])
+
                 keyboard = InlineKeyboardMarkup([
-                    [InlineKeyboardButton("✅ Aprovar", callback_data=f"review_aprovar:{offer_id}"),
-                     InlineKeyboardButton("❌ Rejeitar", callback_data=f"review_rejeitar:{offer_id}")]
+                    [
+                        InlineKeyboardButton("✅ Aprovar",  callback_data=f"review_aprovar:{offer_id}"),
+                        InlineKeyboardButton("❌ Rejeitar", callback_data=f"review_rejeitar:{offer_id}"),
+                    ],
+                    [InlineKeyboardButton("✏️ Corrigir",   callback_data=f"review_corrigir:{offer_id}")],
                 ])
 
+                # Prévia enviada AO ADMIN — mostra link longo para conferir a tag
                 preview_text = (
-                    f"💎 <b>OFERTA DESCOBERTA — {source_name}</b>\n\n"
-                    f"{copies['telegram']}\n\n"
-                    "━━━━━━━━━━━━━━━\n"
-                    f"🔗 <b>Link para conferência:</b>\n"
-                    f"<code>{final_link}</code>"
+                    f"🔎 <b>OFERTA ENCONTRADA</b> — <i>{escape_html(source_name)}</i>\n"
+                    "━━━━━━━━━━━━━━━━━━━━━\n"
+                    f"📦 <b>{escape_html(dados['title'])}</b>\n"
+                    f"💰 <b>Preço:</b> {escape_html(dados.get('preco', '—'))}"
+                    + (f"  <s>{escape_html(dados.get('preco_original', ''))}</s>" if dados.get('preco_original') else "") + "\n"
+                    + (f"🎟️ <b>Cupom:</b> <code>{escape_html(dados.get('cupom', ''))}</code>\n" if dados.get('cupom') else "")
+                    + "\n"
+                    f"🔗 <b>Link (com sua tag):</b>\n"
+                    f"<code>{escape_html(affiliate_url)}</code>\n\n"
+                    "⚠️ <i>O link será encurtado apenas ao publicar no canal.</i>"
                 )
-
 
                 for admin_id in ADMIN_IDS:
                     try:
                         if dados.get("image_url"):
-                            await context.bot.send_photo(chat_id=admin_id, photo=dados["image_url"], caption=preview_text, parse_mode=ParseMode.HTML, reply_markup=keyboard)
+                            await context.bot.send_photo(
+                                chat_id=admin_id,
+                                photo=dados["image_url"],
+                                caption=preview_text,
+                                parse_mode=ParseMode.HTML,
+                                reply_markup=keyboard,
+                            )
                         else:
-                            await context.bot.send_message(chat_id=admin_id, text=preview_text, parse_mode=ParseMode.HTML, reply_markup=keyboard)
-                    except Exception: pass
-                
-                mark_seen(product_url)
+                            await context.bot.send_message(
+                                chat_id=admin_id,
+                                text=preview_text,
+                                parse_mode=ParseMode.HTML,
+                                reply_markup=keyboard,
+                            )
+                    except Exception as e:
+                        logger.warning(f"[SCHEDULER] Falha ao notificar admin {admin_id}: {e}")
+
+                # NOTA: mark_seen é chamado APENAS após aprovação (em review_queue.py)
+                # Aqui NÃO marcamos como visto para permitir reprocessamento se rejeitado
                 count += 1
-                await asyncio.sleep(1) 
+                await asyncio.sleep(1)
 
         except Exception as e:
             logger.error(f"[SCHEDULER] Falha crítica ao processar item {product_url}: {e}", exc_info=True)
 
-    if manual and trigger_user_id:
+    if trigger_user_id:
         pending_count = len(context.bot_data.get("pending_offers", {}))
         keyboard = None
         
@@ -219,8 +267,10 @@ async def _run_scan(context, limit: int = 10, manual: bool = False, trigger_user
             reply_markup=keyboard
         )
 
+
     logger.info(f"[SCHEDULER] Varredura finalizada. Total processado: {count}/{limit}")
     return count
+
 
 
 def is_monitor_active(app: Application) -> bool:

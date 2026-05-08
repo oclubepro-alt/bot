@@ -16,6 +16,8 @@ from bot.utils.constants import CB_REVIEW_APPROVE, CB_REVIEW_REJECT, CB_MENU_PRI
 from bot.services.dedup_store import mark_seen
 from bot.services.publisher_router import publish_offer
 from bot.utils.review_store import save_review_queue
+from bot.services.link_shortener import shorten_for_publication
+from bot.services.copy_builder import build_copy
 
 logger = logging.getLogger(__name__)
 
@@ -52,40 +54,85 @@ async def handle_review_callback(
         return
 
     product_url: str = offer.get("product_url", "")
-    copies: dict | str = offer.get("copies") or offer.get("mensagem", "")
     imagem: str | None = offer.get("imagem")
     nome: str = offer.get("nome", "produto")
+    affiliate_url: str = offer.get("affiliate_url", "")
 
     if action == CB_REVIEW_APPROVE:
         logger.info(f"[REVIEW] Admin {query.from_user.id} APROVOU oferta: '{nome}'")
         try:
-            await publish_offer(context.bot, copies, imagem)
+            # Encurta o link AGORA (apenas no momento da publicação no canal)
+            logger.info(f"[REVIEW] Encurtando link: {affiliate_url[:60]}")
+            short_url = await asyncio.to_thread(shorten_for_publication, affiliate_url)
+            logger.info(f"[REVIEW] Link encurtado: {short_url}")
+
+            # Reconstrói a copy com o link curto para o canal
+            dados = offer.get("dados_produto", {})
+            store_key = offer.get("store_key", "amazon")
+            copy_ia   = offer.get("copy_ia")
+            copies_final = build_copy(
+                nome=dados.get("titulo", nome),
+                preco=dados.get("preco", "Preço não disponível"),
+                loja=dados.get("store", "Loja"),
+                store_key=store_key,
+                short_url=short_url,
+                legenda_ia=copy_ia,
+                preco_original=dados.get("preco_original"),
+                cupom=offer.get("cupom"),
+            )
+
+            await publish_offer(context.bot, copies_final, imagem)
             mark_seen(product_url)
 
-            success_text = f"✅ <b>Oferta publicada no canal!</b>\n\n🔹 <b>Produto:</b> {nome}"
+            success_text = (
+                f"✅ <b>Publicado no canal!</b>\n"
+                f"🔹 <b>Produto:</b> {nome}\n"
+                f"🔗 <b>Link:</b> <code>{short_url}</code>"
+            )
             back_keyboard = InlineKeyboardMarkup([[
                 InlineKeyboardButton("⬅️ Voltar ao Menu", callback_data=CB_MENU_PRINCIPAL)
             ]])
             if imagem:
                 await query.message.delete()
-                await context.bot.send_message(chat_id=query.message.chat_id, text=success_text, parse_mode=ParseMode.HTML, reply_markup=back_keyboard)
+                await context.bot.send_message(
+                    chat_id=query.message.chat_id,
+                    text=success_text,
+                    parse_mode=ParseMode.HTML,
+                    reply_markup=back_keyboard,
+                )
             else:
-                await query.edit_message_text(success_text, parse_mode=ParseMode.HTML, reply_markup=back_keyboard)
+                await query.edit_message_text(
+                    success_text,
+                    parse_mode=ParseMode.HTML,
+                    reply_markup=back_keyboard,
+                )
 
         except Exception as e:
-            logger.error(f"[REVIEW] Erro ao publicar: {e}")
-            await context.bot.send_message(chat_id=query.message.chat_id, text=f"❌ Erro ao publicar: {e}")
+            logger.error(f"[REVIEW] Erro ao publicar: {e}", exc_info=True)
+            await context.bot.send_message(
+                chat_id=query.message.chat_id,
+                text=f"❌ Erro ao publicar: {e}",
+            )
 
     elif action == CB_REVIEW_REJECT:
         logger.info(f"[REVIEW] Admin {query.from_user.id} REJEITOU oferta: '{nome}'")
-        mark_seen(product_url)
+        mark_seen(product_url)  # marca como visto para não reaparecer na varredura
         reject_text = f"❌ <b>Oferta rejeitada.</b> <code>{nome}</code>"
         back_keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Voltar ao Menu", callback_data=CB_MENU_PRINCIPAL)]])
         if imagem:
             await query.message.delete()
-            await context.bot.send_message(chat_id=query.message.chat_id, text=reject_text, parse_mode=ParseMode.HTML, reply_markup=back_keyboard)
+            await context.bot.send_message(
+                chat_id=query.message.chat_id,
+                text=reject_text,
+                parse_mode=ParseMode.HTML,
+                reply_markup=back_keyboard,
+            )
         else:
-            await query.edit_message_text(reject_text, parse_mode=ParseMode.HTML, reply_markup=back_keyboard)
+            await query.edit_message_text(
+                reject_text,
+                parse_mode=ParseMode.HTML,
+                reply_markup=back_keyboard,
+            )
 
     # Remove da fila apenas se for ação individual
     if action in [CB_REVIEW_APPROVE, CB_REVIEW_REJECT]:
@@ -141,9 +188,28 @@ async def handle_review_bulk_callback(
             if not offer: continue
             
             try:
-                # Usa copies se disponível (Fase 4/5)
-                msg_to_pub = offer.get("copies") or offer.get("mensagem")
-                await publish_offer(context.bot, msg_to_pub, offer.get("imagem"))
+                # Encurta o link afiliado (longo) antes de publicar
+                aff_url = offer.get("affiliate_url", "")
+                short_url = await asyncio.to_thread(shorten_for_publication, aff_url) if aff_url else ""
+
+                # Reconstrói a copy com o link curto
+                dados     = offer.get("dados_produto", {})
+                store_key = offer.get("store_key", "amazon")
+                copy_ia   = offer.get("copy_ia")
+                nome_offer = offer.get("nome", "produto")
+
+                copies_final = build_copy(
+                    nome=dados.get("titulo", nome_offer),
+                    preco=dados.get("preco", "Preço não disponível"),
+                    loja=dados.get("store", "Loja"),
+                    store_key=store_key,
+                    short_url=short_url or aff_url,
+                    legenda_ia=copy_ia,
+                    preco_original=dados.get("preco_original"),
+                    cupom=offer.get("cupom"),
+                )
+
+                await publish_offer(context.bot, copies_final, offer.get("imagem"))
                 mark_seen(offer.get("product_url", ""))
                 success_count += 1
                 # Pequeno delay para evitar rate limit

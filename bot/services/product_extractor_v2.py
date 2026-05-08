@@ -575,18 +575,17 @@ def _is_valid_price_tag(tag) -> bool:
     # Exclui se está dentro de elemento de preço riscado (mas só nas baixas-confiança)
     # Nota: a-text-price é o container do preço original na Amazon
     if "a-text-price" in parent_classes or "a-text-price" in grandparent_classes:
-        # Permite apenas se também tiver 'priceToPay' no contexto (é o preço real)
-        has_price_to_pay = (
-            "priceToPay" in parent_classes or
-            "priceToPay" in grandparent_classes or
-            (grandparent and grandparent.parent and 
-             "priceToPay" in set(grandparent.parent.get("class") or []))
-        )
-        if not has_price_to_pay:
+        # Permite apenas se também tiver 'priceToPay' ou 'apexPriceToPay' no contexto (é o preço real)
+        valid_contexts = {"priceToPay", "apexPriceToPay", "priceToBuy"}
+        has_valid_context = any(c in parent_classes or c in grandparent_classes for c in valid_contexts)
+        if not has_valid_context:
             return False
 
-    # Sobe até 5 níveis para buscar contexto de 'unidade'
-    text_context = tag.get_text(strip=True).lower()
+    texto = tag.get_text(strip=True)
+    classes = tag.get("class") or []
+
+    # Sobe até 5 níveis para buscar contexto de 'unidade' (Amazon pattern)
+    text_context = texto.lower()
     p = tag.parent
     for _ in range(5):
         if p is None: break
@@ -595,13 +594,27 @@ def _is_valid_price_tag(tag) -> bool:
         text_context += " " + direct_text
         p = p.parent
     
-    # Palavras-chave que indicam preço unitário (Amazon / ML / Magalu)
-    unit_keywords = [
-        "/ unidade", "/unidade", "por unidade", "/ unit",
-        "por ml", "por kg", "por g ", "por metro", "/m ", " cada",
-        "preço por", "valor por", " unid", "(unid", "por litro", "por l "
+    # 1. Filtro de palavras banidas (preço por unidade, etc)
+    blacklist = [
+        "cada", "unidade", "litro", "metro", " kg", " g", " ml", " pç", " p/ ", "por ", 
+        "frete", "entrega", "parcela", "juros", "mês", "ano", "dia", "semana", 
+        "estoque", "disponível", "vendido", "entregue", "preço", "valor", "oferta",
+        "/ unidade", "/unidade", "por unidade", "/ unit", "/ unit", "/m ", " unid", 
+        "valor do grama", "valor do ml", "valor do kg"
     ]
-    return not any(k in text_context for k in unit_keywords)
+    for term in blacklist:
+        if term in text_context:
+            return False
+
+    # 2. Filtro de Classes CSS
+    bad_classes = [
+        "a-text-price", "a-offscreen", "basisPrice", "listPrice", "unitPrice", 
+        "price-per-unit", "a-size-small", "a-color-secondary", "strikethrough"
+    ]
+    if any(c in bad_classes for c in classes):
+        return False
+        
+    return True
 
 
 def _extract_price_amazon(soup: BeautifulSoup) -> tuple[str | None, str | None]:
@@ -662,14 +675,19 @@ def _extract_price_amazon(soup: BeautifulSoup) -> tuple[str | None, str | None]:
             ".a-price.priceToPay .a-offscreen",
             "#corePrice_feature_div .priceToPay .a-offscreen",
             "#corePriceDisplay_desktop_feature_div .priceToPay .a-offscreen",
+            ".a-price.apexPriceToPay .a-offscreen",
+            "#corePrice_desktop .a-offscreen",
             "#priceblock_dealprice",
             "#priceblock_ourprice",
             "#price_inside_buybox",
-            # Seletores de média confiança (podem pegar preço riscado se .priceToPay falhar)
+            ".buybox-price",
+            # Seletores de média confiança
             "#corePrice_feature_div .a-offscreen",
             "#corePriceDisplay_desktop_feature_div .a-offscreen",
-            # Fallback genérico (baixa confiança — só se tudo acima falhar)
+            ".a-price:not(.a-text-price) .a-offscreen",
+            "#corePrice_desktop .a-price-whole",
             "#corePrice_feature_div .a-price-whole",
+            ".a-size-base.a-color-price",
         ]
         for sel in promo_selectors:
             for tag in soup.select(sel):
@@ -1060,7 +1078,7 @@ async def get_page_html(url: str) -> tuple[str | None, str]:
                     html_lower = html.lower()
                     
                     # Detectar CAPTCHA/Bloqueio no conteúdo (Radware, etc)
-                    bloqueios = ["radware", "captcha", "robot", "blocked", "access denied", "unusual traffic", "verify you are human"]
+                    bloqueios = ["radware", "captcha", "robot", "blocked", "access denied", "unusual traffic", "verify you are human", "desculpe! algo deu errado"]
                     found_block = None
                     for termo in bloqueios:
                         if termo in html_lower:
@@ -1071,13 +1089,15 @@ async def get_page_html(url: str) -> tuple[str | None, str]:
                         logger.info(f"[SCRAPERAPI] ✅ Sucesso ({len(html)} chars)")
                         return html, "SCRAPERAPI"
                     else:
-                        logger.warning(f"[SCRAPERAPI] ❌ BLOQUEIO DETECTADO: '{found_block}' — indo para Playwright")
+                        logger.warning(f"[SCRAPERAPI] ❌ BLOQUEIO DETECTADO no conteúdo: '{found_block}'")
                 else:
                     logger.warning(f"[SCRAPERAPI] ❌ Falhou com status {resp.status_code}: {resp.text[:200]}")
-                    if resp.status_code in [403, 500]:
-                        logger.warning("[SCRAPERAPI] ⚠️ Plano pode precisar de upgrade para suportar 'ultra_premium' ou 'premium'. Caindo pro Playwright.")
+                    if resp.status_code == 403:
+                        logger.error("[SCRAPERAPI] 🚨 403 Forbidden: Verifique sua chave ou limite de créditos/plano.")
+                    elif resp.status_code == 429:
+                        logger.error("[SCRAPERAPI] 🚨 429 Too Many Requests: Limite de concorrência atingido.")
         except Exception as e:
-            logger.warning(f"[SCRAPERAPI] ❌ Exceção: {str(e)[:100]}")
+            logger.warning(f"[SCRAPERAPI] ❌ Exceção: {str(e)[:150]}")
 
     # ── TENTATIVA 2: Requests Simples (Sem Playwright/Google Chrome) ──────
     try:
@@ -1119,26 +1139,15 @@ def _normalize_amazon_url(url: str) -> str:
     if not url or "amazon" not in url.lower():
         return url
 
-    # Padrões para capturar ASIN (10 caracteres alfanuméricos)
-    _ASIN_PATTERNS = [
-        r"/dp/([A-Z0-9]{10})",
-        r"/gp/product/([A-Z0-9]{10})",
-        r"/gp/aw/d/([A-Z0-9]{10})",
-        r"/exec/obidos/ASIN/([A-Z0-9]{10})",
-        r"/exec/obidos/tg/detail/-/([A-Z0-9]{10})",
-        r"/o/ASIN/([A-Z0-9]{10})",
-        r"[?&]asin=([A-Z0-9]{10})",
-        r"/([A-Z0-9]{10})(?:[/?#]|$)",  # fallback genérico
-    ]
-
-    for pattern in _ASIN_PATTERNS:
-        m = re.search(pattern, url, re.IGNORECASE)
-        if m:
-            asin = m.group(1).upper()
-            clean = f"https://www.amazon.com.br/dp/{asin}"
-            if clean != url:
-                logger.info(f"[AMAZON_NORM] ASIN extraído: {asin} → {clean}")
-            return clean
+    # Tenta extrair o ASIN (10 caracteres alfanuméricos) de vários formatos comuns
+    asin_match = re.search(r"/(?:dp|gp/product|product-reviews|aw/d|vdp)/([A-Z0-9]{10})", url, re.I)
+    if asin_match:
+        asin = asin_match.group(1).upper()
+        # Força domínio .com.br para consistência se for Amazon Brasil
+        domain = "www.amazon.com.br" if "amazon.com.br" in url.lower() else "www.amazon.com"
+        clean = f"https://{domain}/dp/{asin}"
+        logger.info(f"[AMAZON_NORM] ASIN extraído: {asin} -> {clean}")
+        return clean
 
     # Sem ASIN identificado — retorna original
     logger.debug(f"[AMAZON_NORM] Nenhum ASIN encontrado em: {url[:80]}")

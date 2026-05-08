@@ -14,24 +14,44 @@ from dotenv import load_dotenv
 load_dotenv()
 logger = logging.getLogger(__name__)
 
-# Global para fácil acesso e exportação
-_AFFILIATE_IDS = {
-    "amazon":       os.getenv("AFFILIATE_ID_AMAZON", "").strip(),
-    "mercadolivre": os.getenv("AFFILIATE_ID_ML", "").strip(),
-    "magalu":       os.getenv("AFFILIATE_ID_MAGALU", "").strip(),
-    "netshoes":     os.getenv("AFFILIATE_ID_NETSHOES", "").strip(),
-    "shopee":       os.getenv("AFFILIATE_ID_SHOPEE", "").strip(),
-}
+from bot.utils.affiliate_store import get_affiliate
+
+def get_effective_affiliate_id(store_key: str) -> str:
+    """
+    Retorna o ID de afiliado priorizando o configurado via menu (JSON) 
+    e usando o .env como fallback.
+    """
+    # 1. Tenta do JSON (configurado via menu /config_afiliado)
+    config = get_affiliate(store_key)
+    val = config.get("tag") if store_key == "amazon" else config.get("affiliate_url")
+    if val:
+        return val.strip()
+    
+    # 2. Fallback para .env
+    env_map = {
+        "amazon":       "AFFILIATE_ID_AMAZON",
+        "mercadolivre": "AFFILIATE_ID_ML",
+        "magalu":       "AFFILIATE_ID_MAGALU",
+        "netshoes":     "AFFILIATE_ID_NETSHOES",
+        "shopee":       "AFFILIATE_ID_SHOPEE",
+    }
+    env_var = env_map.get(store_key)
+    if env_var:
+        return os.getenv(env_var, "").strip()
+    
+    return ""
 
 def log_config_status():
     """Útil para diagnóstico no console."""
     logger.info("─── AFILIADOS: STATUS DA CONFIGURAÇÃO ───")
-    for store, aid in _AFFILIATE_IDS.items():
+    stores = ["amazon", "mercadolivre", "magalu", "netshoes", "shopee"]
+    for store in stores:
+        aid = get_effective_affiliate_id(store)
         if aid:
             masked = aid[:4] + "***" + aid[-4:] if len(aid) > 8 else aid
             logger.info(f"✅ {store.upper()}: Conectado ({masked})")
         else:
-            logger.warning(f"❌ {store.upper()}: ID ausente no .env (não funcionará)")
+            logger.warning(f"❌ {store.upper()}: ID não configurado (use /config_afiliado)")
 
 # Executa log no startup
 log_config_status()
@@ -78,15 +98,26 @@ def _detectar_loja(url: str) -> str:
 
 def _injetar_amazon(url: str, tag: str) -> str:
     """
-    Substitui ou adiciona tag= usando urllib.parse.
-    Garante que a tag correta sempre esteja presente.
+    Amazon: canonical /dp/ASIN?tag=ID.
+    Extrai o ASIN e força o formato canônico para evitar parâmetros de rastreio de terceiros.
     """
+    # Tenta extrair o ASIN (10 caracteres alfanuméricos)
+    asin_match = re.search(r"/(?:dp|gp/product|product-reviews|aw/d|vdp)/([A-Z0-9]{10})", url, re.I)
+    if asin_match:
+        asin = asin_match.group(1).upper()
+        # Força domínio .com.br para consistência se for Amazon Brasil
+        domain = "www.amazon.com.br" if "amazon.com.br" in url.lower() else "www.amazon.com"
+        resultado = f"https://{domain}/dp/{asin}?tag={tag}"
+        logger.info(f"[AFFILIATE_SERVICE] Amazon (Canonical) | ASIN={asin} | tag={tag}")
+        return resultado
+    
+    # Fallback: apenas garante a tag via urllib.parse se o ASIN falhar
     parsed = urlparse(url)
     params = parse_qs(parsed.query, keep_blank_values=True)
-    params["tag"] = [tag]  # Substitui qualquer tag existente
+    params["tag"] = [tag]
     nova_query = urlencode(params, doseq=True)
     resultado = urlunparse(parsed._replace(query=nova_query))
-    logger.info(f"[AFFILIATE_SERVICE] Amazon | tag={tag} | URL={resultado[:100]}")
+    logger.info(f"[AFFILIATE_SERVICE] Amazon (Fallback) | tag={tag} | URL={resultado[:100]}")
     return resultado
 
 
@@ -183,7 +214,7 @@ async def injetar_link_afiliado(url: str, store_key: str | None = None) -> str:
 
     logger.info(f"[AFFILIATE_SERVICE] Iniciando injeção | loja={store_key} | url={url[:80]}")
 
-    affiliate_id = _AFFILIATE_IDS.get(store_key, "").strip()
+    affiliate_id = get_effective_affiliate_id(store_key)
 
     if not affiliate_id:
         if store_key != "other":
