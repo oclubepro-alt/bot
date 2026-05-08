@@ -15,6 +15,8 @@ CB_CANCELAR_OFERTA = "oferta_cancelar"
 # Fase 3 — Fila de aprovação (review queue)
 CB_REVIEW_APPROVE = "review_aprovar"
 CB_REVIEW_REJECT = "review_rejeitar"
+CB_REVIEW_BULK   = "review_bulk"
+CB_MENU_REVISAR  = "menu_revisar"
 
 # Fase 3 — Controle do Monitor (Scheduler)
 CB_MONITOR_MENU = "monitor_menu"
