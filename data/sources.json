@@ -1,0 +1,20 @@
+[
+  {
+    "name": "Amazon Ofertas do Dia",
+    "url": "https://www.amazon.com.br/gp/goldbox",
+    "active": true,
+    "notes": "Pagina principal de ofertas da Amazon"
+  },
+  {
+    "name": "Amazon Cupons",
+    "url": "https://www.amazon.com.br/gp/browse.html?node=17870330011",
+    "active": true,
+    "notes": "Pagina de cupons de desconto Amazon"
+  },
+  {
+    "name": "Amazon Outlet",
+    "url": "https://www.amazon.com.br/b?node=17345620011",
+    "active": true,
+    "notes": "Pagina de outlet com descontos agressivos"
+  }
+]

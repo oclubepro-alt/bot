@@ -21,6 +21,7 @@ playwright/.cache/
 
 # Data
 data/*.json
+!data/sources.json
 data/*.db
 !data/.gitkeep
 
