@@ -27,11 +27,13 @@ async def publish_to_telegram(bot: Bot, message_text: str, photo_url_or_id: str 
     canais_destino = [normalize_chat_id(cid) for cid in raw_destinos if cid]
     
     sucesso_algum = False
+    sent_messages = []
 
     for chat_id in canais_destino:
         try:
             logger.info(f"[PUBLISHER_TELEGRAM] 📡 DISPARANDO PARA: {chat_id}")
             
+            msg = None
             # Tenta enviar com foto se houver URL
             if photo_url_or_id:
                 try:
@@ -44,8 +46,7 @@ async def publish_to_telegram(bot: Bot, message_text: str, photo_url_or_id: str 
                         photo_bytes = resp.content
 
                     logger.info(f"[PUBLISHER_TELEGRAM] Enviando foto baixada ao Telegram...")
-                    logger.info(f"[PUBLISHER_TELEGRAM] Iniciando bot.send_photo para canal {chat_id}...")
-                    await bot.send_photo(
+                    msg = await bot.send_photo(
                         chat_id=chat_id,
                         photo=photo_bytes,
                         caption=message_text,
@@ -54,8 +55,8 @@ async def publish_to_telegram(bot: Bot, message_text: str, photo_url_or_id: str 
                         write_timeout=15,
                         connect_timeout=15
                     )
-                    logger.info(f"[PUBLISHER_TELEGRAM] Sucesso absoluto no send_photo!")
                     logger.info(f"[PUBLISHER_TELEGRAM] Foto enviada ao canal {chat_id} com sucesso.")
+                    sent_messages.append({"chat_id": chat_id, "message_id": msg.message_id})
                     sucesso_algum = True
                     continue # Próximo canal
                 except Exception as photo_err:
@@ -63,13 +64,14 @@ async def publish_to_telegram(bot: Bot, message_text: str, photo_url_or_id: str 
                     # Fallback para texto abaixo
             
             # Envio de Texto (ou fallback se a foto falhou)
-            await bot.send_message(
+            msg = await bot.send_message(
                 chat_id=chat_id,
                 text=message_text,
                 parse_mode=ParseMode.HTML,
-                disable_web_page_preview=False # Deixa preview para mostrar a imagem do link se o bot falhou na foto
+                disable_web_page_preview=False
             )
             logger.info(f"[PUBLISHER_TELEGRAM] Mensagem (texto) enviada ao canal {chat_id} com sucesso.")
+            sent_messages.append({"chat_id": chat_id, "message_id": msg.message_id})
             sucesso_algum = True
             
         except Exception as e:
@@ -82,4 +84,4 @@ async def publish_to_telegram(bot: Bot, message_text: str, photo_url_or_id: str 
     if not sucesso_algum:
         raise Exception(f"Falha ao publicar no Telegram em todos os destinos: {canais_destino}")
         
-    return True
+    return sent_messages

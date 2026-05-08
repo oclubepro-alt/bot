@@ -62,7 +62,7 @@ def main() -> None:
 
     # Handlers básicos explícitos para garantir resposta (Requisito de Estabilidade)
     from bot.handlers.start import (
-        start_command, test_id_command, status_command, check_config_command, test_link_command
+        start_command, test_id_command, status_command, check_config_command, test_link_command, stats_command
     )
     from bot.handlers.cancel import cancel_command
     from bot.handlers.offer_by_link import cmd_debug_link
@@ -75,6 +75,8 @@ def main() -> None:
     app.add_handler(CommandHandler("cancel", cancel_command))
     app.add_handler(CommandHandler("debug_link", cmd_debug_link))
     app.add_handler(CommandHandler("revisar", start_review_queue))
+    app.add_handler(CommandHandler("stats", stats_command))
+    app.add_handler(CallbackQueryHandler(stats_command, pattern=r"^stats_summary$"))
     app.add_handler(CallbackQueryHandler(start_review_queue, pattern=r"^menu_revisar$"))
     
     # Handlers isolados para modo Encaminhamento
@@ -150,7 +152,7 @@ def main() -> None:
 
     # Callback CATCH-ALL para voltar ao menu principal de qualquer lugar (Failsafe)
     # Deve ficar por último para não interceptar ConversationHandlers
-    app.add_handler(CallbackQueryHandler(start_command, pattern=r"^(menu_principal|monitor_voltar|cancelar_config_afiliado|encam_cancelar)$"))
+    app.add_handler(CallbackQueryHandler(start_command, pattern=r"^(menu_principal|monitor_voltar|cancelar_config_afiliado|encam_cancelar|back_to_main)$"))
 
     # Iniciar o scheduler para o monitor automático rodar em background
     setup_scheduler(app)

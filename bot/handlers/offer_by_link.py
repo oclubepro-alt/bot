@@ -18,6 +18,7 @@ Regras críticas:
   - Todos os callbacks respondem com query.answer() antes de qualquer operação.
 """
 import logging
+from bot.services.expiration_service import register_published_offer
 import re
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -732,6 +733,8 @@ async def confirmar_envio_link(update: Update, context: ContextTypes.DEFAULT_TYP
                 short_url     = short_url,
                 legenda_ia    = copy_ia,
                 preco_original= preco_ori,
+                cupom         = cupom,
+                product_url   = context.user_data.get("final_url"),
             )
             # Aplica PIX e cupom na copy final
             tg = copies_final.get("telegram", "")
@@ -740,14 +743,10 @@ async def confirmar_envio_link(update: Update, context: ContextTypes.DEFAULT_TYP
                 search_str = f"💰 <b>Por: {_escape_html(preco)}</b>"
                 replace_str = f"💰 <b>Por: {_escape_html(preco)} no PIX</b> 💳"
                 tg = tg.replace(search_str, replace_str)
-            if cupom:
-                tg += f"\n\n🎟️ Use o cupom: <b>{_escape_html(cupom)}</b>"
 
             wa = copies_final.get("whatsapp", "")
             if is_pix:
                 wa = wa.replace(f"💰 *{preco}*", f"💰 *{preco} no PIX* 💳")
-            if cupom:
-                wa += f"\n\n🎟️ Cupom: *{cupom}*"
 
             copies_final["telegram"] = tg
             copies_final["whatsapp"] = wa
@@ -763,7 +762,10 @@ async def confirmar_envio_link(update: Update, context: ContextTypes.DEFAULT_TYP
         # ── Publica no canal ────────────────────────────────────────────────
         from bot.services.publisher_router import publish_offer
         logger.info(f"[OFERTA_LINK] Chamando publish_offer (imagem={'sim' if img_url else 'não'})...")
-        await publish_offer(context.bot, copies_final, img_url)
+        sent_msgs = await publish_offer(context.bot, copies_final, img_url)
+        
+        if sent_msgs and isinstance(sent_msgs, list):
+            register_published_offer(context.user_data.get("final_url"), sent_msgs)
 
         # ── Limpeza da Fila de Revisão (se aplicável) ────────────────────────
         if context.user_data.get("is_review"):

@@ -22,22 +22,19 @@ async def publish_offer(bot: Bot, copies: str | dict, photo: str | None = None) 
     # Os handlers (offer.py / offer_by_link.py) já cuidam disso.
     logger.info(f"[PUBLISHER_ROUTER] Preparando envio...")
 
+    res = []
     # 2. Publica no Telegram
     text_telegram = copies.get("telegram")
     if text_telegram:
         try:
-            await publish_to_telegram(bot, text_telegram, photo)
+            res = await publish_to_telegram(bot, text_telegram, photo)
         except Exception as e:
             logger.error(f"[PUBLISHER_ROUTER] Erro Telegram: {e}")
             raise e
 
-    # 3. Publica no WhatsApp
-    # text_whatsapp = copies.get("whatsapp")
-    # if text_whatsapp:
-    #     try:
-    #         # await publish_to_whatsapp(text_whatsapp, photo)
-    #         pass
-    #     except Exception as e:
-    #         logger.error(f"[PUBLISHER_ROUTER] Erro WhatsApp: {e}")
-    # 
+    # 3. Publica no WhatsApp (Futuro)
+    
+    from bot.services.metrics_service import log_event
+    log_event("published")
     logger.info("[PUBLISHER_ROUTER] Rotina de publicação concluída.")
+    return res

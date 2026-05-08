@@ -13,12 +13,16 @@ from telegram.ext import ContextTypes
 from telegram.constants import ParseMode
 
 from html import escape as escape_html
-from bot.utils.constants import CB_REVIEW_APPROVE, CB_REVIEW_REJECT, CB_MENU_PRINCIPAL, CB_REVIEW_BULK
+from bot.utils.constants import (
+    CB_MENU_PRINCIPAL, CB_REVIEW_APPROVE, CB_REVIEW_REJECT, CB_REVIEW_SCHEDULE, CB_REVIEW_BULK
+)
 from bot.services.dedup_store import mark_seen
 from bot.services.publisher_router import publish_offer
 from bot.utils.review_store import save_review_queue
 from bot.services.link_shortener import shorten_for_publication
 from bot.services.copy_builder import build_copy
+from bot.services.metrics_service import log_event
+from bot.services.expiration_service import register_published_offer
 
 logger = logging.getLogger(__name__)
 
@@ -77,8 +81,9 @@ async def show_next_review_item(update: Update, context: ContextTypes.DEFAULT_TY
 
     keyboard = InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("✅ Aprovar",  callback_data=f"review_aprovar:{offer_id}"),
-            InlineKeyboardButton("❌ Rejeitar", callback_data=f"review_rejeitar:{offer_id}"),
+            InlineKeyboardButton("✅ Aprovar",  callback_data=f"{CB_REVIEW_APPROVE}:{offer_id}"),
+            InlineKeyboardButton("⏰ Agendar",  callback_data=f"{CB_REVIEW_SCHEDULE}:{offer_id}"),
+            InlineKeyboardButton("❌ Rejeitar", callback_data=f"{CB_REVIEW_REJECT}:{offer_id}"),
         ],
         [InlineKeyboardButton("✏️ Corrigir",   callback_data=f"review_corrigir:{offer_id}")],
         nav_row if nav_row else [],
@@ -201,9 +206,12 @@ async def handle_review_callback(
                 legenda_ia=copy_ia,
                 preco_original=dados.get("preco_original"),
                 cupom=offer.get("cupom"),
+                product_url=product_url,
             )
 
-            await publish_offer(context.bot, copies_final, imagem)
+            sent_msgs = await publish_offer(context.bot, copies_final, imagem)
+            if sent_msgs and isinstance(sent_msgs, list):
+                register_published_offer(product_url, sent_msgs)
             mark_seen(product_url)
 
             # Feedback temporário de sucesso removido para mostrar o PRÓXIMO item imediatamente
@@ -213,6 +221,7 @@ async def handle_review_callback(
                 await query.edit_message_text("✅ Processado.")
             
             # Chama o próximo automaticamente
+            log_event("approved")
             await show_next_review_item(update, context)
 
         except Exception as e:
@@ -232,10 +241,29 @@ async def handle_review_callback(
             await query.edit_message_text("❌ Rejeitado.")
         
         # Chama o próximo automaticamente
+        log_event("rejected")
+        await show_next_review_item(update, context)
+
+    elif action == CB_REVIEW_SCHEDULE:
+        logger.info(f"[REVIEW] Admin {query.from_user.id} AGENDOU oferta: '{nome}'")
+        from bot.services.scheduler_queue_service import add_to_queue
+        pos = add_to_queue(offer)
+        
+        await query.answer(f"⏰ Agendado! Posição na fila: {pos}", show_alert=True)
+        
+        if imagem:
+            try:
+                await query.message.delete()
+            except Exception:
+                pass
+        else:
+            await query.edit_message_text("⏰ Agendado.")
+        
+        # Chama o próximo automaticamente
         await show_next_review_item(update, context)
 
     # Remove da fila apenas se for ação individual
-    if action in [CB_REVIEW_APPROVE, CB_REVIEW_REJECT]:
+    if action in [CB_REVIEW_APPROVE, CB_REVIEW_REJECT, CB_REVIEW_SCHEDULE]:
         pending.pop(offer_id, None)
         context.bot_data["pending_offers"] = pending
         save_review_queue(pending)
@@ -295,6 +323,7 @@ async def handle_review_bulk_callback(
             )
         
         logger.warning(f"[REVIEW] Fila de revisão limpa pelo admin {query.from_user.id}.")
+        log_event("rejected") # Bulk clear counts as rejected for metrics
 
     elif action == "approve_all":
         count = len(pending)
@@ -332,7 +361,11 @@ async def handle_review_bulk_callback(
                     cupom=offer.get("cupom"),
                 )
 
-                await publish_offer(context.bot, copies_final, offer.get("imagem"))
+                sent_msgs = await publish_offer(context.bot, copies_final, offer.get("imagem"))
+                if sent_msgs and isinstance(sent_msgs, list):
+                    from bot.services.expiration_service import register_published_offer
+                    register_published_offer(offer.get("product_url", ""), sent_msgs)
+                
                 mark_seen(offer.get("product_url", ""))
                 success_count += 1
                 if success_count % 3 == 0:
@@ -363,6 +396,7 @@ async def handle_review_bulk_callback(
                 reply_markup=back_keyboard
             )
             
+        log_event("approved")
         logger.info(f"[REVIEW] Aprovação em massa concluída: {success_count}/{count} por admin {query.from_user.id}.")
 
 import asyncio # Ensure asyncio is available for sleep

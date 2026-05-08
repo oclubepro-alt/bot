@@ -31,6 +31,7 @@ import asyncio
 from bot.services.affiliate_injector import get_affiliate_url
 from bot.services.link_shortener import shorten_for_publication
 from bot.services.publisher_router import publish_offer
+from bot.services.metrics_service import log_event
 
 async def _run_scan(context, limit: int = 10, manual: bool = False, trigger_user_id: int = None) -> int:
     """
@@ -88,18 +89,8 @@ async def _run_scan(context, limit: int = 10, manual: bool = False, trigger_user
         source_name: str = item.get("source_name", "—")
 
         if is_seen(product_url):
-            continue
-            
-        # OBRIGATÓRIO: Garantir que a oferta não está pendente na fila de revisão
-        is_pending = False
-        pending = context.bot_data.get("pending_offers", {})
-        for off in pending.values():
-            if off.get("product_url") == product_url:
-                is_pending = True
-                break
-        
-        if is_pending:
-            logger.info(f"[SCHEDULER] Item já está na fila de revisão: {product_url[:50]}")
+        # Pular se já foi visto OU se já está na fila de revisão
+        if is_seen(product_url) or product_url in pending_urls:
             continue
 
         try:
@@ -261,6 +252,8 @@ async def _run_scan(context, limit: int = 10, manual: bool = False, trigger_user
 
                 # NOTA: mark_seen é chamado APENAS após aprovação (em review_queue.py)
                 # Aqui NÃO marcamos como visto para permitir reprocessamento se rejeitado
+                # Marcar como escaneado nas métricas
+                log_event("scanned")
                 count += 1
                 await asyncio.sleep(1)
 
@@ -338,5 +331,73 @@ def setup_scheduler(app: Application) -> None:
     """
     Setup inicial. Inicia o monitoramento automaticamente no boot.
     """
-    logger.info('[SCHEDULER] Iniciando monitoramento automático.')
     start_monitor(app)
+    
+    # Job de verificação de expiração (roda a cada 2h)
+    app.job_queue.run_repeating(
+        _check_expirations_job,
+        interval=3600 * 2,
+        first=60, # Começa 1 min após o boot
+        name="expiration_check"
+    )
+
+    # Job de postagem agendada (roda a cada 30 min)
+    app.job_queue.run_repeating(
+        _process_scheduled_queue_job,
+        interval=1800, 
+        first=120, # Começa 2 min após o boot
+        name="scheduled_posting"
+    )
+
+async def _process_scheduled_queue_job(context) -> None:
+    """Consome a fila de agendamento e publica no canal."""
+    from bot.services.scheduler_queue_service import get_next_from_queue
+    from bot.services.publisher_router import publish_offer
+    from bot.services.publisher_telegram import shorten_for_publication
+    from bot.handlers.review_queue import build_copy
+    from bot.services.metrics_service import log_event
+    from bot.services.expiration_service import register_published_offer
+    import asyncio
+
+    offer = get_next_from_queue()
+    if not offer:
+        return
+
+    logger.info(f"[SCHEDULER] Publicando item agendado: {offer.get('nome')}")
+    
+    try:
+        affiliate_url = offer.get("affiliate_url", "")
+        product_url = offer.get("product_url", "")
+        
+        # Encurta
+        short_url = await asyncio.to_thread(shorten_for_publication, affiliate_url)
+        
+        # Build copy
+        dados = offer.get("dados_produto", {})
+        copies_final = build_copy(
+            nome=dados.get("titulo", offer.get("nome")),
+            preco=dados.get("preco"),
+            loja=dados.get("store"),
+            store_key=offer.get("store_key", "amazon"),
+            short_url=short_url,
+            legenda_ia=offer.get("copy_ia"),
+            preco_original=dados.get("preco_original"),
+            cupom=offer.get("cupom"),
+            product_url=product_url,
+        )
+
+        sent_msgs = await publish_offer(context.bot, copies_final, offer.get("imagem"))
+        if sent_msgs and isinstance(sent_msgs, list):
+            register_published_offer(product_url, sent_msgs)
+        
+        log_event("published")
+        logger.info(f"[SCHEDULER] Item agendado publicado com sucesso.")
+
+    except Exception as e:
+        logger.error(f"[SCHEDULER] Erro ao publicar item agendado: {e}")
+
+async def _check_expirations_job(context) -> None:
+    """Wrapper para chamar o serviço de expiração."""
+    from bot.services.expiration_service import check_expirations
+    logger.info("[SCHEDULER] Iniciando verificação de expiração das últimas ofertas...")
+    await check_expirations(context.bot)

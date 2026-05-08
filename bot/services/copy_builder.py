@@ -153,6 +153,7 @@ def _build_telegram(
     preco_original: str | None,
     desconto: str | None,
     cupom: str | None = None,
+    is_lowest: bool = False,
 ) -> str:
     nome_e  = _escape_html(nome)
     preco_e = _escape_html(preco)
@@ -163,6 +164,10 @@ def _build_telegram(
     # Cabeçalho Principal
     linhas.append("🔥 <b>OFERTA IMPERDÍVEL!</b> 🔥")
     linhas.append(f"{emoji} <b>{nome_e}</b>")
+    
+    if is_lowest:
+        linhas.append("📉 <b>MENOR PREÇO HISTÓRICO!</b>")
+    
     linhas.append("")
 
     # IA / Legenda (se houver)
@@ -262,6 +267,7 @@ def build_copy(
     preco_original: str | None = None,
     cupom: str | None = None,
     whatsapp_channel: str | None = None,
+    product_url: str | None = None,
 ) -> dict:
     """
     Gera copy multi-plataforma para uma oferta.
@@ -287,6 +293,15 @@ def build_copy(
     emoji   = _category_emoji(nome, loja)
     desconto = _calc_desconto(preco, preco_original)
 
+    is_lowest = False
+    if product_url:
+        try:
+            from bot.services.price_history_service import log_price
+            history_info = log_price(product_url, preco)
+            is_lowest = history_info.get("is_lowest", False)
+        except Exception as e:
+            logger.error(f"[COPY_BUILDER] Erro ao logar preço: {e}")
+
     telegram_copy = _build_telegram(
         nome=nome,
         preco=preco,
@@ -297,6 +312,7 @@ def build_copy(
         preco_original=preco_original,
         desconto=desconto,
         cupom=cupom,
+        is_lowest=is_lowest,
     )
 
     whatsapp_copy = _build_whatsapp(

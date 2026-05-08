@@ -30,7 +30,10 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             InlineKeyboardButton("💼 Afiliados", callback_data="menu_config_afiliado"),
             InlineKeyboardButton("📲 WhatsApp", callback_data=CB_GERENCIAR_WHATS)
         ],
-        [InlineKeyboardButton("❌ Fechar Menu", callback_data=CB_CANCELAR_MENU)],
+        [
+            InlineKeyboardButton("📊 Estatísticas", callback_data="stats_summary"),
+            InlineKeyboardButton("❌ Fechar Menu", callback_data=CB_CANCELAR_MENU)
+        ],
     ]
 
     texto = (
@@ -194,3 +197,46 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         "Se você receber **DUAS** respostas com IDs diferentes, delete o deploy antigo no Railway!"
     )
     await update.message.reply_text(msg, parse_mode=ParseMode.HTML)
+
+async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Exibe estatísticas de performance (Apenas Admin)."""
+    from bot.permissions import is_admin
+    from bot.services.metrics_service import get_stats
+    
+    if not is_admin(update.effective_user.id):
+        return
+
+    stats = get_stats()
+    today = stats["today"]
+    total = stats["total"]
+
+    from bot.services.scheduler_queue_service import get_queue_size
+    scheduled_count = get_queue_size()
+    pending_count = len(context.bot_data.get("pending_offers", {}))
+
+    msg = (
+        "📊 <b>ESTATÍSTICAS DE PERFORMANCE</b>\n\n"
+        "📅 <b>Hoje:</b>\n"
+        f"🔍 Escaneados: <code>{today['scanned']}</code>\n"
+        f"✅ Aprovados: <code>{today['approved']}</code>\n"
+        f"🚀 Publicados: <code>{today['published']}</code>\n"
+        f"🗑️ Rejeitados: <code>{today['rejected']}</code>\n\n"
+        "⏳ <b>Filas Atuais:</b>\n"
+        f"📋 Pendentes p/ Revisão: <code>{pending_count}</code>\n"
+        f"⏰ Agendados p/ Postar: <code>{scheduled_count}</code>\n\n"
+        "📈 <b>Total Acumulado:</b>\n"
+        f"🔍 Escaneados: <code>{total['scanned']}</code>\n"
+        f"✅ Aprovados: <code>{total['approved']}</code>\n"
+        f"🚀 Publicados: <code>{total['published']}</code>\n"
+        f"🗑️ Rejeitados: <code>{total['rejected']}</code>\n\n"
+        "<i>Métricas coletadas a partir de agora.</i>"
+    )
+    
+    if update.message:
+        await update.message.reply_text(msg, parse_mode=ParseMode.HTML)
+    elif update.callback_query:
+        await update.callback_query.answer()
+        # Botão de voltar ao menu principal
+        from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+        kb = [[InlineKeyboardButton("⬅️ Voltar ao Menu", callback_data="back_to_main")]]
+        await update.callback_query.edit_message_text(msg, parse_mode=ParseMode.HTML, reply_markup=InlineKeyboardMarkup(kb))
