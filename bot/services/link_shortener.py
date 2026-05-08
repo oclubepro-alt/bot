@@ -97,6 +97,10 @@ def shorten_url(url: str, *, force_backend: str | None = None) -> str:
 
     backends_sequence: list[tuple[str, callable]] = []
 
+    if backend in ("none", "direct"):
+        logger.info("[SHORTENER] Encurtador desativado (direct). Retornando URL original.")
+        return url
+
     if backend == "tinyurl":
         backends_sequence = [
             ("tinyurl", _shorten_tinyurl),
