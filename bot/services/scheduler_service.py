@@ -89,6 +89,18 @@ async def _run_scan(context, limit: int = 10, manual: bool = False, trigger_user
 
         if is_seen(product_url):
             continue
+            
+        # OBRIGATÓRIO: Garantir que a oferta não está pendente na fila de revisão
+        is_pending = False
+        pending = context.bot_data.get("pending_offers", {})
+        for off in pending.values():
+            if off.get("product_url") == product_url:
+                is_pending = True
+                break
+        
+        if is_pending:
+            logger.info(f"[SCHEDULER] Item já está na fila de revisão: {product_url[:50]}")
+            continue
 
         try:
             logger.info(f"--- [PROCESSO {count+1}/{limit}] ---")

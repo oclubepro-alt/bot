@@ -3,6 +3,7 @@ monitor.py - Handler para controle manual do scheduler (Fase 3)
 Permite ligar, desligar e voltar ao menu.
 """
 import logging
+import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from telegram.constants import ParseMode
@@ -54,7 +55,20 @@ async def monitor_action_handler(update: Update, context: ContextTypes.DEFAULT_T
     action = query.data
     
     if action == "monitor_scrape_now":
+        # Implementação de Cooldown de 60 minutos solicitada pelo usuário
+        last_scan = context.bot_data.get("last_manual_scan")
+        if last_scan:
+            now = datetime.datetime.now()
+            diff = now - last_scan
+            if diff.total_seconds() < 3600:
+                remaining = 60 - int(diff.total_seconds() / 60)
+                await query.answer(f"⏳ Cooldown Ativo: Você poderá fazer uma nova varredura em {remaining} minutos.", show_alert=True)
+                return
+
         await query.answer("🚀 Iniciando busca de 10 ofertas... Veja o canal em instantes!", show_alert=True)
+        # Atualiza o timestamp do último scan manual
+        context.bot_data["last_manual_scan"] = datetime.datetime.now()
+        
         try:
             # Alterado para manual=True para que o scheduler envie o feedback visual ao admin
             await _run_scan(context, limit=10, manual=True, trigger_user_id=query.from_user.id)
