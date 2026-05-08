@@ -66,6 +66,7 @@ def main() -> None:
     )
     from bot.handlers.cancel import cancel_command
     from bot.handlers.offer_by_link import cmd_debug_link
+    from bot.handlers.review_queue import start_review_queue
     app.add_handler(CommandHandler("start", start_command))
     app.add_handler(CommandHandler("status", status_command))
     app.add_handler(CommandHandler("test_config", test_id_command))
@@ -73,6 +74,8 @@ def main() -> None:
     app.add_handler(CommandHandler("test_link", test_link_command))
     app.add_handler(CommandHandler("cancel", cancel_command))
     app.add_handler(CommandHandler("debug_link", cmd_debug_link))
+    app.add_handler(CommandHandler("revisar", start_review_queue))
+    app.add_handler(CallbackQueryHandler(start_review_queue, pattern=r"^menu_revisar$"))
 
     # Handler de conversão principal (Fases 1 e 2)
     app.add_handler(build_main_handler())

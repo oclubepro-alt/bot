@@ -12,7 +12,8 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from telegram.constants import ParseMode
 
-from bot.utils.constants import CB_REVIEW_APPROVE, CB_REVIEW_REJECT, CB_MENU_PRINCIPAL
+from html import escape as escape_html
+from bot.utils.constants import CB_REVIEW_APPROVE, CB_REVIEW_REJECT, CB_MENU_PRINCIPAL, CB_REVIEW_BULK
 from bot.services.dedup_store import mark_seen
 from bot.services.publisher_router import publish_offer
 from bot.utils.review_store import save_review_queue
@@ -20,6 +21,81 @@ from bot.services.link_shortener import shorten_for_publication
 from bot.services.copy_builder import build_copy
 
 logger = logging.getLogger(__name__)
+
+
+async def show_next_review_item(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Mostra o próximo item da fila de revisão para o admin."""
+    pending: dict = context.bot_data.get("pending_offers", {})
+    
+    if not pending:
+        msg = "✅ <b>Fila de revisão vazia!</b>\nNão há ofertas pendentes no momento."
+        keyboard = InlineKeyboardMarkup([[
+            InlineKeyboardButton("⬅️ Voltar ao Menu", callback_data=CB_MENU_PRINCIPAL)
+        ]])
+        if update.callback_query:
+            await update.callback_query.edit_message_text(msg, parse_mode=ParseMode.HTML, reply_markup=keyboard)
+        else:
+            await update.message.reply_text(msg, parse_mode=ParseMode.HTML, reply_markup=keyboard)
+        return
+
+    # Pega o primeiro ID da fila
+    offer_id = next(iter(pending))
+    offer = pending[offer_id]
+    
+    # Prepara a prévia
+    nome = offer.get("nome", "Produto")
+    imagem = offer.get("imagem")
+    affiliate_url = offer.get("affiliate_url", "")
+    original_url = offer.get("original_url", offer.get("product_url", ""))
+    dados = offer.get("dados_produto", {})
+    
+    count = len(pending)
+    preview_text = (
+        f"📋 <b>REVISÃO DE FILA</b> ({count} pendentes)\n"
+        "━━━━━━━━━━━━━━━━━━━━━\n"
+        f"📦 <b>{escape_html(nome)}</b>\n"
+        f"💰 <b>Preço:</b> {escape_html(dados.get('preco', '—'))}"
+        + (f"  <s>{escape_html(dados.get('preco_original', ''))}</s>" if dados.get('preco_original') else "") + "\n\n"
+        f"🌐 <b>Link original:</b>\n<code>{escape_html(original_url)}</code>\n\n"
+        f"🔗 <b>Seu link:</b>\n<code>{escape_html(affiliate_url)}</code>\n\n"
+        "⚠️ <i>O link será encurtado ao publicar.</i>"
+    )
+
+    keyboard = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("✅ Aprovar",  callback_data=f"review_aprovar:{offer_id}"),
+            InlineKeyboardButton("❌ Rejeitar", callback_data=f"review_rejeitar:{offer_id}"),
+        ],
+        [InlineKeyboardButton("✏️ Corrigir",   callback_data=f"review_corrigir:{offer_id}")],
+        [InlineKeyboardButton("⬅️ Voltar ao Menu", callback_data=CB_MENU_PRINCIPAL)]
+    ])
+
+    chat_id = update.effective_chat.id
+    if imagem:
+        await context.bot.send_photo(
+            chat_id=chat_id,
+            photo=imagem,
+            caption=preview_text,
+            parse_mode=ParseMode.HTML,
+            reply_markup=keyboard
+        )
+    else:
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=preview_text,
+            parse_mode=ParseMode.HTML,
+            reply_markup=keyboard
+        )
+
+
+async def start_review_queue(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Comando /revisar ou clique no menu."""
+    if update.callback_query:
+        await update.callback_query.answer()
+    
+    # Se veio de callback (ex: menu), limpa a mensagem anterior se possível
+    # Mas como show_next_review envia fotos/mensagens novas, apenas chamamos
+    await show_next_review_item(update, context)
 
 
 async def handle_review_callback(
@@ -84,28 +160,14 @@ async def handle_review_callback(
             await publish_offer(context.bot, copies_final, imagem)
             mark_seen(product_url)
 
-            success_text = (
-                f"✅ <b>Publicado no canal!</b>\n"
-                f"🔹 <b>Produto:</b> {nome}\n"
-                f"🔗 <b>Link:</b> <code>{short_url}</code>"
-            )
-            back_keyboard = InlineKeyboardMarkup([[
-                InlineKeyboardButton("⬅️ Voltar ao Menu", callback_data=CB_MENU_PRINCIPAL)
-            ]])
+            # Feedback temporário de sucesso removido para mostrar o PRÓXIMO item imediatamente
             if imagem:
                 await query.message.delete()
-                await context.bot.send_message(
-                    chat_id=query.message.chat_id,
-                    text=success_text,
-                    parse_mode=ParseMode.HTML,
-                    reply_markup=back_keyboard,
-                )
             else:
-                await query.edit_message_text(
-                    success_text,
-                    parse_mode=ParseMode.HTML,
-                    reply_markup=back_keyboard,
-                )
+                await query.edit_message_text("✅ Processado.")
+            
+            # Chama o próximo automaticamente
+            await show_next_review_item(update, context)
 
         except Exception as e:
             logger.error(f"[REVIEW] Erro ao publicar: {e}", exc_info=True)
@@ -116,23 +178,15 @@ async def handle_review_callback(
 
     elif action == CB_REVIEW_REJECT:
         logger.info(f"[REVIEW] Admin {query.from_user.id} REJEITOU oferta: '{nome}'")
-        mark_seen(product_url)  # marca como visto para não reaparecer na varredura
-        reject_text = f"❌ <b>Oferta rejeitada.</b> <code>{nome}</code>"
-        back_keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Voltar ao Menu", callback_data=CB_MENU_PRINCIPAL)]])
+        mark_seen(product_url)
+        
         if imagem:
             await query.message.delete()
-            await context.bot.send_message(
-                chat_id=query.message.chat_id,
-                text=reject_text,
-                parse_mode=ParseMode.HTML,
-                reply_markup=back_keyboard,
-            )
         else:
-            await query.edit_message_text(
-                reject_text,
-                parse_mode=ParseMode.HTML,
-                reply_markup=back_keyboard,
-            )
+            await query.edit_message_text("❌ Rejeitado.")
+        
+        # Chama o próximo automaticamente
+        await show_next_review_item(update, context)
 
     # Remove da fila apenas se for ação individual
     if action in [CB_REVIEW_APPROVE, CB_REVIEW_REJECT]:

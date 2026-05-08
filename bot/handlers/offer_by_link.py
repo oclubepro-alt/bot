@@ -776,6 +776,15 @@ async def confirmar_envio_link(update: Update, context: ContextTypes.DEFAULT_TYP
                 save_review_queue(pending)
                 logger.info(f"[OFERTA_LINK] Oferta {oid} removida da fila após correção.")
 
+        # Se era uma revisão, mostramos a PRÓXIMA oferta da fila
+        if context.user_data.get("is_review"):
+            from bot.handlers.review_queue import show_next_review_item
+            await asyncio.sleep(1) # delay curto para o admin respirar
+            # Precisamos simular um objeto update para o show_next_review_item
+            # O query.message é o objeto que usamos
+            await show_next_review_item(update, context)
+            return ConversationHandler.END
+
         keyboard = InlineKeyboardMarkup([
             [InlineKeyboardButton("🔗 Publicar Outro Link", callback_data=CB_PUBLICAR_LINK)],
             [InlineKeyboardButton("🏠 Menu Principal", callback_data=CB_MENU_PRINCIPAL)],
