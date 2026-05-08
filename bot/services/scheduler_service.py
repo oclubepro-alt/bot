@@ -7,6 +7,10 @@ para todos os admins cadastrados.
 """
 import logging
 import uuid
+import random
+import json
+import re
+import asyncio
 
 from telegram.ext import Application
 from telegram.constants import ParseMode
@@ -69,6 +73,9 @@ async def _run_scan(context, limit: int = 10, manual: bool = False, trigger_user
             await context.bot.send_message(chat_id=trigger_user_id, text="ℹ️ Nenhuma oferta nova encontrada nas fontes cadastradas.")
         return 0
 
+    # EMBARALHAR: Para não pegar sempre os mesmos 10 do topo
+    random.shuffle(all_found_items)
+    
     logger.info(f"[SCHEDULER] {len(all_found_items)} novos itens encontrados. Aplicando limite de {limit} e processando.")
 
     count = 0

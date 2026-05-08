@@ -4,7 +4,8 @@ Armazena em data/seen_links.json (lista de URLs).
 """
 import json
 import logging
-import os
+import uuid
+import random
 import re
 from pathlib import Path
 
@@ -42,6 +43,13 @@ def normalize_url(url: str) -> str:
     try:
         # Lowercase, remove excesso de espaços
         url = url.strip().lower()
+
+        # Especial para Amazon: Extrair o ASIN (B0...)
+        # Ex: amazon.com.br/dp/B0FLKLFMQZ/... -> b0flklfmqz
+        asin_match = re.search(r"/(?:dp|gp/product)/([a-z0-9]{10})", url)
+        if asin_match:
+            return f"amazon:{asin_match.group(1)}"
+
         # Remove prefixos mobile conhecidos
         url = url.replace("https://m.", "https://").replace("https://mobile.", "https://")
         # Remove fragmentos (#...)
