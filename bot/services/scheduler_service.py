@@ -257,7 +257,7 @@ def start_monitor(app: Application) -> bool:
 
 def setup_scheduler(app: Application) -> None:
     """
-    Setup inicial. Agora NÃO inicia automaticamente.
-    Apenas garante que as variáveis estão prontas.
+    Setup inicial. Inicia o monitoramento automaticamente no boot.
     """
-    logger.info("[SCHEDULER] Sistema pronto para ser ativado via menu.")
+    logger.info('[SCHEDULER] Iniciando monitoramento automático.')
+    start_monitor(app)

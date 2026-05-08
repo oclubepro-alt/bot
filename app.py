@@ -145,6 +145,8 @@ def main() -> None:
     app.add_error_handler(global_error_handler)
     app.add_handler(config_handler)
 
+    # Iniciar o scheduler para o monitor automático rodar em background
+    setup_scheduler(app)
 
     logger.info("[APP] Handlers e scheduler registrados. Iniciando polling...")
     

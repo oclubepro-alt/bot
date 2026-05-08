@@ -41,9 +41,15 @@ def load_sources() -> list[dict]:
         if _SOURCES_PATH.exists():
             content = _SOURCES_PATH.read_text(encoding="utf-8")
             sources = json.loads(content)
-            active = [s for s in sources if s.get("active", False)]
-            logger.info(f"[MONITOR] Sucesso: {len(sources)} totais, {len(active)} ativas.")
-            return sources
+            
+            # FILTRO EXCLUSIVO AMAZON (pedido do usuário)
+            active = [
+                s for s in sources 
+                if s.get("active", False) and "amazon" in s.get("url", "").lower()
+            ]
+            
+            logger.info(f"[MONITOR] Sucesso: {len(sources)} totais, {len(active)} ativas (apenas Amazon).")
+            return active
         else:
             logger.error(f"[MONITOR] ERRO: Arquivo não existe em {_SOURCES_PATH}")
     except Exception as e:
@@ -162,8 +168,7 @@ async def scan_sources() -> list[dict]:
     Verifica todas as fontes ativas (Async).
     Retorna lista de links novos.
     """
-    sources = load_sources()
-    active = [s for s in sources if s.get("active", False)]
+    active = load_sources()
 
     if not active:
         logger.info("[MONITOR] Nenhuma fonte ativa encontrada.")
