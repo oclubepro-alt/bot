@@ -1229,6 +1229,20 @@ async def extract_product_data_v2(url: str) -> dict:
         else:
             logger.warning("[EXTRATOR] Camada 0 (MAGALU): ❌ Falhou — caindo para Camada 1")
 
+    elif store_key == "amazon":
+        logger.info("[EXTRATOR] Camada 0: Tentando Amazon Creators API...")
+        try:
+            from bot.services.amazon_api import amazon_api
+            api_data = await amazon_api.get_product_details(final_url)
+            if api_data:
+                logger.info(f"[EXTRATOR] Camada 0 (AMAZON): ✅ Sucesso via API")
+                result.update(api_data)
+                return result
+            else:
+                logger.warning("[EXTRATOR] Camada 0 (AMAZON): ❌ Falhou — caindo para Camada 1")
+        except Exception as e:
+            logger.error(f"[EXTRATOR] Camada 0 (AMAZON): ❌ Erro ao chamar API: {e}")
+
     elif store_key == "netshoes":
         logger.info("[EXTRATOR] Camada 0: Tentando Netshoes API Interna...")
         api_data = await fetch_netshoes_api(final_url)

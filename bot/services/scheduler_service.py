@@ -124,7 +124,8 @@ async def _run_scan(context, limit: int = 10, manual: bool = False, trigger_user
                 nome=dados["title"], 
                 preco=dados.get("preco", "Preço não disponível"), 
                 loja=dados.get("loja", "Loja"), 
-                descricao=dados.get("descricao")
+                descricao=dados.get("descricao"),
+                preco_original=dados.get("preco_original")
             )
 
             # 4. Publicação ou Fila de Revisão

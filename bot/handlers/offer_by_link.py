@@ -218,7 +218,7 @@ async def _send_previa(message, context: ContextTypes.DEFAULT_TYPE) -> int:
             nome          = titulo,
             preco         = preco,
             loja          = dados.get("store", "Loja"),
-            descricao     = context.user_data.get("descricao_base"),
+            descricao     = context.user_data.get("descricao_base") or dados.get("descricao"),
             preco_original= preco_original,
         )
     except Exception as e:
@@ -721,6 +721,7 @@ async def confirmar_envio_link(update: Update, context: ContextTypes.DEFAULT_TYP
                 copy_ia = await generate_caption(
                     nome=titulo, preco=preco, loja=dados.get("store", "Loja"),
                     preco_original=preco_ori,
+                    descricao=context.user_data.get("descricao_base") or dados.get("descricao")
                 )
             except Exception:
                 copy_ia = None

@@ -136,6 +136,10 @@ class AmazonCreatorsAPI:
                             if list_price:
                                 preco_orig = _clean_price(str(list_price))
 
+                    brand = product_info.get("brand")
+                    features_list = product_info.get("features", [])
+                    features = " ".join(features_list) if features_list else None
+                    
                     if titulo:
                         logger.info(f"[AMAZON_API] ✅ Sucesso via API | {titulo[:50]}")
                         return {
@@ -143,6 +147,9 @@ class AmazonCreatorsAPI:
                             "imagem": imagem,
                             "preco": preco_promo or "Preço não disponível",
                             "preco_original": preco_orig,
+                            "brand": brand,
+                            "features": features_list,
+                            "descricao": features,
                             "source_method": "AMAZON_CREATORS_API",
                             "is_pix_price": False,
                         }
