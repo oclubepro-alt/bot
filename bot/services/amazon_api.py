@@ -115,8 +115,12 @@ class AmazonCreatorsAPI:
                     images = product_info.get("images", [])
                     imagem = None
                     if images:
-                        # Prioridade para Primary/Large
-                        imagem = images[0].get("url")
+                        # Tenta pegar a maior imagem baseada na largura
+                        try:
+                            sorted_images = sorted(images, key=lambda x: x.get("width", 0), reverse=True)
+                            imagem = sorted_images[0].get("url")
+                        except Exception:
+                            imagem = images[0].get("url")
                     
                     # Preço: Pega da primeira buying option
                     preco_promo = None
@@ -128,13 +132,13 @@ class AmazonCreatorsAPI:
                         
                         if amount:
                             # Formata como R$ XX,XX
-                            from bot.services.product_extractor_v2 import _clean_price
-                            preco_promo = _clean_price(str(amount))
+                            from bot.services.product_extractor_v2 import format_api_price
+                            preco_promo = format_api_price(amount)
                             
                             # Preço de lista (original) se existir
                             list_price = buying_options[0].get("listPrice", {}).get("amount")
                             if list_price:
-                                preco_orig = _clean_price(str(list_price))
+                                preco_orig = format_api_price(list_price)
 
                     brand = product_info.get("brand")
                     features_list = product_info.get("features", [])

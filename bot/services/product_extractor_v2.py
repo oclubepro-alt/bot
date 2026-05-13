@@ -377,11 +377,19 @@ def _parse_price_to_float(text: str) -> float | None:
         # Se houver apenas um ponto e ele estiver na posição de centavos (2 antes do fim),
         # e não for um número gigante, tratamos como decimal (comum em JSON-LD).
         parts = cleaned.split('.')
-        if len(parts) == 2 and len(parts[1]) == 2:
-            # Caso 399.00 -> mantém o ponto como decimal
-            pass
+        if len(parts) == 2:
+            # Se tiver exatamente 1 ponto:
+            # - 1 ou 2 dígitos após o ponto -> decimal (ex: 29.9, 29.90, 1299.9)
+            # - 3 dígitos após o ponto -> milhar (ex: 1.299, 1.000)
+            if len(parts[1]) in [1, 2]:
+                pass # Mantém o ponto
+            elif len(parts[1]) == 3:
+                cleaned = cleaned.replace(".", "")
+            else:
+                # Caso bizarro (ex: 1.2345) -> remove o ponto
+                cleaned = cleaned.replace(".", "")
         else:
-            # Caso 1.200 -> remove o ponto (divisor de milhar)
+            # Múltiplos pontos (ex: 1.299.90) -> remove todos (são milhar)
             cleaned = cleaned.replace(".", "")
             
     try:
@@ -395,7 +403,7 @@ def _parse_price_to_float(text: str) -> float | None:
 
 
 def _clean_price(raw: str) -> str | None:
-    """Normaliza preço para exibição: R$ 1.299,90"""
+    """Normaliza preço para exibição: R$ 1.299,90 (Para HTML)"""
     if not raw:
         return None
     val = _parse_price_to_float(raw)
@@ -406,6 +414,37 @@ def _clean_price(raw: str) -> str | None:
     centavos = round((val - reais) * 100)
     reais_fmt = f"{reais:,}".replace(",", ".")
     return f"R$ {reais_fmt},{centavos:02d}"
+
+
+def format_api_price(amount: any) -> str | None:
+    """
+    Formata um preço vindo de uma API (número ou string puramente numérica com ponto).
+    Evita a heurística de _clean_price que pode confundir milhar com decimal.
+    """
+    if amount is None:
+        return None
+    try:
+        # Se for string, remove símbolos mas mantém o ponto
+        if isinstance(amount, str):
+            # Remove R$, espaços, etc, mas preserva o ponto decimal
+            amount = amount.replace("R$", "").replace(" ", "").replace(",", ".")
+            # Se tiver múltiplos pontos, remove todos exceto o último
+            if amount.count(".") > 1:
+                parts = amount.split(".")
+                amount = "".join(parts[:-1]) + "." + parts[-1]
+        
+        val = float(amount)
+        reais = int(val)
+        centavos = round(abs(val - reais) * 100)
+        # Ajuste se centavos arredondar para 100
+        if centavos == 100:
+            reais += 1
+            centavos = 0
+            
+        reais_fmt = f"{reais:,}".replace(",", ".")
+        return f"R$ {reais_fmt},{centavos:02d}"
+    except (ValueError, TypeError):
+        return None
 
 
 def _choose_lower_price(p1: str | None, p2: str | None) -> tuple[str | None, str | None]:
@@ -509,18 +548,18 @@ def _extract_price_from_schema(soup: BeautifulSoup) -> str | None:
                     
                     if isinstance(offers, dict):
                         # Padrão simples
-                        p = offers.get('price') or offers.get('lowPrice')
-                        if p: return _clean_price(str(p))
+                        p = item.get('price') or item.get('lowPrice')
+                        if p: return format_api_price(p)
                     elif isinstance(offers, list):
                         # Lista de ofertas
                         for off in offers:
                             p = off.get('price')
-                            if p: return _clean_price(str(p))
+                            if p: return format_api_price(p)
                             
-                # Fallback: qualquer coisa que pareça uma oferta solta
-                if item.get('@type') == 'Offer':
-                    p = item.get('price')
-                    if p: return _clean_price(str(p))
+            # Fallback: qualquer coisa que pareça uma oferta solta
+            if item.get('@type') == 'Offer':
+                p = item.get('price')
+                if p: return format_api_price(p)
         except Exception:
             pass
     return None

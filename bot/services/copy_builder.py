@@ -123,16 +123,9 @@ def _calc_desconto(preco: str, preco_original: str | None) -> str | None:
     """
     if not preco_original:
         return None
-    def _to_float(s: str) -> float | None:
-        s = re.sub(r"[R$\s]", "", s)
-        s = s.replace(".", "").replace(",", ".")
-        try:
-            return float(s)
-        except ValueError:
-            return None
-
-    atual = _to_float(preco)
-    orig  = _to_float(preco_original)
+    from bot.services.product_extractor_v2 import _parse_price_to_float
+    atual = _parse_price_to_float(preco)
+    orig  = _parse_price_to_float(preco_original)
     if atual and orig and orig > atual:
         pct = round((orig - atual) / orig * 100)
         return f"↓ {pct}%"
