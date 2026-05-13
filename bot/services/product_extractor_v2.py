@@ -89,7 +89,7 @@ _MOBILE_HEADERS = {
 
 _BLOCK_KEYWORDS = ["captcha", "blocked", "bot manager", "perfdrive", "shieldsquare", 
                   "acesso negado", "access denied", "validate.perfdrive.com",
-                  "type the characters you see in this image", "robot", "human verification"]
+                  "type the characters you see in this image", "human verification"]
 
 _TIMEOUT_HTTP = 15
 _TIMEOUT_PLAYWRIGHT = 45
@@ -1078,7 +1078,7 @@ async def get_page_html(url: str) -> tuple[str | None, str]:
                     html_lower = html.lower()
                     
                     # Detectar CAPTCHA/Bloqueio no conteúdo (Radware, etc)
-                    bloqueios = ["radware", "captcha", "robot", "blocked", "access denied", "unusual traffic", "verify you are human", "desculpe! algo deu errado"]
+                    bloqueios = ["radware", "captcha", "blocked", "access denied", "unusual traffic", "verify you are human", "desculpe! algo deu errado", "type the characters you see in this image"]
                     found_block = None
                     for termo in bloqueios:
                         if termo in html_lower:

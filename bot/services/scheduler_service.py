@@ -352,7 +352,7 @@ async def _process_scheduled_queue_job(context) -> None:
     """Consome a fila de agendamento e publica no canal."""
     from bot.services.scheduler_queue_service import get_next_from_queue
     from bot.services.publisher_router import publish_offer
-    from bot.services.publisher_telegram import shorten_for_publication
+    from bot.services.link_shortener import shorten_for_publication
     from bot.handlers.review_queue import build_copy
     from bot.services.metrics_service import log_event
     from bot.services.expiration_service import register_published_offer

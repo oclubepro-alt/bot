@@ -48,7 +48,7 @@ async def check_expirations(bot: Bot) -> None:
     Varre as ofertas das últimas 24h e verifica se expiraram.
     Se expirou, edita a mensagem no canal.
     """
-    from bot.services.product_extractor_v2 import extract_product_data
+    from bot.services.product_extractor_v2 import extract_product_data_v2 as extract_product_data
     
     db = _load_db()
     now = datetime.datetime.now()

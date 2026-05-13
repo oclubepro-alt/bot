@@ -17,6 +17,10 @@ _rand = ''.join(random.choices(string.ascii_uppercase + string.digits, k=4))
 INSTANCE_ID = f"BOT-{_rand}-{datetime.now().strftime('%H%M')}"
 BOOT_TIME = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
 
+AFFILIATE_ID_AMAZON: str = os.getenv("AFFILIATE_ID_AMAZON", "").strip()
+AMAZON_CREATORS_CLIENT_ID: str = os.getenv("AMAZON_CREATORS_CLIENT_ID", "").strip()
+AMAZON_CREATORS_CLIENT_SECRET: str = os.getenv("AMAZON_CREATORS_CLIENT_SECRET", "").strip()
+AMAZON_API_VERSION: str = os.getenv("AMAZON_API_VERSION", "v1").strip()
 
 def _require(var: str) -> str:
     """Lê variável obrigatória ou lança erro claro."""

@@ -115,17 +115,24 @@ async def check_config_command(update: Update, context: ContextTypes.DEFAULT_TYP
 
     # 2. Outras Configurações
     import os
-    from bot.utils.config import TELEGRAM_CHANNEL_ID
+    from bot.utils.config import TELEGRAM_CHANNEL_ID, SCRAPERAPI_KEY
     
     msg.append("\n<b>📡 Sistema:</b>")
     msg.append(f"📌 Canal: <code>{TELEGRAM_CHANNEL_ID}</code>")
     msg.append(f"✂️ Encurtador: <code>{os.getenv('SHORTENER_BACKEND', 'tinyurl')}</code>")
     
+    if SCRAPERAPI_KEY:
+        masked_scraper = SCRAPERAPI_KEY[:4] + "*" * (len(SCRAPERAPI_KEY)-8) + SCRAPERAPI_KEY[-4:] if len(SCRAPERAPI_KEY) > 8 else "***"
+        msg.append(f"✅ ScraperAPI: <code>{masked_scraper}</code>")
+    else:
+        msg.append("❌ ScraperAPI: <i>Não configurada</i>")
+
     # 3. Verificação de Arquivo .env (no cloud ele costuma não existir)
     has_env = os.path.exists(".env")
     msg.append(f"📄 Arquivo .env existe: {'✅' if has_env else '❌ (Railway usa Variables tab)'}")
 
     await update.message.reply_text("\n".join(msg), parse_mode=ParseMode.HTML)
+
 
 
 async def test_link_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
