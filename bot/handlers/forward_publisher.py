@@ -336,33 +336,31 @@ async def process_all_forwardings(update: Update, context: ContextTypes.DEFAULT_
         await context.bot.edit_message_text(chat_id=chat_id, message_id=msg_id, text=prog_texto, parse_mode="HTML")
         await asyncio.sleep(0.6)
         
-        # Preços, Cupom e Copy
+        # Mantém a copy original, apenas injetando o link de afiliado onde estava o original
+        if link_original and link_afiliado:
+            copy_gerada = texto_original.replace(link_original, link_afiliado)
+        else:
+            copy_gerada = texto_original
+
+        # Mantém a detecção de preços e cupons apenas para metadados/revisão
         precos = re.findall(r'R\$\s*[\d.,]+', texto_original)
         preco = precos[0] if precos else "Confira o preço"
 
-        # Tenta pegar cupom manual PRIMEIRO
         cupom = item.get("cupom")
         if not cupom:
             cupons = re.findall(r'\b[A-Z0-9]{4,15}\b', texto_original)
-            # Filtra cupons muito comuns ou que sejam links truncados
             cupons = [c for c in cupons if not c.startswith('HTTP') and len(c) > 4]
             cupom = cupons[0] if cupons else None
         
         link_final = link_afiliado or link_original or "Sem link"
         
-        titulo_copy = titulo_resumo
-        if len(texto_original.split('\n')) > 1:
-            titulo_copy = texto_original.split('\n')[0]
-            
-        copy_gerada = gerar_copy(titulo_copy, preco, loja_detectada, link_final, cupom)
-
         # Passo 3
         prog_texto = (
             "⚙️ <b>Processando suas promoções...</b>\n\n"
             f"📦 Processando <b>{atual}/{total}</b>: {titulo_resumo}...\n"
             f"🏪 Loja: {loja_detectada.capitalize()} ✅\n"
             f"🔑 Link afiliado: {link_final} ✅\n"
-            f"✍️ Reescrevendo copy...\n\n"
+            f"✍️ Trocando links...\n\n"
             f"{barra_progresso((atual-1) + 0.8, total)}"
         )
         await context.bot.edit_message_text(chat_id=chat_id, message_id=msg_id, text=prog_texto, parse_mode="HTML")
@@ -371,10 +369,12 @@ async def process_all_forwardings(update: Update, context: ContextTypes.DEFAULT_
         context.user_data["fila_revisao"].append({
             "midia": midia,
             "copy": copy_gerada,
+            "texto_base": texto_original, # Salva o original para correções futuras
+            "link_original": link_original,
             "link_afiliado": link_afiliado,
             "preco": preco,
             "loja": loja_detectada,
-            "cupom": cupom, # SALVA O CUPOM AQUI
+            "cupom": cupom,
             "aprovado": False,
             "index": index,
             "titulo": titulo_resumo

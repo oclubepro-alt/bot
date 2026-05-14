@@ -112,51 +112,79 @@ class AmazonCreatorsAPI:
             return None
 
     def _map_response(self, item: dict, asin: str) -> dict:
-        """Mapeia o objeto item da Amazon para o formato do bot."""
-        # A estrutura da Creators API costuma ser: itemInfo -> title, images, etc.
-        item_info = item.get("itemInfo", {})
-        title_obj = item_info.get("title", {})
+        """Mapeia o objeto item da Amazon para o formato do bot, suportando diversas variantes."""
+        # Suporte a case-insensitive para chaves comuns
+        def get_field(obj, keys):
+            if not obj or not isinstance(obj, dict): return None
+            for k in keys:
+                # Tenta exato, lowercase e PascalCase
+                for variant in [k, k.lower(), k.capitalize()]:
+                    if variant in obj: return obj[variant]
+            return None
+
+        item_info = get_field(item, ["itemInfo", "ItemInfo"]) or {}
         
-        # Tenta vários campos de título
+        # 1. TÍTULO
+        title_obj = get_field(item_info, ["title", "Title"]) or {}
         titulo = (
-            title_obj.get("displayValue") or 
-            title_obj.get("value") or 
-            item.get("itemName") or 
-            item.get("title")
+            get_field(title_obj, ["displayValue", "DisplayValue"]) or 
+            get_field(title_obj, ["value", "Value"]) or 
+            get_field(item, ["itemName", "ItemName", "title", "Title"])
         )
         
-        # Imagens
-        images_obj = item_info.get("images", {})
-        img_list = images_obj.get("images", [])
+        # 2. IMAGEM (Estrutura PA-API v5 e Creators API v1)
         imagem = None
-        if img_list:
-            try:
-                # Prioriza imagens maiores
-                sorted_imgs = sorted(img_list, key=lambda x: x.get("width", 0), reverse=True)
-                imagem = sorted_imgs[0].get("url")
-            except:
-                imagem = img_list[0].get("url")
+        images_obj = get_field(item_info, ["images", "Images"]) or {}
         
-        # Preços (Offers -> Listings)
-        offers = item.get("offers", {})
-        listings = offers.get("listings", [])
+        # Tenta Primary -> Large -> URL
+        primary = get_field(images_obj, ["primary", "Primary"])
+        if primary:
+            large = get_field(primary, ["large", "Large"])
+            if large:
+                imagem = get_field(large, ["url", "URL"])
         
+        # Fallback 1: Primeira variante Large
+        if not imagem:
+            variants = get_field(images_obj, ["variants", "Variants"]) or []
+            if variants and isinstance(variants, list):
+                v_large = get_field(variants[0], ["large", "Large"])
+                if v_large:
+                    imagem = get_field(v_large, ["url", "URL"])
+
+        # Fallback 2: Lista genérica de imagens (como estava antes)
+        if not imagem:
+            img_list = get_field(images_obj, ["images", "Images"]) or []
+            if img_list and isinstance(img_list, list):
+                try:
+                    sorted_imgs = sorted(img_list, key=lambda x: get_field(x, ["width", "Width"]) or 0, reverse=True)
+                    imagem = get_field(sorted_imgs[0], ["url", "URL"])
+                except:
+                    imagem = get_field(img_list[0], ["url", "URL"])
+
+        # 3. PREÇOS
         preco_promo = None
         preco_orig = None
         
-        # Tenta extrair das listagens (Estrutura padrão PAAPI 5)
-        if listings:
+        # Tenta via Offers -> Listings
+        offers = get_field(item, ["offers", "Offers"]) or {}
+        listings = get_field(offers, ["listings", "Listings"]) or []
+        
+        if listings and isinstance(listings, list):
             listing = listings[0]
-            price_info = listing.get("price", {})
-            amount = price_info.get("amount") or price_info.get("value") or price_info.get("displayAmount")
+            price_info = get_field(listing, ["price", "Price"]) or {}
+            amount = (
+                get_field(price_info, ["amount", "Amount"]) or 
+                get_field(price_info, ["value", "Value"]) or 
+                get_field(price_info, ["displayAmount", "DisplayAmount"])
+            )
             
             if amount:
                 from bot.services.product_extractor_v2 import format_api_price
                 preco_promo = format_api_price(amount)
                 
                 # Preço original (Savings ou listPrice)
-                savings = listing.get("savings", {})
-                s_amount = savings.get("amount") or savings.get("value")
+                savings = get_field(listing, ["savings", "Savings"]) or {}
+                s_amount = get_field(savings, ["amount", "Amount"]) or get_field(savings, ["value", "Value"])
                 if s_amount and preco_promo:
                     try:
                         from bot.services.product_extractor_v2 import _parse_price_to_float
@@ -165,55 +193,51 @@ class AmazonCreatorsAPI:
                         preco_orig = format_api_price(p_float + s_float)
                     except: pass
 
-        # Fallback de preço: Alguns itens na Creators API vem direto no objeto ou em productInfo
+        # Fallback de preço: ProductInfo (comum na Creators API)
         if not preco_promo:
-            p_info = item.get("productInfo", {})
+            p_info = get_field(item_info, ["productInfo", "ProductInfo"]) or get_field(item, ["productInfo", "ProductInfo"]) or {}
             amount = (
-                item.get("price") or 
-                item.get("buyingPrice") or 
-                item.get("root_price") or
-                p_info.get("price") or
-                p_info.get("buyingPrice")
+                get_field(item, ["price", "Price"]) or 
+                get_field(item, ["buyingPrice", "BuyingPrice"]) or 
+                get_field(item, ["root_price"]) or
+                get_field(p_info, ["price", "Price"]) or
+                get_field(p_info, ["buyingPrice", "BuyingPrice"]) or
+                get_field(p_info, ["listPrice", "ListPrice"])
             )
+            
+            if isinstance(amount, dict):
+                amount = get_field(amount, ["amount", "Amount", "value", "Value", "displayAmount", "DisplayAmount"])
+
             if amount:
                 from bot.services.product_extractor_v2 import format_api_price
                 preco_promo = format_api_price(amount)
+                
+                # Tenta pegar preco_orig das economias
                 try:
                     from bot.services.product_extractor_v2 import _parse_price_to_float
                     p_float = _parse_price_to_float(preco_promo)
-                    # Tenta pegar s_amount de onde der
-                    savings_info = item.get("savings") or p_info.get("savings") or {}
-                    savings_amount = savings_info.get("amount") or savings_info.get("value")
+                    savings_info = get_field(item, ["savings", "Savings"]) or get_field(p_info, ["savings", "Savings"]) or {}
+                    savings_amount = get_field(savings_info, ["amount", "Amount", "value", "Value"])
                     if savings_amount and p_float:
                         s_float = float(savings_amount)
                         preco_orig = format_api_price(p_float + s_float)
                 except: pass
-                        pass
-        
-        # Fallback para root 'price' ou 'itemInfo.productInfo'
-        if not preco_promo:
-            # Tenta itemInfo.productInfo.listPrice
-            prod_info = item_info.get("productInfo", {})
-            lp = prod_info.get("listPrice", {})
-            lp_amount = lp.get("amount") or lp.get("value") or lp.get("displayAmount")
-            
-            if not lp_amount:
-                # Tenta root 'price'
-                root_price = item.get("price", {})
-                if isinstance(root_price, dict):
-                    lp_amount = root_price.get("amount") or root_price.get("value") or root_price.get("displayAmount")
-                elif isinstance(root_price, (str, float, int)):
-                    lp_amount = root_price
-            
-            if lp_amount:
-                from bot.services.product_extractor_v2 import format_api_price
-                preco_promo = format_api_price(lp_amount)
+
+        # Fallback final de preço original: listPrice direto
+        if preco_promo and not preco_orig:
+            p_info = get_field(item_info, ["productInfo", "ProductInfo"]) or {}
+            lp_obj = get_field(p_info, ["listPrice", "ListPrice"])
+            if lp_obj:
+                lp_amount = get_field(lp_obj, ["amount", "Amount", "value", "Value", "displayAmount", "DisplayAmount"])
+                if lp_amount:
+                    from bot.services.product_extractor_v2 import format_api_price
+                    preco_orig = format_api_price(lp_amount)
 
         # Se ainda não achou título, usa o ASIN
         if not titulo:
             titulo = f"Produto Amazon {asin}"
 
-        logger.info(f"[AMAZON_API] Mapeado ASIN {asin}: Titulo={titulo[:40]}, Preço={preco_promo}")
+        logger.info(f"[AMAZON_API] Mapeado ASIN {asin}: Titulo={titulo[:40]}, Preço={preco_promo}, Imagem={'Sim' if imagem else 'Não'}")
 
         return {
             "titulo": titulo,

@@ -25,7 +25,7 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
-_BACKEND     = os.getenv("SHORTENER_BACKEND", "tinyurl").strip().lower()
+_BACKEND     = os.getenv("SHORTENER_BACKEND", "isgd").strip().lower()
 _DISABLE_AMAZON = os.getenv("DISABLE_SHORTENER_AMAZON", "true").strip().lower() in ("true", "1", "yes")
 _TIMEOUT     = 8   # segundos por chamada ao encurtador
 _MAX_RETRIES = 2
@@ -34,17 +34,6 @@ _MAX_RETRIES = 2
 # ---------------------------------------------------------------------------
 # Backends
 # ---------------------------------------------------------------------------
-
-def _shorten_tinyurl(url: str) -> str:
-    """Encurta via TinyURL (sem auth necessária)."""
-    api = f"https://tinyurl.com/api-create.php?url={requests.utils.quote(url, safe='')}"
-    resp = requests.get(api, timeout=_TIMEOUT)
-    resp.raise_for_status()
-    short = resp.text.strip()
-    if short.startswith("https://tinyurl.com/"):
-        return short
-    raise ValueError(f"TinyURL retornou resposta inesperada: {short[:80]}")
-
 
 def _shorten_isgd(url: str) -> str:
     """Encurta via is.gd (sem auth necessária)."""
@@ -84,7 +73,7 @@ def shorten_url(url: str, *, force_backend: str | None = None) -> str:
 
     Args:
         url:            URL completa (pode conter parâmetros de afiliado).
-        force_backend:  Força um backend específico ('tinyurl'|'isgd'|'simulated').
+        force_backend:  Força um backend específico ('isgd'|'simulated'|'direct').
 
     Returns:
         URL curta pronta para publicação.
@@ -96,8 +85,6 @@ def shorten_url(url: str, *, force_backend: str | None = None) -> str:
     backend = (force_backend or _BACKEND).lower()
     logger.info(f"[SHORTENER] Encurtando via '{backend}': {url[:80]}...")
 
-    backends_sequence: list[tuple[str, callable]] = []
-
     if backend in ("none", "direct"):
         logger.info("[SHORTENER] Encurtador desativado (direct). Retornando URL original.")
         return url
@@ -106,19 +93,10 @@ def shorten_url(url: str, *, force_backend: str | None = None) -> str:
         logger.info("[SHORTENER] Encurtador ignorado para Amazon (config).")
         return url
 
-    if backend == "tinyurl":
-        backends_sequence = [
-            ("tinyurl", _shorten_tinyurl),
-            ("isgd",    _shorten_isgd),
-        ]
-    elif backend == "isgd":
-        backends_sequence = [
-            ("isgd",    _shorten_isgd),
-            ("tinyurl", _shorten_tinyurl),
-        ]
-    else:
-        # simulated ou qualquer valor desconhecido
-        return _shorten_simulated(url)
+    # Sequência de backends (agora sem TinyURL)
+    backends_sequence: list[tuple[str, callable]] = [
+        ("isgd", _shorten_isgd),
+    ]
 
     for name, fn in backends_sequence:
         for attempt in range(1, _MAX_RETRIES + 1):

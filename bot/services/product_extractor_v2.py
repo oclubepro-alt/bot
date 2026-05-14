@@ -1238,7 +1238,7 @@ async def extract_product_data_v2(url: str) -> dict:
     final_url = url
     try:
         # Resolve amzn.to, magalu.me e encurtadores comuns
-        _SHORTENERS = ["amzn.to", "amzn.com/gp/r.", "magalu.me", "t.co", "bit.ly", "tinyurl.com", "ow.ly", "is.gd"]
+        _SHORTENERS = ["amzn.to", "amzn.com/gp/r.", "magalu.me", "t.co", "bit.ly", "ow.ly", "is.gd"]
         if any(x in url for x in _SHORTENERS):
             logger.info(f"[EXTRATOR] Resolvendo encurtador: {url[:60]}")
             final_url = await asyncio.to_thread(resolve_url, url)

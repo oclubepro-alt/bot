@@ -119,7 +119,7 @@ async def check_config_command(update: Update, context: ContextTypes.DEFAULT_TYP
     
     msg.append("\n<b>📡 Sistema:</b>")
     msg.append(f"📌 Canal: <code>{TELEGRAM_CHANNEL_ID}</code>")
-    msg.append(f"✂️ Encurtador: <code>{os.getenv('SHORTENER_BACKEND', 'tinyurl')}</code>")
+    msg.append(f"✂️ Encurtador: <code>{os.getenv('SHORTENER_BACKEND', 'isgd')}</code>")
     
     if SCRAPERAPI_KEY:
         masked_scraper = SCRAPERAPI_KEY[:4] + "*" * (len(SCRAPERAPI_KEY)-8) + SCRAPERAPI_KEY[-4:] if len(SCRAPERAPI_KEY) > 8 else "***"
