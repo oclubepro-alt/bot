@@ -6,6 +6,7 @@ import os
 import httpx
 import logging
 import asyncio
+import re
 from datetime import datetime, timedelta
 from bot.utils.config import (
     AMAZON_CREATORS_CLIENT_ID,
@@ -35,8 +36,7 @@ class AmazonCreatorsAPI:
         payload = {
             "grant_type": "client_credentials",
             "client_id": self.client_id,
-            "client_secret": self.client_secret,
-            "scope": "advertising::campaign_management" # Escopo comum para Creators
+            "client_secret": self.client_secret
         }
 
         try:
@@ -56,21 +56,30 @@ class AmazonCreatorsAPI:
             logger.error(f"[AMAZON_API] ❌ Exceção no token: {e}")
             return None
 
+    def _extract_asin(self, url: str) -> str | None:
+        """Extrai o ASIN da URL da Amazon."""
+        # Regex robusto para ASIN
+        asin_re = re.compile(r"/(?:dp|gp/product|product-reviews|aw/d|vdp)/([A-Z0-9]{10})", re.IGNORECASE)
+        match = asin_re.search(url)
+        if match:
+            return match.group(1).upper()
+        
+        # Fallback para parâmetros de query
+        match = re.search(r"[/\?&](B[A-Z0-9]{9})", url)
+        if match:
+            return match.group(1).upper()
+            
+        return None
+
     async def get_product_details(self, url: str) -> dict | None:
         """Consulta detalhes do produto via GetItems da Creators API."""
-        import re
         from bot.utils.config import AMAZON_API_VERSION
         
-        # Extrai ASIN
-        asin_match = re.search(r"/(?:dp|gp/product|product-reviews|aw/d|vdp|d)/([A-Z0-9]{10})", url, re.I)
-        if not asin_match:
-            asin_match = re.search(r"[/\?&](B[A-Z0-9]{9})", url)
-
-        if not asin_match:
+        asin = self._extract_asin(url)
+        if not asin:
             logger.warning(f"[AMAZON_API] ⚠️ ASIN não encontrado: {url[:60]}")
             return None
         
-        asin = asin_match.group(1).upper()
         token = await self._get_access_token()
         if not token: return None
 
@@ -111,142 +120,135 @@ class AmazonCreatorsAPI:
             logger.error(f"[AMAZON_API] ❌ Exceção GetItems: {e}")
             return None
 
-    def _map_response(self, item: dict, asin: str) -> dict:
-        """Mapeia o objeto item da Amazon para o formato do bot, suportando diversas variantes."""
-        # Suporte a case-insensitive para chaves comuns
+    def _map_response(self, item_info: dict, asin: str) -> dict:
+        """
+        Mapeia o JSON da Amazon para o formato interno.
+        Suporta tanto CamelCase (Creators API) quanto PascalCase (PA-API v5).
+        """
         def get_field(obj, keys):
             if not obj or not isinstance(obj, dict): return None
             for k in keys:
-                # Tenta exato, lowercase e PascalCase
-                for variant in [k, k.lower(), k.capitalize()]:
-                    if variant in obj: return obj[variant]
+                if k in obj: return obj[k]
+            # Busca case-insensitive
+            keys_lower = [k.lower() for k in keys]
+            for k, v in obj.items():
+                if k.lower() in keys_lower: return v
             return None
 
-        item_info = get_field(item, ["itemInfo", "ItemInfo"]) or {}
-        
-        # 1. TÍTULO
-        title_obj = get_field(item_info, ["title", "Title"]) or {}
-        titulo = (
-            get_field(title_obj, ["displayValue", "DisplayValue"]) or 
-            get_field(title_obj, ["value", "Value"]) or 
-            get_field(item, ["itemName", "ItemName", "title", "Title"])
-        )
-        
-        # 2. IMAGEM (Estrutura PA-API v5 e Creators API v1)
-        imagem = None
-        images_obj = get_field(item_info, ["images", "Images"]) or {}
-        
-        # Tenta Primary -> Large -> URL
+        product = {
+            "titulo": f"Produto Amazon {asin}",
+            "preco": "Preço não disponível",
+            "preco_original": None,
+            "imagem": None,
+            "descricao": "",
+            "store": "Amazon",
+            "store_key": "amazon",
+            "source_method": "AMAZON_CREATORS_API"
+        }
+
+        # 1. Título
+        item_info_data = get_field(item_info, ["itemInfo", "ItemInfo"]) or item_info
+        title_obj = get_field(item_info_data, ["title", "Title"])
+        if title_obj:
+            product["titulo"] = get_field(title_obj, ["displayValue", "DisplayValue"]) or product["titulo"]
+
+        # 2. Imagem (Hierarquia: Primary -> HighRes -> Large -> Medium)
+        images_obj = get_field(item_info_data, ["images", "Images"]) or {}
         primary = get_field(images_obj, ["primary", "Primary"])
-        if primary:
-            large = get_field(primary, ["large", "Large"])
-            if large:
-                imagem = get_field(large, ["url", "URL"])
         
-        # Fallback 1: Primeira variante Large
-        if not imagem:
+        image_url = None
+        if primary:
+            # Prioridade para imagens de alta resolução
+            for size in ["highRes", "HighRes", "large", "Large", "medium", "Medium"]:
+                size_obj = get_field(primary, [size])
+                if size_obj:
+                    image_url = get_field(size_obj, ["url", "URL"])
+                    if image_url: break
+        
+        # Se não achou na Primary, tenta Variants
+        if not image_url:
             variants = get_field(images_obj, ["variants", "Variants"]) or []
             if variants and isinstance(variants, list):
-                v_large = get_field(variants[0], ["large", "Large"])
-                if v_large:
-                    imagem = get_field(v_large, ["url", "URL"])
+                for v in variants:
+                    for size in ["highRes", "HighRes", "large", "Large"]:
+                        size_obj = get_field(v, [size])
+                        if size_obj:
+                            image_url = get_field(size_obj, ["url", "URL"])
+                            if image_url: break
+                    if image_url: break
 
-        # Fallback 2: Lista genérica de imagens (como estava antes)
-        if not imagem:
-            img_list = get_field(images_obj, ["images", "Images"]) or []
-            if img_list and isinstance(img_list, list):
-                try:
-                    sorted_imgs = sorted(img_list, key=lambda x: get_field(x, ["width", "Width"]) or 0, reverse=True)
-                    imagem = get_field(sorted_imgs[0], ["url", "URL"])
-                except:
-                    imagem = get_field(img_list[0], ["url", "URL"])
+        product["imagem"] = image_url
 
-        # 3. PREÇOS
-        preco_promo = None
-        preco_orig = None
-        
-        # Tenta via Offers -> Listings
-        offers = get_field(item, ["offers", "Offers"]) or {}
-        listings = get_field(offers, ["listings", "Listings"]) or []
-        
-        if listings and isinstance(listings, list):
-            listing = listings[0]
-            price_info = get_field(listing, ["price", "Price"]) or {}
-            amount = (
-                get_field(price_info, ["amount", "Amount"]) or 
-                get_field(price_info, ["value", "Value"]) or 
-                get_field(price_info, ["displayAmount", "DisplayAmount"])
-            )
-            
-            if amount:
-                from bot.services.product_extractor_v2 import format_api_price
-                preco_promo = format_api_price(amount)
-                
-                # Preço original (Savings ou listPrice)
-                savings = get_field(listing, ["savings", "Savings"]) or {}
-                s_amount = get_field(savings, ["amount", "Amount"]) or get_field(savings, ["value", "Value"])
-                if s_amount and preco_promo:
-                    try:
-                        from bot.services.product_extractor_v2 import _parse_price_to_float
-                        p_float = _parse_price_to_float(preco_promo)
-                        s_float = float(s_amount)
-                        preco_orig = format_api_price(p_float + s_float)
-                    except: pass
+        # 3. Preço
+        offers = get_field(item_info, ["offers", "Offers"]) or {}
+        price_found = None
+        orig_price = None
 
-        # Fallback de preço: ProductInfo (comum na Creators API)
-        if not preco_promo:
-            p_info = get_field(item_info, ["productInfo", "ProductInfo"]) or get_field(item, ["productInfo", "ProductInfo"]) or {}
-            amount = (
-                get_field(item, ["price", "Price"]) or 
-                get_field(item, ["buyingPrice", "BuyingPrice"]) or 
-                get_field(item, ["root_price"]) or
-                get_field(p_info, ["price", "Price"]) or
-                get_field(p_info, ["buyingPrice", "BuyingPrice"]) or
-                get_field(p_info, ["listPrice", "ListPrice"])
-            )
-            
-            if isinstance(amount, dict):
-                amount = get_field(amount, ["amount", "Amount", "value", "Value", "displayAmount", "DisplayAmount"])
+        # A. Tenta Summaries (LowestPrice é comum aqui)
+        summaries = get_field(offers, ["summaries", "Summaries"]) or []
+        if summaries and isinstance(summaries, list):
+            lowest = get_field(summaries[0], ["lowestPrice", "LowestPrice"])
+            if lowest:
+                price_found = get_field(lowest, ["amount", "Amount", "value", "Value", "displayAmount", "DisplayAmount"])
 
-            if amount:
-                from bot.services.product_extractor_v2 import format_api_price
-                preco_promo = format_api_price(amount)
-                
-                # Tenta pegar preco_orig das economias
-                try:
-                    from bot.services.product_extractor_v2 import _parse_price_to_float
-                    p_float = _parse_price_to_float(preco_promo)
-                    savings_info = get_field(item, ["savings", "Savings"]) or get_field(p_info, ["savings", "Savings"]) or {}
-                    savings_amount = get_field(savings_info, ["amount", "Amount", "value", "Value"])
-                    if savings_amount and p_float:
-                        s_float = float(savings_amount)
-                        preco_orig = format_api_price(p_float + s_float)
-                except: pass
+        # B. Tenta Listings (BuyBox)
+        if not price_found:
+            listings = get_field(offers, ["listings", "Listings"]) or []
+            if listings and isinstance(listings, list):
+                listing = listings[0]
+                price_info = get_field(listing, ["price", "Price"])
+                if price_info:
+                    # Preço de compra atual
+                    price_found = (
+                        get_field(price_info, ["amount", "Amount"]) or 
+                        get_field(price_info, ["value", "Value"]) or 
+                        get_field(price_info, ["displayAmount", "DisplayAmount"])
+                    )
+                    # Preço original (se houver desconto)
+                    savings = get_field(price_info, ["savings", "Savings"])
+                    if savings:
+                        # Se temos savings, buscamos listPrice para o preço "De"
+                        list_price_info = get_field(listing, ["listPrice", "ListPrice"])
+                        if list_price_info:
+                            orig_price = get_field(list_price_info, ["amount", "Amount", "value", "Value", "displayAmount", "DisplayAmount"])
+                        
+                        # Se ainda não temos orig_price mas temos o valor do desconto, calculamos
+                        if not orig_price:
+                            try:
+                                from bot.services.product_extractor_v2 import _parse_price_to_float
+                                p_float = _parse_price_to_float(str(price_found))
+                                s_amount = get_field(savings, ["amount", "Amount", "value", "Value"])
+                                if s_amount and p_float:
+                                    orig_price = p_float + float(s_amount)
+                            except: pass
 
-        # Fallback final de preço original: listPrice direto
-        if preco_promo and not preco_orig:
+        # C. Fallback: ProductInfo (comum na Creators API v1)
+        if not price_found:
             p_info = get_field(item_info, ["productInfo", "ProductInfo"]) or {}
-            lp_obj = get_field(p_info, ["listPrice", "ListPrice"])
-            if lp_obj:
-                lp_amount = get_field(lp_obj, ["amount", "Amount", "value", "Value", "displayAmount", "DisplayAmount"])
-                if lp_amount:
-                    from bot.services.product_extractor_v2 import format_api_price
-                    preco_orig = format_api_price(lp_amount)
+            price_found = (
+                get_field(p_info, ["price", "Price"]) or
+                get_field(p_info, ["buyingPrice", "BuyingPrice"])
+            )
+            if isinstance(price_found, dict):
+                price_found = get_field(price_found, ["amount", "Amount", "value", "Value", "displayAmount", "DisplayAmount"])
+            
+            if not orig_price:
+                lp_obj = get_field(p_info, ["listPrice", "ListPrice"])
+                if lp_obj:
+                    orig_price = get_field(lp_obj, ["amount", "Amount", "value", "Value", "displayAmount", "DisplayAmount"])
 
-        # Se ainda não achou título, usa o ASIN
-        if not titulo:
-            titulo = f"Produto Amazon {asin}"
+        # Formatação
+        if price_found:
+            from bot.services.product_extractor_v2 import format_api_price
+            product["preco"] = format_api_price(price_found)
+        
+        if orig_price:
+            from bot.services.product_extractor_v2 import format_api_price
+            product["preco_original"] = format_api_price(orig_price)
 
-        logger.info(f"[AMAZON_API] Mapeado ASIN {asin}: Titulo={titulo[:40]}, Preço={preco_promo}, Imagem={'Sim' if imagem else 'Não'}")
+        logger.info(f"[AMAZON_API] Mapeado ASIN {asin}: Titulo={product['titulo'][:40]}, Preço={product['preco']}, Imagem={'Sim' if product['imagem'] else 'Não'}")
 
-        return {
-            "titulo": titulo,
-            "imagem": imagem,
-            "preco": preco_promo or "Preço não disponível",
-            "preco_original": preco_orig,
-            "source_method": "AMAZON_CREATORS_API",
-            "is_pix_price": False,
-        }
+        return product
 
 # Instância global
 amazon_api = AmazonCreatorsAPI()

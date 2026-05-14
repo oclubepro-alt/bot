@@ -137,14 +137,21 @@ def _injetar_mercadolivre(url: str, id_ml: str) -> str:
 
 
 def _injetar_magalu(url: str, id_magalu: str) -> str:
-    """Adiciona utm_medium=affiliate&utm_source= para Magalu."""
+    """Adiciona promoter_id e partner_id para Magalu (Magazine Você)."""
     parsed = urlparse(url)
     params = parse_qs(parsed.query, keep_blank_values=True)
+    
+    # Se o ID for numérico (ID de promotor), usamos o formato oficial de Divulgador
+    if id_magalu.isdigit():
+        params["promoter_id"] = [id_magalu]
+        params["partner_id"] = ["3440"] # ID padrão para Magazine Você
+    
     params["utm_medium"] = ["affiliate"]
     params["utm_source"]  = [id_magalu]
+    
     nova_query = urlencode(params, doseq=True)
     resultado = urlunparse(parsed._replace(query=nova_query))
-    logger.info(f"[AFFILIATE_SERVICE] Magalu | utm_source={id_magalu} | URL={resultado[:100]}")
+    logger.info(f"[AFFILIATE_SERVICE] Magalu | ID={id_magalu} | URL={resultado[:100]}")
     return resultado
 
 
