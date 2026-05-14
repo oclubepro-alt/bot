@@ -176,6 +176,7 @@ async def finalizar_lote_encaminhamento(context, chat_id, user_id):
     
     keyboard = [
         [InlineKeyboardButton("⚙️ Processar Tudo", callback_data=CB_PROCESSAR_TUDO)],
+        [InlineKeyboardButton("🎫 Adicionar Cupom", callback_data="encam_add_cupom")],
         [InlineKeyboardButton("✏️ Corrigir", callback_data="frev_corrigir")],
         [InlineKeyboardButton("❌ Cancelar", callback_data=CB_CANCELAR_ENCAM)]
     ]
@@ -219,6 +220,23 @@ async def finalizar_lote_encaminhamento(context, chat_id, user_id):
         user_data["msg_contador_id"] = new_msg.message_id
     except Exception as e:
         logger.error(f"Erro ao finalizar lote: {e}")
+
+async def encam_add_cupom(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    context.user_data["estado_correcao"] = "cupom_inicial"
+    await query.edit_message_text(
+        "🎫 <b>MODO CUPOM (BATCH)</b>\n\nEnvie o código do cupom que será aplicado à <b>última mensagem</b> recebida:",
+        parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancelar", callback_data="encam_cancelar_cupom")]])
+    )
+
+async def encam_cancelar_cupom(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    context.user_data["estado_correcao"] = None
+    await finalizar_lote_encaminhamento(context, update.effective_chat.id, update.effective_user.id)
 
 async def cancel_forward_mode(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -322,10 +340,13 @@ async def process_all_forwardings(update: Update, context: ContextTypes.DEFAULT_
         precos = re.findall(r'R\$\s*[\d.,]+', texto_original)
         preco = precos[0] if precos else "Confira o preço"
 
-        cupons = re.findall(r'\b[A-Z0-9]{4,15}\b', texto_original)
-        # Filtra cupons muito comuns ou que sejam links truncados
-        cupons = [c for c in cupons if not c.startswith('HTTP') and len(c) > 4]
-        cupom = cupons[0] if cupons else None
+        # Tenta pegar cupom manual PRIMEIRO
+        cupom = item.get("cupom")
+        if not cupom:
+            cupons = re.findall(r'\b[A-Z0-9]{4,15}\b', texto_original)
+            # Filtra cupons muito comuns ou que sejam links truncados
+            cupons = [c for c in cupons if not c.startswith('HTTP') and len(c) > 4]
+            cupom = cupons[0] if cupons else None
         
         link_final = link_afiliado or link_original or "Sem link"
         
@@ -562,6 +583,16 @@ async def receive_correction(update: Update, context: ContextTypes.DEFAULT_TYPE)
     fila = context.user_data.get("fila_revisao", [])
     if not fila:
         context.user_data["estado_correcao"] = None
+        return
+
+    if context.user_data.get("estado_correcao") == "cupom_inicial":
+        fila_encam = context.user_data.get("fila_encaminhamentos", [])
+        if fila_encam:
+            fila_encam[-1]["cupom"] = texto.upper()
+            await update.message.reply_text(f"✅ Cupom <b>{texto.upper()}</b> adicionado à última mensagem!", parse_mode="HTML")
+        
+        context.user_data["estado_correcao"] = None
+        await finalizar_lote_encaminhamento(context, update.effective_chat.id, update.effective_user.id)
         return
 
     if context.user_data.get("estado_correcao") == "cupom":

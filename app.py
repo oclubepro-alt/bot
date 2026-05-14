@@ -86,7 +86,7 @@ def main() -> None:
     from bot.handlers.forward_publisher import (
         start_forward_mode, receive_forwarded_message, cancel_forward_mode, process_all_forwardings,
         encam_revisar_uma, encam_aprovar_todas, frev_aprovar, frev_descartar, frev_proxima, frev_corrigir, frev_cupom,
-        receive_correction, CB_PROCESSAR_TUDO, CB_CANCELAR_ENCAM
+        receive_correction, CB_PROCESSAR_TUDO, CB_CANCELAR_ENCAM, encam_add_cupom, encam_cancelar_cupom
     )
     from bot.utils.constants import CB_PUBLICAR_ENCAMINHAMENTO
 
@@ -100,6 +100,8 @@ def main() -> None:
     app.add_handler(CallbackQueryHandler(frev_proxima, pattern=r"^frev_proxima$"))
     app.add_handler(CallbackQueryHandler(frev_corrigir, pattern=r"^frev_corrigir$"))
     app.add_handler(CallbackQueryHandler(frev_cupom, pattern=r"^frev_cupom$"))
+    app.add_handler(CallbackQueryHandler(encam_add_cupom, pattern=r"^encam_add_cupom$"))
+    app.add_handler(CallbackQueryHandler(encam_cancelar_cupom, pattern=r"^encam_cancelar_cupom$"))
     
     app.add_handler(MessageHandler(
         filters.FORWARDED & (
