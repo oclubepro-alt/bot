@@ -390,6 +390,7 @@ async def process_all_forwardings(update: Update, context: ContextTypes.DEFAULT_
             "cupom": cupom,
             "aprovado": False,
             "preserve_fidelity": True, # FLAG CRÍTICA: Mantém o texto original
+            "titulo": titulo_resumo, # Adicionado para compatibilidade com gerar_copy se necessário
             "nome": titulo_resumo,
             "imagem": midia.get("file_id") if isinstance(midia, dict) else midia,
             "created_at": datetime.now().isoformat()
@@ -630,15 +631,23 @@ async def receive_correction(update: Update, context: ContextTypes.DEFAULT_TYPE)
         else:
             fila[0]["cupom"] = texto.upper()
         
-        # Regenerar copy com o novo cupom
+        # Se for encaminhamento, NÃO gera copy nova, apenas anexa o cupom
         item = fila[0]
-        item["copy"] = gerar_copy(
-            titulo=item.get("titulo", "Produto"),
-            preco=item.get("preco", ""),
-            loja=item.get("loja", ""),
-            link=item.get("link_afiliado", ""),
-            cupom=item["cupom"]
-        )
+        if item.get("preserve_fidelity"):
+            # Apenas remove cupom antigo se houver e adiciona o novo no final para não estragar a copy
+            clean_copy = re.sub(r'\n\n🎟️ Cupom:.*', '', item["copy"])
+            if item["cupom"]:
+                item["copy"] = f"{clean_copy}\n\n🎟️ Cupom: <b>{item['cupom']}</b>"
+            else:
+                item["copy"] = clean_copy
+        else:
+            item["copy"] = gerar_copy(
+                titulo=item.get("titulo", "Produto"),
+                preco=item.get("preco", ""),
+                loja=item.get("loja", ""),
+                link=item.get("link_afiliado", ""),
+                cupom=item["cupom"]
+            )
         await update.message.reply_text("✅ Cupom atualizado!")
     else:
         fila[0]["copy"] = texto
