@@ -634,16 +634,17 @@ def _is_valid_price_tag(tag) -> bool:
         p = p.parent
     
     # 1. Filtro de palavras banidas (preço por unidade, etc)
-    blacklist = [
-        "cada", "unidade", "litro", "metro", " kg", " g", " ml", " pç", " p/ ", "por ", 
-        "frete", "entrega", "parcela", "juros", "mês", "ano", "dia", "semana", 
-        "estoque", "disponível", "vendido", "entregue", "preço", "valor", "oferta",
-        "/ unidade", "/unidade", "por unidade", "/ unit", "/ unit", "/m ", " unid", 
-        "valor do grama", "valor do ml", "valor do kg"
-    ]
-    for term in blacklist:
+    # MODIFICAÇÃO: 'unidade' e 'ml' agora só bloqueiam se houver um slash '/' antes (indica preço unitário)
+    # ou se for explicitamente 'cada' / 'por unidade'.
+    blacklist_strong = ["cada", "por unidade", "valor do ml", "valor do kg", "valor do grama"]
+    for term in blacklist_strong:
         if term in text_context:
             return False
+
+    # Filtros contextuais que podem estar no nome do produto (ex: Pack 12 Unidades)
+    # Só bloqueamos se parecer um cálculo de preço unitário (R$ X / unidade)
+    if re.search(r"/\s*(unidade|unid|ml|kg|g|m|pç|unit)", text_context):
+        return False
 
     # 2. Filtro de Classes CSS
     bad_classes = [
@@ -980,11 +981,15 @@ def _extract_from_soup(soup: BeautifulSoup, base_url: str, store_key: str = "oth
 
     # ── TÍTULO ──────────────────────────────────────────────────────────────
     title_selectors = [
-        "#productTitle",             # Amazon
+        "#productTitle",             # Amazon principal
+        "#title",                    # Amazon secundário
+        ".product-title",            # Genérico
         ".ui-pdp-title",             # Mercado Livre
         "h1[itemprop='name']",       # Magalu / genérico
         ".header-product__title",    # Netshoes
-        "h1.product-name", "h1",
+        "h1.product-name", 
+        "h1.title",
+        "h1",
     ]
     for sel in title_selectors:
         tag = soup.select_one(sel)
@@ -1101,9 +1106,11 @@ async def get_page_html(url: str) -> tuple[str | None, str]:
                 payload['ultra_premium'] = 'true'
                 logger.info("[SCRAPERAPI] ⚡ Usando ultra_premium para domínio protegido")
             
-            # Amazon exige premium
+            # Amazon exige premium + renderização para preços dinâmicos
             elif is_amazon:
                 payload['premium'] = 'true'
+                payload['render'] = 'true'
+                logger.info("[SCRAPERAPI] ⚡ Usando premium + render para Amazon")
             
             # Shopee precisa de sessão mantida
             if is_shopee:
@@ -1117,7 +1124,7 @@ async def get_page_html(url: str) -> tuple[str | None, str]:
                     html_lower = html.lower()
                     
                     # Detectar CAPTCHA/Bloqueio no conteúdo (Radware, etc)
-                    bloqueios = ["radware", "captcha", "blocked", "access denied", "unusual traffic", "verify you are human", "desculpe! algo deu errado", "type the characters you see in this image"]
+                    bloqueios = ["radware", "captcha", "blocked", "access denied", "unusual traffic", "verify you are human", "desculpe! algo deu errado", "type the characters you see in this image", "robot check", "api error"]
                     found_block = None
                     for termo in bloqueios:
                         if termo in html_lower:
@@ -1179,10 +1186,14 @@ def _normalize_amazon_url(url: str) -> str:
         return url
 
     # Tenta extrair o ASIN (10 caracteres alfanuméricos) de vários formatos comuns
-    asin_match = re.search(r"/(?:dp|gp/product|product-reviews|aw/d|vdp)/([A-Z0-9]{10})", url, re.I)
+    # Regex expandida para pegar em mais contextos
+    asin_match = re.search(r"/(?:dp|gp/product|product-reviews|aw/d|vdp|d)/([A-Z0-9]{10})", url, re.I)
+    if not asin_match:
+        # Tenta pegar qualquer string de 10 chars que comece com B0 (comum em ASINs)
+        asin_match = re.search(r"[/\?&](B[A-Z0-9]{9})", url)
+
     if asin_match:
         asin = asin_match.group(1).upper()
-        # Força domínio .com.br para consistência se for Amazon Brasil
         domain = "www.amazon.com.br" if "amazon.com.br" in url.lower() else "www.amazon.com"
         clean = f"https://{domain}/dp/{asin}"
         logger.info(f"[AMAZON_NORM] ASIN extraído: {asin} -> {clean}")

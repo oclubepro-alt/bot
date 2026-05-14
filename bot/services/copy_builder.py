@@ -150,49 +150,56 @@ def _build_telegram(
 ) -> str:
     nome_e  = _escape_html(nome)
     preco_e = _escape_html(preco)
-    loja_e  = _escape_html(loja)
+    loja_e  = _escape_html(loja).replace(" ", "")
 
     linhas = []
     
-    # Cabeçalho Principal
-    linhas.append("🔥 <b>OFERTA IMPERDÍVEL!</b> 🔥")
-    linhas.append(f"{emoji} <b>{nome_e}</b>")
+    # Título com emoji de destaque (Imagem 2 usa 💥)
+    main_emoji = emoji if emoji and emoji != "📦" else "💥"
+    linhas.append(f"{main_emoji} <b>{nome_e}</b>")
     
     if is_lowest:
         linhas.append("📉 <b>MENOR PREÇO HISTÓRICO!</b>")
     
     linhas.append("")
 
-    # IA / Legenda (se houver)
-    if legenda_ia and legenda_ia.strip():
-        linhas.append(f"{_escape_html(legenda_ia.strip())}")
-        linhas.append("")
-
     # Seção de Preço
     if preco_original and preco_original != preco:
         orig_e = _escape_html(preco_original)
         linhas.append(f"De: <s>{orig_e}</s>")
     
-    p_line = f"💰 <b>Por: {preco_e}</b>"
+    # Layout da Imagem 2: ✅ Por: R$ XXX
+    p_line = f"✅ <b>Por: {preco_e}</b>"
     if desconto:
         desc_e = _escape_html(desconto)
         p_line += f" 😱 ({desc_e} OFF)"
-    else:
-        p_line += " 😱"
     
     linhas.append(p_line)
-    linhas.append(f"🏪 Loja: <b>{loja_e}</b>")
 
     # Cupom (se houver)
     if cupom:
         cupom_e = _escape_html(cupom)
-        linhas.append(f"🎟️ <b>{cupom_e}</b>")
+        if ":" not in cupom_e:
+            linhas.append(f"🎟️ <b>Cupom: {cupom_e}</b>")
+        else:
+            linhas.append(f"🎟️ <b>{cupom_e}</b>")
 
-    # Call to Action
+    # Loja com Hashtag
+    linhas.append(f"🏪 Loja: <b>#{loja_e}</b>")
     linhas.append("")
-    linhas.append(f"🛒 <a href='{short_url}'><b>CLIQUE AQUI PARA COMPRAR</b></a>")
+
+    # IA / Legenda (se houver)
+    if legenda_ia and legenda_ia.strip():
+        linhas.append(f"<i>{_escape_html(legenda_ia.strip())}</i>")
+        linhas.append("")
+
+    # Call to Action (Layout Imagem 2)
+    linhas.append("🔗 <b>PEGAR OFERTA: 👇</b>")
+    linhas.append(f"<code>{short_url}</code>")
+    
     linhas.append("")
-    linhas.append("🚨 <i>Preços sujeitos a alteração!</i>")
+    linhas.append("⚠️ <i>Ofertas por tempo limitado.</i>")
+    linhas.append("☕ <i>#publi · você me paga um café sem custo extra!</i>")
 
     return "\n".join(linhas)
 
