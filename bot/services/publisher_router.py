@@ -6,7 +6,7 @@ from bot.services.affiliate_injector import aplicar_link_afiliado
 
 logger = logging.getLogger(__name__)
 
-async def publish_offer(bot: Bot, copies: str | dict, photo: str | None = None) -> None:
+async def publish_offer(bot: Bot, copies: str | dict, photo: str | None = None, affiliate_url: str | None = None) -> None:
     """
     Roteador responsável por aplicar o link de afiliado final e publicar.
     Sempre passa as cópias pela função aplicar_link_afiliado antes do disparo.
@@ -17,17 +17,18 @@ async def publish_offer(bot: Bot, copies: str | dict, photo: str | None = None) 
     if isinstance(copies, str):
         copies = {"telegram": copies, "whatsapp": None}
 
-    # 1. Normalização (Rede de Segurança Sniper)
-    # Removido aplicar_link_afiliado aqui pois ele pode quebrar tags HTML <a href>
-    # Os handlers (offer.py / offer_by_link.py) já cuidam disso.
-    logger.info(f"[PUBLISHER_ROUTER] Preparando envio...")
+    # Se não veio o link explicitamente, tenta pegar do dicionário de cópias
+    if not affiliate_url and isinstance(copies, dict):
+        affiliate_url = copies.get("short_url")
+
+    logger.info(f"[PUBLISHER_ROUTER] Preparando envio (URL={affiliate_url[:50] if affiliate_url else 'N/A'})...")
 
     res = []
     # 2. Publica no Telegram
     text_telegram = copies.get("telegram")
     if text_telegram:
         try:
-            res = await publish_to_telegram(bot, text_telegram, photo)
+            res = await publish_to_telegram(bot, text_telegram, photo, affiliate_url)
         except Exception as e:
             logger.error(f"[PUBLISHER_ROUTER] Erro Telegram: {e}")
             raise e

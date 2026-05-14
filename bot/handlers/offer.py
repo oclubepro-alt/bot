@@ -186,11 +186,18 @@ async def confirmar_envio(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     # Garante que passamos um dict p/ o publisher_router
     copy_dict = context.user_data.get("copy_dict", {
         "telegram": context.user_data.get("mensagem_final", ""),
-        "whatsapp": context.user_data.get("mensagem_final", "")
+        "whatsapp": context.user_data.get("mensagem_final", ""),
+        "short_url": context.user_data.get("link") # Fallback link
     })
 
     try:
-        await publish_offer(context.bot, copies, foto_id)
+        # Passa o copy_dict completo e o link explicitamente para o botão
+        await publish_offer(
+            bot=context.bot, 
+            copies=copy_dict, 
+            photo=foto_id, 
+            affiliate_url=context.user_data.get("link")
+        )
         msg_sucesso = "🎉 <b>Oferta manual publicada com sucesso!</b>"
         try: # Try editing message if possible, else reply.
             if foto_id:

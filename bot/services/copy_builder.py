@@ -194,12 +194,10 @@ def _build_telegram(
         linhas.append("")
 
     # Call to Action (Layout Imagem 2)
-    linhas.append("🔗 <b>PEGAR OFERTA: 👇</b>")
-    linhas.append(f"<code>{short_url}</code>")
+    linhas.append("🔗 <b>Acesse a oferta clicando no botão abaixo! 👇</b>")
     
     linhas.append("")
     linhas.append("⚠️ <i>Ofertas por tempo limitado.</i>")
-    linhas.append("☕ <i>#publi · você me paga um café sem custo extra!</i>")
 
     return "\n".join(linhas)
 
@@ -333,9 +331,10 @@ def build_copy(
     )
 
     return {
-        "telegram": telegram_copy,
-        "whatsapp": whatsapp_copy,
-        "emoji":    emoji,
+        "telegram":  telegram_copy,
+        "whatsapp":  whatsapp_copy,
+        "emoji":     emoji,
+        "short_url": short_url,
     }
 
 

@@ -209,7 +209,7 @@ async def handle_review_callback(
                 product_url=product_url,
             )
 
-            sent_msgs = await publish_offer(context.bot, copies_final, imagem)
+            sent_msgs = await publish_offer(context.bot, copies_final, imagem, short_url)
             if sent_msgs and isinstance(sent_msgs, list):
                 register_published_offer(product_url, sent_msgs)
             mark_seen(product_url)
@@ -361,7 +361,7 @@ async def handle_review_bulk_callback(
                     cupom=offer.get("cupom"),
                 )
 
-                sent_msgs = await publish_offer(context.bot, copies_final, offer.get("imagem"))
+                sent_msgs = await publish_offer(context.bot, copies_final, offer.get("imagem"), short_url)
                 if sent_msgs and isinstance(sent_msgs, list):
                     from bot.services.expiration_service import register_published_offer
                     register_published_offer(offer.get("product_url", ""), sent_msgs)

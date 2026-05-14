@@ -29,9 +29,16 @@ async def capturar_midia(message) -> dict:
         midia = {"tipo": "animation", "file_id": message.animation.file_id}
     return midia
 
-async def enviar_com_midia(bot, chat_id, midia, texto, keyboard=None):
+async def enviar_com_midia(bot, chat_id, midia, texto, affiliate_url: str | None = None):
     tipo = midia.get("tipo")
     file_id = midia.get("file_id")
+    
+    keyboard = None
+    if affiliate_url:
+        keyboard = InlineKeyboardMarkup([[
+            InlineKeyboardButton("🛒 PEGAR OFERTA", url=affiliate_url)
+        ]])
+
     try:
         if tipo == "photo" and file_id:
             await bot.send_photo(chat_id=chat_id, photo=file_id,
@@ -46,9 +53,11 @@ async def enviar_com_midia(bot, chat_id, midia, texto, keyboard=None):
             await bot.send_message(chat_id=chat_id, text=texto,
                 parse_mode="HTML", reply_markup=keyboard)
     except Exception as e:
-        print(f"[ENVIO] ❌ Erro: {e}")
-        await bot.send_message(chat_id=chat_id, text=texto,
-            parse_mode="HTML", reply_markup=keyboard)
+        logger.error(f"[ENVIO] ❌ Erro: {e}")
+        try:
+            await bot.send_message(chat_id=chat_id, text=texto,
+                parse_mode="HTML", reply_markup=keyboard)
+        except: pass
 
 async def start_forward_mode(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -472,7 +481,13 @@ async def frev_aprovar(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         for ch in canais_destino:
             cid = normalize_chat_id(ch)
-            await enviar_com_midia(context.bot, cid, item.get("midia", {}), item["copy"])
+            await enviar_com_midia(
+                bot=context.bot, 
+                chat_id=cid, 
+                midia=item.get("midia", {}), 
+                texto=item["copy"],
+                affiliate_url=item.get("link_afiliado")
+            )
             await asyncio.sleep(2)
         
         context.user_data["fila_revisao"] = fila
@@ -578,7 +593,13 @@ async def encam_aprovar_todas(update: Update, context: ContextTypes.DEFAULT_TYPE
         for ch in canais_destino:
             cid = normalize_chat_id(ch)
             try:
-                await enviar_com_midia(context.bot, cid, item.get("midia", {}), item["copy"])
+                await enviar_com_midia(
+                    bot=context.bot, 
+                    chat_id=cid, 
+                    midia=item.get("midia", {}), 
+                    texto=item["copy"],
+                    affiliate_url=item.get("link_afiliado")
+                )
             except Exception as e:
                 logger.error(f"Erro publicando: {e}")
                 erros += 1

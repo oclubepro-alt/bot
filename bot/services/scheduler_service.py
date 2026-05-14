@@ -149,7 +149,7 @@ async def _run_scan(context, limit: int = 10, manual: bool = False, trigger_user
                     cupom=dados.get("cupom")
                 )
 
-                await publish_offer(context.bot, copies, dados.get("image_url"))
+                await publish_offer(context.bot, copies, dados.get("image_url"), final_link)
                 mark_seen(product_url)
                 count += 1
                 
@@ -386,7 +386,7 @@ async def _process_scheduled_queue_job(context) -> None:
             product_url=product_url,
         )
 
-        sent_msgs = await publish_offer(context.bot, copies_final, offer.get("imagem"))
+        sent_msgs = await publish_offer(context.bot, copies_final, offer.get("imagem"), short_url)
         if sent_msgs and isinstance(sent_msgs, list):
             register_published_offer(product_url, sent_msgs)
         

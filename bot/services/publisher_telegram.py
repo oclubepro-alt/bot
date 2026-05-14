@@ -11,12 +11,21 @@ from bot.utils.telegram_utils import normalize_chat_id
 
 logger = logging.getLogger(__name__)
 
-async def publish_to_telegram(bot: Bot, message_text: str, photo_url_or_id: str | None = None) -> bool:
+async def publish_to_telegram(bot: Bot, message_text: str, photo_url_or_id: str | None = None, affiliate_url: str | None = None) -> bool:
     """
     Publica a mensagem no canal configurado e nos canais extras adicionados.
     Se photo_url_or_id for fornecido, tenta postar como imagem + caption.
-    Senão, posta apenas como texto.
+    Se affiliate_url for fornecido, adiciona um botão no rodapé.
     """
+    from telegram import InlineKeyboardMarkup, InlineKeyboardButton
+    
+    # Prepara o teclado se houver link de afiliado
+    reply_markup = None
+    if affiliate_url:
+        reply_markup = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🛒 PEGAR OFERTA", url=affiliate_url)]
+        ])
+
     # Junta o canal base com os canais extra
     raw_destinos = [TELEGRAM_CHANNEL_ID]
     for ch in get_channels():
@@ -51,6 +60,7 @@ async def publish_to_telegram(bot: Bot, message_text: str, photo_url_or_id: str 
                         photo=photo_bytes,
                         caption=message_text,
                         parse_mode=ParseMode.HTML,
+                        reply_markup=reply_markup,
                         read_timeout=15,
                         write_timeout=15,
                         connect_timeout=15
@@ -68,6 +78,7 @@ async def publish_to_telegram(bot: Bot, message_text: str, photo_url_or_id: str 
                 chat_id=chat_id,
                 text=message_text,
                 parse_mode=ParseMode.HTML,
+                reply_markup=reply_markup,
                 disable_web_page_preview=False
             )
             logger.info(f"[PUBLISHER_TELEGRAM] Mensagem (texto) enviada ao canal {chat_id} com sucesso.")
