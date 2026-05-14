@@ -59,6 +59,8 @@ class AmazonCreatorsAPI:
     async def get_product_details(self, url: str) -> dict | None:
         """Consulta detalhes do produto via GetItems da Creators API."""
         import re
+        from bot.utils.config import AMAZON_API_VERSION
+        
         # Extrai ASIN
         asin_match = re.search(r"/(?:dp|gp/product|product-reviews|aw/d|vdp|d)/([A-Z0-9]{10})", url, re.I)
         if not asin_match:
@@ -73,7 +75,9 @@ class AmazonCreatorsAPI:
         if not token: return None
 
         marketplace = "www.amazon.com.br"
-        endpoint = "https://creatorsapi.amazon.com/catalog/v1/getItems"
+        # Usa a versão do config ou v1 como default
+        version = AMAZON_API_VERSION or "v1"
+        endpoint = f"https://creatorsapi.amazon.com/catalog/{version}/getItems"
         
         headers = {
             "Authorization": f"Bearer {token}",
@@ -89,6 +93,7 @@ class AmazonCreatorsAPI:
         }
 
         try:
+            logger.info(f"[AMAZON_API] 📡 Chamando API {version} para ASIN {asin}...")
             async with httpx.AsyncClient(timeout=15) as client:
                 resp = await client.post(endpoint, json=payload, headers=headers)
                 if resp.status_code == 200:
@@ -108,25 +113,24 @@ class AmazonCreatorsAPI:
 
     def _map_response(self, item: dict, asin: str) -> dict:
         """Mapeia o objeto item da Amazon para o formato do bot."""
-        # A estrutura da Creators API v1 costuma ser: itemInfo -> title, images, etc.
+        # A estrutura da Creators API costuma ser: itemInfo -> title, images, etc.
         item_info = item.get("itemInfo", {})
         title_obj = item_info.get("title", {})
         titulo = title_obj.get("displayValue") or title_obj.get("value")
         
         # Imagens
         images_obj = item_info.get("images", {})
-        # Tenta pegar Large, depois Medium, depois Small
         img_list = images_obj.get("images", [])
         imagem = None
         if img_list:
-            # Ordena por largura decrescente
             try:
+                # Prioriza imagens maiores
                 sorted_imgs = sorted(img_list, key=lambda x: x.get("width", 0), reverse=True)
                 imagem = sorted_imgs[0].get("url")
             except:
                 imagem = img_list[0].get("url")
         
-        # Preços (Buying Options)
+        # Preços (Offers -> Listings)
         offers = item.get("offers", {})
         listings = offers.get("listings", [])
         
@@ -134,26 +138,51 @@ class AmazonCreatorsAPI:
         preco_orig = None
         
         if listings:
-            price_info = listings[0].get("price", {})
-            amount = price_info.get("amount")
+            # Tenta pegar o preço da primeira listagem (geralmente a oferta principal)
+            listing = listings[0]
+            price_info = listing.get("price", {})
+            
+            # Tenta vários campos comuns
+            amount = price_info.get("amount") or price_info.get("value")
+            if not amount:
+                # Algumas versões retornam displayAmount
+                display = price_info.get("displayAmount")
+                if display:
+                    amount = display
+            
             if amount:
                 from bot.services.product_extractor_v2 import format_api_price
                 preco_promo = format_api_price(amount)
                 
-                # Preço original (Saving/Savings)
-                savings = listings[0].get("savings", {})
-                if savings:
-                    # Tenta recompor o original somando o desconto
-                    # Ou busca no listPrice se existir na estrutura
-                    pass
-
-            # Fallback para listPrice se existir na estrutura
-            # (Estrutura da PA-API 5.0 é diferente, adaptando para Creators)
-            # Na Creators API v1, costuma estar em listings[0].price
+                # Preço original (Savings ou listPrice)
+                # Tenta recompor o original se houver savings
+                savings = listing.get("savings", {})
+                s_amount = savings.get("amount") or savings.get("value")
+                if s_amount and preco_promo:
+                    try:
+                        # Se temos o promo e o desconto, podemos sugerir o original
+                        from bot.services.product_extractor_v2 import _parse_price_to_float
+                        p_float = _parse_price_to_float(preco_promo)
+                        s_float = float(s_amount)
+                        if p_float:
+                            preco_orig = format_api_price(p_float + s_float)
+                    except:
+                        pass
         
-        # Se não achou título, usa o ASIN como fallback parcial
+        # Fallback para productInfo se preço não estiver em offers
+        if not preco_promo:
+            prod_info = item_info.get("productInfo", {})
+            lp = prod_info.get("listPrice", {})
+            lp_amount = lp.get("amount") or lp.get("value")
+            if lp_amount:
+                from bot.services.product_extractor_v2 import format_api_price
+                preco_promo = format_api_price(lp_amount)
+
+        # Se ainda não achou título, usa o ASIN
         if not titulo:
             titulo = f"Produto Amazon {asin}"
+
+        logger.info(f"[AMAZON_API] Mapeado ASIN {asin}: Titulo={titulo[:40]}, Preço={preco_promo}")
 
         return {
             "titulo": titulo,

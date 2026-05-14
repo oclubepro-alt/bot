@@ -648,9 +648,10 @@ def _is_valid_price_tag(tag) -> bool:
 
     # 2. Filtro de Classes CSS
     bad_classes = [
-        "a-text-price", "a-offscreen", "basisPrice", "listPrice", "unitPrice", 
+        "a-text-price", "basisPrice", "listPrice", "unitPrice", 
         "price-per-unit", "a-size-small", "a-color-secondary", "strikethrough"
     ]
+    # 'a-offscreen' não deve ser bloqueado, pois a Amazon usa para o preço principal em leitores de tela
     if any(c in bad_classes for c in classes):
         return False
         
@@ -721,6 +722,8 @@ def _extract_price_amazon(soup: BeautifulSoup) -> tuple[str | None, str | None]:
             "#priceblock_ourprice",
             "#price_inside_buybox",
             ".buybox-price",
+            "span.a-price",
+            "span.a-color-price",
             # Seletores de média confiança
             "#corePrice_feature_div .a-offscreen",
             "#corePriceDisplay_desktop_feature_div .a-offscreen",
@@ -728,6 +731,7 @@ def _extract_price_amazon(soup: BeautifulSoup) -> tuple[str | None, str | None]:
             "#corePrice_desktop .a-price-whole",
             "#corePrice_feature_div .a-price-whole",
             ".a-size-base.a-color-price",
+            "span[class*='price']",
         ]
         for sel in promo_selectors:
             for tag in soup.select(sel):
@@ -1008,6 +1012,14 @@ def _extract_from_soup(soup: BeautifulSoup, base_url: str, store_key: str = "oth
             if meta and meta.get("content"):
                 data["titulo"] = meta["content"].strip()
                 break
+    
+    # Fallback ULTIMATO: Título da Tag HTML
+    if not data["titulo"] and soup.title:
+        raw_title = soup.title.get_text(strip=True)
+        if raw_title and len(raw_title) > 5:
+            # Limpa lixo comum
+            raw_title = re.sub(r"^(Amazon\.com\.br|Mercado Livre|Magalu|Magazine Luiza)\s*[:\-]\s*", "", raw_title, flags=re.I)
+            data["titulo"] = raw_title.split(":")[0].split("|")[0].strip()
 
     # ── PREÇO PRIORIDADE 0: PIX / à vista (Magalu, ML) ─────────────────────
     pix_price = None
@@ -1186,11 +1198,11 @@ def _normalize_amazon_url(url: str) -> str:
         return url
 
     # Tenta extrair o ASIN (10 caracteres alfanuméricos) de vários formatos comuns
-    # Regex expandida para pegar em mais contextos
+    # Regex expandida para pegar em mais contextos (incluindo links patrocinados)
     asin_match = re.search(r"/(?:dp|gp/product|product-reviews|aw/d|vdp|d)/([A-Z0-9]{10})", url, re.I)
     if not asin_match:
-        # Tenta pegar qualquer string de 10 chars que comece com B0 (comum em ASINs)
-        asin_match = re.search(r"[/\?&](B[A-Z0-9]{9})", url)
+        # Tenta pegar qualquer string de 10 chars que comece com B0 (comum em ASINs) ou 8 (livros)
+        asin_match = re.search(r"[/\?&=]([B0][A-Z0-9]{9})", url)
 
     if asin_match:
         asin = asin_match.group(1).upper()
@@ -1284,10 +1296,18 @@ async def extract_product_data_v2(url: str) -> dict:
         try:
             from bot.services.amazon_api import amazon_api
             api_data = await amazon_api.get_product_details(final_url)
-            if api_data:
-                logger.info(f"[EXTRATOR] Camada 0 (AMAZON): ✅ Sucesso via API")
+            # Só aceita o resultado da API se ele contiver um preço válido.
+            # Se não tiver preço, deixamos cair para as camadas de scraping (ScraperAPI/Playwright)
+            # que podem conseguir minerar o preço da página.
+            if api_data and api_data.get("preco") and api_data.get("preco") != "Preço não disponível":
+                logger.info(f"[EXTRATOR] Camada 0 (AMAZON): ✅ Sucesso via API (com preço)")
                 result.update(api_data)
                 return result
+            elif api_data:
+                # Se a API retornou dados parciais (título/imagem), guardamos, 
+                # mas não retornamos ainda para tentar pegar o preço via scraping.
+                logger.warning("[EXTRATOR] Camada 0 (AMAZON): ⚠️ API retornou dados sem preço. Tentando scraping...")
+                result.update({k: v for k, v in api_data.items() if v and v != "Preço não disponível"})
             else:
                 logger.warning("[EXTRATOR] Camada 0 (AMAZON): ❌ Falhou — caindo para Camada 1")
         except Exception as e:
