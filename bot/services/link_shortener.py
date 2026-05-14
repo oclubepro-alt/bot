@@ -6,12 +6,11 @@ Princípio de segurança:
   - Sempre retorna um link curto (ou o original puro se o encurtador falhar).
 
 Backends suportados (em ordem de prioridade):
-  1. TinyURL  — sem autenticação, confiável, saída: https://tinyurl.com/XXXXXXX
-  2. is.gd    — sem autenticação, rápido, saída: https://is.gd/XXXXXXX
-  3. Simulado — fallback local que mascara a URL longa com um hash visual
+  1. is.gd    — sem autenticação, rápido, saída: https://is.gd/XXXXXXX
+  2. Simulado — fallback local que mascara a URL longa com um hash visual
 
 Configuração no .env:
-  SHORTENER_BACKEND=tinyurl   # ou isgd | simulated (default: tinyurl)
+  SHORTENER_BACKEND=isgd   # ou simulated | direct (default: isgd)
 """
 import hashlib
 import logging

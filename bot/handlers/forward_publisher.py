@@ -336,11 +336,21 @@ async def process_all_forwardings(update: Update, context: ContextTypes.DEFAULT_
         await context.bot.edit_message_text(chat_id=chat_id, message_id=msg_id, text=prog_texto, parse_mode="HTML")
         await asyncio.sleep(0.6)
         
-        # Mantém a copy original, apenas injetando o link de afiliado onde estava o original
-        if link_original and link_afiliado:
-            copy_gerada = texto_original.replace(link_original, link_afiliado)
-        else:
-            copy_gerada = texto_original
+        # Mantém a copy original e substitui TODOS os links encontrados pelos de afiliado
+        urls = re.findall(r'https?://[^\s<>"]+', texto_original)
+        copy_gerada = texto_original
+        link_principal_afiliado = None
+
+        for url in urls:
+            # Tenta injetar o link de afiliado
+            link_af = await injetar_link_afiliado(url)
+            if link_af:
+                copy_gerada = copy_gerada.replace(url, link_af)
+                if not link_principal_afiliado:
+                    link_principal_afiliado = link_af
+        
+        # Se não houver link de afiliado, usa o original para o botão
+        link_final_botao = link_principal_afiliado or link_original or "Sem link"
 
         # Mantém a detecção de preços e cupons apenas para metadados/revisão
         precos = re.findall(r'R\$\s*[\d.,]+', texto_original)
@@ -352,14 +362,12 @@ async def process_all_forwardings(update: Update, context: ContextTypes.DEFAULT_
             cupons = [c for c in cupons if not c.startswith('HTTP') and len(c) > 4]
             cupom = cupons[0] if cupons else None
         
-        link_final = link_afiliado or link_original or "Sem link"
-        
         # Passo 3
         prog_texto = (
             "⚙️ <b>Processando suas promoções...</b>\n\n"
             f"📦 Processando <b>{atual}/{total}</b>: {titulo_resumo}...\n"
             f"🏪 Loja: {loja_detectada.capitalize()} ✅\n"
-            f"🔑 Link afiliado: {link_final} ✅\n"
+            f"🔗 Links processados: {len(urls)} ✅\n"
             f"✍️ Trocando links...\n\n"
             f"{barra_progresso((atual-1) + 0.8, total)}"
         )
@@ -369,9 +377,9 @@ async def process_all_forwardings(update: Update, context: ContextTypes.DEFAULT_
         context.user_data["fila_revisao"].append({
             "midia": midia,
             "copy": copy_gerada,
-            "texto_base": texto_original, # Salva o original para correções futuras
+            "texto_base": texto_original,
             "link_original": link_original,
-            "link_afiliado": link_afiliado,
+            "link_afiliado": link_final_botao, # Usa o primeiro link de afiliado encontrado para o botão
             "preco": preco,
             "loja": loja_detectada,
             "cupom": cupom,
