@@ -102,11 +102,9 @@ _TIMEOUT_SCRAPERAPI = 60
 
 async def fetch_magalu_api(url: str) -> dict | None:
     """
-    Tenta extrair dados da Magalu sem scraping, via 3 endpoints em cascata:
-      1. API catalog interna (usada pelo app mobile)
-      2. API de detalhes de produto (endpoint alternativo)
-      3. Fetch leve do JSON-LD da página do produto
-    Retorna None se todos falharem → pipeline cai para Camada 1 (ScraperAPI).
+    Tenta extrair dados da Magalu sem scraping, via cascata de APIs:
+      1. API mobile catalog (ms.catalog.magazineluiza.com.br)
+      2. API site product (www.magazineluiza.com.br/api/v1/product/)
     """
     # Extrai o ID do produto da URL — padrão: /p/XXXXXXXX/
     match = re.search(r'/p/(\w+)/?', url)
@@ -122,82 +120,56 @@ async def fetch_magalu_api(url: str) -> dict | None:
         "Accept": "application/json, text/plain, */*",
         "Accept-Language": "pt-BR,pt;q=0.9",
         "Referer": "https://www.magazineluiza.com.br/",
-        "Origin": "https://www.magazineluiza.com.br",
         "x-requested-with": "com.magalu.magaluapp",
     }
 
     _ENDPOINTS_MAGALU = [
-        # Endpoint 1: API catalog mobile (mais recente)
+        # Endpoint 1: API catalog mobile (ms.catalog)
         f"https://ms.catalog.magazineluiza.com.br/api/v1/products/{product_id}",
-        # Endpoint 2: API legada usada pelo site
+        # Endpoint 2: API de produto (site)
         f"https://www.magazineluiza.com.br/api/v1/product/{product_id}/",
-        # Endpoint 3: API de busca por código
-        f"https://www.magazineluiza.com.br/api/v1/search/?q={product_id}&limit=1",
     ]
 
-    async with httpx.AsyncClient(timeout=12, follow_redirects=True) as client:
+    async with httpx.AsyncClient(timeout=12, follow_redirects=True, verify=False) as client:
         for endpoint in _ENDPOINTS_MAGALU:
             try:
                 logger.info(f"[MAGALU_API] ℹ️ Tentando: {endpoint}")
                 resp = await client.get(endpoint, headers=headers_json)
-                logger.info(f"[MAGALU_API] ℹ️ Status: {resp.status_code} | Endpoint: {endpoint}")
-
+                
                 if resp.status_code != 200:
-                    continue
-
-                # Verifica se retornou JSON válido
-                ct = resp.headers.get("content-type", "")
-                if "json" not in ct:
-                    logger.warning(f"[MAGALU_API] ⚠️ Resposta não é JSON: {ct}")
                     continue
 
                 data = resp.json()
 
-                # --- Mapeamento Endpoint 1/2 (produto direto) ---
-                titulo = (
-                    data.get("title")
-                    or data.get("name")
-                    or data.get("product", {}).get("title")
-                )
-                imagem = (
-                    data.get("image")
-                    or data.get("thumbnail")
-                    or data.get("product", {}).get("image")
-                )
-                price_obj = data.get("price") or data.get("product", {}).get("price") or {}
-                best_price = (
-                    price_obj.get("best_price")
-                    or price_obj.get("sale_price")
-                    or price_obj.get("price")
-                    or data.get("price_in_cash")
-                )
-                orig_price = price_obj.get("original_price") or price_obj.get("list_price")
-
-                # --- Mapeamento Endpoint 3 (busca) ---
-                if not titulo and isinstance(data.get("result"), list) and data["result"]:
-                    item = data["result"][0]
-                    titulo = item.get("title") or item.get("name")
-                    imagem = item.get("image") or item.get("thumbnail")
-                    p = item.get("price") or {}
-                    best_price = p.get("best_price") or p.get("sale_price") or item.get("price_in_cash")
-                    orig_price = p.get("original_price")
+                # --- Mapeamento flexível ---
+                # Se for do ms.catalog, os dados podem estar direto ou em 'product'
+                titulo = data.get("title") or data.get("name") or data.get("product", {}).get("title")
+                
+                # Preço
+                p_obj = data.get("price") or data.get("product", {}).get("price") or {}
+                best_price = p_obj.get("best_price") or p_obj.get("sale_price") or data.get("price_in_cash")
+                
+                # Imagem
+                imagem = data.get("image") or data.get("thumbnail") or data.get("product", {}).get("image")
+                if not imagem and data.get("images"):
+                    imagem = data["images"][0].get("url")
 
                 if titulo and best_price:
-                    logger.info(f"[MAGALU_API] ✅ Sucesso | Título: {titulo[:50]} | Preço: {best_price}")
+                    logger.info(f"[MAGALU_API] ✅ Sucesso via {endpoint}")
                     return {
                         "titulo": titulo,
                         "imagem": imagem,
                         "preco": _clean_price(str(best_price)),
-                        "preco_original": _clean_price(str(orig_price)) if orig_price else None,
+                        "preco_original": None,
                         "source_method": "MAGALU_API_INTERNA",
                         "is_pix_price": True,
                     }
-                else:
-                    logger.warning(f"[MAGALU_API] ⚠️ Dados incompletos neste endpoint (título={titulo}, preço={best_price})")
 
             except Exception as e:
-                logger.warning(f"[MAGALU_API] ❌ Exceção no endpoint {endpoint}: {str(e)[:80]}")
+                logger.warning(f"[MAGALU_API] ❌ Erro em {endpoint}: {str(e)[:80]}")
                 continue
+
+    return None
 
     # --- Fallback Camada 0b: JSON-LD leve da página ---
     try:
@@ -349,55 +321,42 @@ async def fetch_netshoes_api(url: str) -> dict | None:
                     }
     except Exception as e:
         logger.warning(f"[NETSHOES_API] ⚠️ HTML leve falhou: {str(e)[:80]}")
-
-    logger.warning("[NETSHOES_API] ❌ Todos os endpoints falharam → caindo para Camada 1")
-    return None
-
-
 # ---------------------------------------------------------------------------
 # Helpers de preço
 # ---------------------------------------------------------------------------
 
-def _parse_price_to_float(text: str) -> float | None:
-    """Converte 'R$ 1.299,90' ou 'R\u00a0189,90' ou '399.00' → float."""
-    if not text:
-        return None
-    # Normaliza: remove espaço não-quebrável (\xa0) e parenteséticos
-    text = str(text).replace('\u00a0', ' ').replace('\xa0', ' ')
     text = re.sub(r"\(.*?\)", "", text)
+    
+    # Se tiver "R$", remove tudo antes e limpa o resto
+    if "R$" in text:
+        text = text.split("R$")[-1]
+    
     cleaned = re.sub(r"[^\d,.]", "", text)
     if not cleaned:
         return None
 
-    if "," in cleaned:
-        # Padrão BR: 1.299,90 -> 1299.90
-        cleaned = cleaned.replace(".", "").replace(",", ".")
-    else:
-        # Padrão Internacional ou BR sem decimal: 399.00 ou 1.200
-        # Se houver apenas um ponto e ele estiver na posição de centavos (2 antes do fim),
-        # e não for um número gigante, tratamos como decimal (comum em JSON-LD).
-        parts = cleaned.split('.')
-        if len(parts) == 2:
-            # Se tiver exatamente 1 ponto:
-            # - 1 ou 2 dígitos após o ponto -> decimal (ex: 29.9, 29.90, 1299.9)
-            # - 3 dígitos após o ponto -> milhar (ex: 1.299, 1.000)
-            if len(parts[1]) in [1, 2]:
-                pass # Mantém o ponto
-            elif len(parts[1]) == 3:
-                cleaned = cleaned.replace(".", "")
-            else:
-                # Caso bizarro (ex: 1.2345) -> remove o ponto
-                cleaned = cleaned.replace(".", "")
-        else:
-            # Múltiplos pontos (ex: 1.299.90) -> remove todos (são milhar)
-            cleaned = cleaned.replace(".", "")
-            
     try:
-        val = float(cleaned)
-        # Sanidade mínima: preços absurdos > 500k em itens comuns costumam ser erro de parsing
-        # (A menos que seja um carro ou imóvel, mas pro bot de achadinhos 500k é safe limit)
-        if val > 500000: return None
-        return val
+        # Caso 1: Tem vírgula (Padrão BR: 1.299,90 ou 49,90)
+        if "," in cleaned:
+            parts = cleaned.split(",")
+            # O que vem antes da última vírgula é parte inteira (remove pontos de milhar)
+            integer_part = "".join(parts[:-1]).replace(".", "")
+            decimal_part = parts[-1]
+            val = float(f"{integer_part or '0'}.{decimal_part}")
+            return val if 0 < val < 500000 else None
+        
+        # Caso 2: Só tem pontos ou nada
+        else:
+            # Se houver múltiplos pontos (ex: 1.299.000), remove todos (milhar)
+            # Se houver apenas um ponto e 2 dígitos depois (ex: 29.90), pode ser decimal
+            parts = cleaned.split('.')
+            if len(parts) == 2 and len(parts[1]) in [1, 2]:
+                val = float(cleaned)
+            else:
+                val = float(cleaned.replace(".", ""))
+            
+            return val if 0 < val < 500000 else None
+            
     except Exception:
         return None
 
@@ -527,42 +486,52 @@ def _extract_pix_price_ml(soup: BeautifulSoup) -> str | None:
     return None
 
 
-def _extract_price_from_schema(soup: BeautifulSoup) -> str | None:
-    """Busca universal de preço usando JSON-LD Schema.org (Agressivo)."""
-    scripts = soup.find_all('script', type='application/ld+json')
-    for s in scripts:
-        if not s.string: continue
-        try:
-            data = json.loads(s.string)
-            if not isinstance(data, dict): continue
-            
-            # Normaliza para lista (mesmo se for um objeto só ou @graph)
-            items = data.get('@graph', [data])
-            if not isinstance(items, list): items = [items]
-            
-            for item in items:
-                # Procura por Product ou MainEntity (comum na Magalu/Netshoes)
-                if item.get('@type') in ('Product', 'ProductCollection'):
-                    offers = item.get('offers')
-                    if not offers: continue
-                    
-                    if isinstance(offers, dict):
-                        # Padrão simples
-                        p = item.get('price') or item.get('lowPrice')
-                        if p: return format_api_price(p)
-                    elif isinstance(offers, list):
-                        # Lista de ofertas
-                        for off in offers:
-                            p = off.get('price')
-                            if p: return format_api_price(p)
-                            
-            # Fallback: qualquer coisa que pareça uma oferta solta
-            if item.get('@type') == 'Offer':
-                p = item.get('price')
-                if p: return format_api_price(p)
-        except Exception:
-            pass
+def _extract_price_from_meta(soup: BeautifulSoup) -> str | None:
+    """Extrai preço de meta tags (OG, Twitter, Product)."""
+    meta_selectors = [
+        ("property", "product:sale_price:amount"),
+        ("property", "product:price:amount"),
+        ("property", "og:price:amount"),
+        ("name", "twitter:data1"), # Comum no Twitter Card para preço
+        ("itemprop", "price"),
+    ]
+    for attr, val in meta_selectors:
+        meta = soup.find("meta", attrs={attr: val})
+        if meta and meta.get("content"):
+            price = meta["content"].strip()
+            # Limpa "R$" se vier no meta
+            if _parse_price_to_float(price):
+                return _clean_price(price)
     return None
+
+
+def _extract_price_from_schema(soup: BeautifulSoup) -> tuple[str | None, str | None]:
+    """Tenta extrair preço via application/ld+json."""
+    for script in soup.find_all("script", type="application/ld+json"):
+        try:
+            content = script.string or ""
+            if not content: continue
+            data = json.loads(content)
+            
+            # Pode ser um dict ou list de dicts
+            items = data if isinstance(data, list) else [data]
+            for item in items:
+                # Busca recursiva por "offers"
+                offers = item.get("offers")
+                if not offers and item.get("@type") == "Product":
+                    offers = item.get("offers")
+                
+                if isinstance(offers, dict):
+                    price = offers.get("price") or offers.get("lowPrice")
+                    if price:
+                        return _clean_price(str(price)), None
+                elif isinstance(offers, list) and offers:
+                    price = offers[0].get("price") or offers[0].get("lowPrice")
+                    if price:
+                        return _clean_price(str(price)), None
+        except:
+            continue
+    return None, None
 
 
 def _extract_price_from_body_regex(soup: BeautifulSoup) -> str | None:
@@ -570,15 +539,27 @@ def _extract_price_from_body_regex(soup: BeautifulSoup) -> str | None:
     ULTIMATO: Busca qualquer padrão de R$ no corpo da página.
     Ideal para quando a Amazon bloqueia seletores mas deixa o texto.
     """
-    text = soup.get_text()
-    # Padrão: R$ seguido de números, pontos e vírgulas
+    # Remove scripts e estilos para não pegar números de lá
+    for s in soup(["script", "style"]): s.decompose()
+    
+    text = soup.get_text(separator=" ")
+    
+    # Padrão 1: R$ 1.234,56 ou R$ 49,90
     matches = re.findall(r"R\$\s*(\d{1,3}(?:\.\d{3})*,\d{2})", text)
     if matches:
-        # Pega o primeiro que não seja 0,00
         for m in matches:
             if m != "0,00":
-                logger.info(f"[EXTRACTOR_V2] Preço minerado via Regex Body: R$ {m}")
+                logger.info(f"[EXTRACTOR_V2] Preço minerado via Regex Body (BR): R$ {m}")
                 return f"R$ {m}"
+    
+    # Padrão 2: 49.90 (Comum em JSON ou labels de API)
+    matches_intl = re.findall(r"(?:\s|^)(\d{1,5}\.\d{2})(?:\s|$)", text)
+    if matches_intl:
+        for m in matches_intl:
+            if float(m) > 1.0:
+                logger.info(f"[EXTRACTOR_V2] Preço minerado via Regex Body (Intl): {m}")
+                return f"R$ {m.replace('.', ',')}"
+
     return None
 
 
@@ -659,86 +640,53 @@ def _is_valid_price_tag(tag) -> bool:
 
 
 def _extract_price_amazon(soup: BeautifulSoup) -> tuple[str | None, str | None]:
-    """
-    Amazon: Extração robusta combinando JSON-LD, scripts internos e seletores.
-    Prioriza dados estruturados (JSON) antes de seletores CSS voláteis.
-    """
+    """Amazon: pegar preço promo e original."""
     preco_promo = None
     preco_orig  = None
 
-    # 1. TENTA EXTRAIR VIA SCRIPTS DE ESTADO (JSON INTERNO)
-    # Amazon costuma colocar os dados de oferta em scripts 'text/a-state' ou 'application/ld+json'
-    scripts = soup.find_all("script")
-    for script in scripts:
-        try:
-            content = script.string or ""
-            if not content: continue
-            
-            # Padrão 1: JSON-LD (Standard)
-            if script.get("type") == "application/ld+json":
-                data = json.loads(content)
-                items = data if isinstance(data, list) else [data]
-                for item in items:
-                    if item.get("@type") == "Product":
-                        offers = item.get("offers", {})
-                        if isinstance(offers, dict):
-                            p = offers.get("price")
-                            if p and _parse_price_to_float(str(p)):
-                                preco_promo = str(p)
-                                # Preço original no JSON-LD às vezes não existe ou está em highPrice
-                                break
-            
-            # Padrão 2: Amazon a-state (Data do BuyBox)
-            # Usa regex não-greedy e com limite de tamanho para evitar JSON corrompido
-            if "desktop-dp-price-detail" in content or ("Offers" in content and "DisplayAmount" in content):
-                # Regex não-greedy com lookahead para JSON bem-formado
-                for m in re.finditer(r'(\{[^{]{0,5000}"Offers"[^}]{0,5000}\})', content):
-                    try:
-                        data = json.loads(m.group(1))
-                        p, o = _parse_amazon_paapi_dict(data)
-                        if p:
-                            logger.info(f"[EXTRACTOR_V2] Amazon preço via JSON a-state: {p}")
-                            preco_promo = p
-                            if o: preco_orig = o
-                            break
-                    except Exception:
-                        continue
-                if preco_promo: break
-        except Exception:
-            continue
-        if preco_promo: break
+    # 1. TENTA JSON-LD OU SCRIPTS (ALTA CONFIANÇA)
+    preco_promo, preco_orig = _extract_price_from_schema(soup)
+    if not preco_promo:
+        p_script, o_script = _extract_price_from_scripts_amazon(soup)
+        if p_script: 
+            preco_promo = p_script
+            if not preco_orig: preco_orig = o_script
 
-    # 2. SELETORES CSS (FALLBACK SE O JSON FALHAR)
-    # ORDEM IMPORTA: seletores mais específicos (buybox) antes dos genéricos
+    # 2. SELETORES CSS (FALLBACK)
     if not preco_promo:
         promo_selectors = [
-            # Seletores de alta confiança (buybox principal)
             ".a-price.priceToPay .a-offscreen",
             "#corePrice_feature_div .priceToPay .a-offscreen",
             "#corePriceDisplay_desktop_feature_div .priceToPay .a-offscreen",
+            "#corePriceDisplay_mobile_feature_div .a-price .a-offscreen",
             ".a-price.apexPriceToPay .a-offscreen",
             "#corePrice_desktop .a-offscreen",
             "#priceblock_dealprice",
             "#priceblock_ourprice",
+            "#priceblock_saleprice",
             "#price_inside_buybox",
             ".buybox-price",
+            ".a-price .a-offscreen",
             "span.a-price",
             "span.a-color-price",
-            # Seletores de média confiança
             "#corePrice_feature_div .a-offscreen",
             "#corePriceDisplay_desktop_feature_div .a-offscreen",
             ".a-price:not(.a-text-price) .a-offscreen",
-            "#corePrice_desktop .a-price-whole",
-            "#corePrice_feature_div .a-price-whole",
             ".a-size-base.a-color-price",
-            "span[class*='price']",
+            "#price",
+            ".price",
+            # Seletores de baixa confiança (outros vendedores / listings)
+            "#olp_feature_div .a-color-price",
+            ".olp-padding-right .a-color-price",
+            "#alternativeOffer .a-price .a-offscreen",
+            ".olp-offer-price",
+            ".a-size-mini .a-color-price",
         ]
         for sel in promo_selectors:
             for tag in soup.select(sel):
                 if not _is_valid_price_tag(tag): continue
                 val = tag.get_text(strip=True)
                 
-                # Recompõe centavos se pegou só a parte inteira
                 if "a-price-whole" in sel:
                     parent = tag.parent
                     fraction = parent.select_one(".a-price-fraction") if parent else None
@@ -751,25 +699,49 @@ def _extract_price_amazon(soup: BeautifulSoup) -> tuple[str | None, str | None]:
                     break
             if preco_promo: break
 
-    # 3. PREÇO ORIGINAL (Riscado)
+    # 3. PREÇO ORIGINAL (DE)
     if not preco_orig:
         orig_selectors = [
-            ".a-text-price .a-offscreen", 
-            "#listPrice", 
+            ".a-price.a-text-price .a-offscreen",
+            "#corePriceDisplay_desktop_feature_div .a-text-price .a-offscreen",
             ".basisPrice .a-offscreen",
-            "#priceBlockStrikePriceString",
-            ".a-price.a-text-price span.a-offscreen"
+            ".a-line-through",
+            "span.a-text-strike",
+            ".priceBlockStrikePriceString",
         ]
         for sel in orig_selectors:
-            for tag in soup.select(sel):
-                if _is_valid_price_tag(tag):
-                    val = tag.get_text(strip=True)
-                    if _parse_price_to_float(val):
-                        preco_orig = val
-                        break
-            if preco_orig: break
+            tag = soup.select_one(sel)
+            if tag:
+                val = tag.get_text(strip=True)
+                if _parse_price_to_float(val):
+                    preco_orig = val
+                    break
 
     return _choose_lower_price(preco_promo, preco_orig)
+
+
+def _extract_price_from_scripts_amazon(soup: BeautifulSoup) -> tuple[str | None, str | None]:
+    """
+    Busca em tags <script> por dados de preço (a-state, P.register).
+    """
+    for script in soup.find_all("script"):
+        content = script.string or ""
+        if not content: continue
+        
+        # Tenta extrair blocos JSON de a-state
+        if "a-state" in content or "desktop-dp-price-detail" in content:
+            try:
+                # Busca por algo que pareça um JSON dentro do script
+                json_matches = re.findall(r"({.*})", content)
+                for json_str in json_matches:
+                    try:
+                        data = json.loads(json_str)
+                        p, o = _parse_amazon_paapi_dict(data)
+                        if p: return p, o
+                    except: continue
+            except: pass
+            
+    return None, None
 
 
 def _extract_coupon_amazon(soup: BeautifulSoup) -> str | None:
@@ -977,8 +949,8 @@ def _extract_from_soup(soup: BeautifulSoup, base_url: str, store_key: str = "oth
        any(p in page_text_lower for p in ["radware bot manager", "please verify you are a human"]):
         logger.warning(f"[EXTRACTOR_V2] Bloqueio detectado no HTML: {page_title_lower}")
         return {
-            "titulo": f"BLOQUEIO: {page_title_lower or 'Acesso Negado'}",
-            "preco": "Erro: Captcha/Block",
+            "titulo": None, # Retorna None para permitir fallback generico menos feio
+            "preco": None,
             "imagem": None,
             "source_method": "BLOCKED"
         }
@@ -1060,9 +1032,25 @@ def _extract_from_soup(soup: BeautifulSoup, base_url: str, store_key: str = "oth
     if store_key == "amazon":
         data["cupom"] = _extract_coupon_amazon(soup)
 
-    # ── ULTIMATO DE PREÇO (Schema / Regex) ───────────────────────────────
+    # ── ULTIMATO DE PREÇO (Meta / Schema / Regex) ──────────────────────────
     if not data["preco"]:
-        data["preco"] = _extract_price_from_schema(soup) or _extract_price_from_body_regex(soup)
+        # Tenta meta tags primeiro (rápido e confiável)
+        data["preco"] = _extract_price_from_meta(soup)
+        
+        if not data["preco"]:
+            # Tenta schema.org
+            p_schema, o_schema = _extract_price_from_schema(soup)
+            if p_schema:
+                data["preco"] = p_schema
+                if not data["preco_original"]: data["preco_original"] = o_schema
+        
+        if not data["preco"]:
+            # Tenta regex bruto como última opção
+            data["preco"] = _extract_price_from_body_regex(soup)
+
+    # Fallback preco_original via meta se estiver vazio
+    if not data["preco_original"] and store_key == "amazon":
+        _, data["preco_original"] = _extract_price_generic(soup)
 
     # ── IMAGEM ──────────────────────────────────────────────────────────────
     # Prioridade meta og:image como solicitado
@@ -1105,38 +1093,40 @@ async def get_page_html(url: str) -> tuple[str | None, str]:
             is_shopee = "shopee" in url.lower()
             is_netshoes = "netshoes" in url.lower()
             
-            payload = {
-                'api_key': SCRAPERAPI_KEY,
-                'url': url,
-                'render': 'true',        # JS rendering obrigatório
-                'country_code': 'br',    # IP brasileiro obrigatório
-                'device_type': 'desktop' # Magalu bloqueia mobile frequentemente
-            }
-
-            # Magalu e Netshoes exigem ultra_premium
-            if is_magalu or is_netshoes:
-                payload['ultra_premium'] = 'true'
-                logger.info("[SCRAPERAPI] ⚡ Usando ultra_premium para domínio protegido")
-            
-            # Amazon exige premium + renderização para preços dinâmicos
-            elif is_amazon:
-                payload['premium'] = 'true'
-                payload['render'] = 'true'
-                logger.info("[SCRAPERAPI] ⚡ Usando premium + render para Amazon")
-            
-            # Shopee precisa de sessão mantida
-            if is_shopee:
-                payload['keep_headers'] = 'true'
-
-            async with httpx.AsyncClient(timeout=_TIMEOUT_SCRAPERAPI) as client:
-                resp = await client.get('http://api.scraperapi.com', params=payload)
+            def get_payload(use_premium=True):
+                p = {
+                    'api_key': SCRAPERAPI_KEY,
+                    'url': url,
+                    'render': 'true',
+                    'country_code': 'br',
+                    'device_type': 'desktop'
+                }
+                if not use_premium:
+                    return p
                 
+                if is_magalu or is_netshoes:
+                    p['ultra_premium'] = 'true'
+                elif is_amazon:
+                    p['premium'] = 'true'
+                return p
+
+            # Tenta com premium se necessário
+            payload = get_payload(use_premium=True)
+            async with httpx.AsyncClient(timeout=_TIMEOUT_SCRAPERAPI) as client:
+                resp = await client.get('https://api.scraperapi.com', params=payload)
+                
+                # Se 403, pode ser que o plano não suporte premium. Tenta sem premium.
+                if resp.status_code == 403 and ('premium' in payload or 'ultra_premium' in payload):
+                    logger.warning("[SCRAPERAPI] ⚠️ 403 Forbidden (Premium negado). Tentando SEM premium...")
+                    payload = get_payload(use_premium=False)
+                    resp = await client.get('https://api.scraperapi.com', params=payload)
+
                 if resp.status_code == 200:
                     html = resp.text
                     html_lower = html.lower()
                     
-                    # Detectar CAPTCHA/Bloqueio no conteúdo (Radware, etc)
-                    bloqueios = ["radware", "captcha", "blocked", "access denied", "unusual traffic", "verify you are human", "desculpe! algo deu errado", "type the characters you see in this image", "robot check", "api error"]
+                    # Detectar CAPTCHA/Bloqueio no conteúdo
+                    bloqueios = ["radware", "captcha", "blocked", "access denied", "unusual traffic", "verify you are human", "desculpe! algo deu errado", "robot check", "api error"]
                     found_block = None
                     for termo in bloqueios:
                         if termo in html_lower:
@@ -1149,11 +1139,7 @@ async def get_page_html(url: str) -> tuple[str | None, str]:
                     else:
                         logger.warning(f"[SCRAPERAPI] ❌ BLOQUEIO DETECTADO no conteúdo: '{found_block}'")
                 else:
-                    logger.warning(f"[SCRAPERAPI] ❌ Falhou com status {resp.status_code}: {resp.text[:200]}")
-                    if resp.status_code == 403:
-                        logger.error("[SCRAPERAPI] 🚨 403 Forbidden: Verifique sua chave ou limite de créditos/plano.")
-                    elif resp.status_code == 429:
-                        logger.error("[SCRAPERAPI] 🚨 429 Too Many Requests: Limite de concorrência atingido.")
+                    logger.warning(f"[SCRAPERAPI] ❌ Falhou com status {resp.status_code}: {resp.text[:100]}")
         except Exception as e:
             logger.warning(f"[SCRAPERAPI] ❌ Exceção: {str(e)[:150]}")
 
