@@ -242,19 +242,14 @@ def barra_progresso(atual: float, total: int) -> str:
     return f"[{barra}] {porcentagem}%"
 
 def gerar_copy(titulo: str, preco: str, loja: str, link: str, cupom: str = None) -> str:
-    # Prepara legenda básica se houver cupom
-    legenda = None
-    if cupom:
-        legenda = f"🎟️ Use o cupom: <b>{cupom}</b>\n\n✅ Produto original\n✅ Melhor preço do dia"
-    
-    # Usa o construtor centralizado para garantir o estilo "OFERTA IMPERDÍVEL"
+    # Usa o construtor centralizado com o parâmetro cupom nativo
     copy_dict = build_copy(
         nome=titulo,
         preco=preco,
         loja=loja,
         store_key=loja.lower(),
         short_url=link,
-        legenda_ia=legenda
+        cupom=cupom
     )
     return copy_dict["telegram"]
 
@@ -358,6 +353,7 @@ async def process_all_forwardings(update: Update, context: ContextTypes.DEFAULT_
             "link_afiliado": link_afiliado,
             "preco": preco,
             "loja": loja_detectada,
+            "cupom": cupom, # SALVA O CUPOM AQUI
             "aprovado": False,
             "index": index,
             "titulo": titulo_resumo
@@ -376,10 +372,13 @@ async def process_all_forwardings(update: Update, context: ContextTypes.DEFAULT_
             
     # Conclusão do Processamento
     sucesso_qtd = total - sem_link_qtd
+    cupons_count = sum(1 for item in context.user_data.get("fila_revisao", []) if item.get('cupom'))
+    
     res_texto = (
         "✅ <b>Pronto! Ofertas organizadas.</b>\n\n"
         "📊 Resultado do Processamento:\n"
         f"✅ {sucesso_qtd} promoções identificadas\n"
+        f"🎟️ {cupons_count} cupons detectados\n"
         f"⚠️ {sem_link_qtd} sem link detectado\n\n"
         "O que deseja fazer agora?"
     )
@@ -430,17 +429,24 @@ async def show_next_review(update: Update, context: ContextTypes.DEFAULT_TYPE):
     total = context.user_data.get("encam_total_processado") or len(fila)
     atual = total - len(fila) + 1
     
+    cupom_val = item.get('cupom')
+    cupom_info = f"🎟️ <b>Cupom:</b> <code>{cupom_val}</code>" if cupom_val else "🎟️ <b>Cupom:</b> <i>Nenhum detectado</i>"
+    dica = "\n💡 <b>Dica:</b> Use o botão abaixo para adicionar ou editar o cupom!" if not cupom_val else ""
+    
     msg_texto = (
         f"💎 <b>PRÉVIA — {atual} de {total}</b>\n\n"
         f"{item['copy']}\n\n"
         "━━━━━━━━━━━━━━━\n"
+        f"{cupom_info}\n"
         f"🔗 <b>Link de conferência:</b>\n"
         f"<code>{item.get('link_afiliado') or 'Sem link'}</code>"
+        f"{dica}"
     )
 
     keyboard = [
         [InlineKeyboardButton("✅ Aprovar e Postar", callback_data="frev_aprovar")],
-        [InlineKeyboardButton("✏️ Corrigir", callback_data="frev_corrigir"),
+        [InlineKeyboardButton("🎫 Adicionar/Editar Cupom", callback_data="frev_cupom")],
+        [InlineKeyboardButton("✏️ Editar Legenda", callback_data="frev_corrigir"),
          InlineKeyboardButton("❌ Descartar", callback_data="frev_descartar")],
         [InlineKeyboardButton("⏭️ Ver Próxima", callback_data="frev_proxima"),
          InlineKeyboardButton("🏠 Voltar ao Menu", callback_data="menu_principal")]
@@ -526,6 +532,16 @@ async def frev_proxima(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["fila_revisao"] = fila
     await show_next_review(update, context)
 
+async def frev_cupom(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    try: await query.message.delete()
+    except: pass
+    
+    context.user_data["estado_correcao"] = "cupom"
+    await context.bot.send_message(query.message.chat_id, "🎫 <b>MODO CUPOM</b>\n\nEnvie apenas o código do cupom abaixo (ou envie 'remover' para tirar):", parse_mode="HTML")
+
 async def frev_corrigir(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -548,10 +564,27 @@ async def receive_correction(update: Update, context: ContextTypes.DEFAULT_TYPE)
         context.user_data["estado_correcao"] = None
         return
 
-    fila[0]["copy"] = texto
+    if context.user_data.get("estado_correcao") == "cupom":
+        if texto.lower() == "remover":
+            fila[0]["cupom"] = None
+        else:
+            fila[0]["cupom"] = texto.upper()
+        
+        # Regenerar copy com o novo cupom
+        item = fila[0]
+        item["copy"] = gerar_copy(
+            titulo=item.get("titulo", "Produto"),
+            preco=item.get("preco", ""),
+            loja=item.get("loja", ""),
+            link=item.get("link_afiliado", ""),
+            cupom=item["cupom"]
+        )
+        await update.message.reply_text("✅ Cupom atualizado!")
+    else:
+        fila[0]["copy"] = texto
+        await update.message.reply_text("✅ Legenda substituída!")
+
     context.user_data["estado_correcao"] = None
-    
-    await update.message.reply_text("✅ Substituição concluída!")
     await show_next_review(update, context)
 
 
