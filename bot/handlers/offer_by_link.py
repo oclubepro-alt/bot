@@ -404,6 +404,10 @@ async def start_offer_by_link(update: Update, context: ContextTypes.DEFAULT_TYPE
     logger.info(f"[OFERTA_LINK] Admin {user.id} iniciou fluxo 'Publicar por Link'.")
     context.user_data.clear()
 
+    keyboard = InlineKeyboardMarkup([[
+        InlineKeyboardButton("⬅️ Voltar ao Menu", callback_data=CB_MENU_PRINCIPAL)
+    ]])
+
     await query.edit_message_text(
         "🔗 <b>Me manda o link do produto</b>\n\n"
         "Eu vou:\n"
@@ -412,6 +416,7 @@ async def start_offer_by_link(update: Update, context: ContextTypes.DEFAULT_TYPE
         "• deixar pronto pra postar no canal\n\n"
         "<i>Pode ser Amazon, Shopee, Mercado Livre, etc.</i>",
         parse_mode=ParseMode.HTML,
+        reply_markup=keyboard
     )
     return LINK_PRODUTO
 
@@ -566,8 +571,8 @@ async def receber_link_produto(update: Update, context: ContextTypes.DEFAULT_TYP
         )
         return PREENCHER_PRECO_FALTANTE
 
-    # Dados completos -> Vai direto para a prévia (experiência premium)
-    return await _gerar_e_enviar_previa(update, context)
+    # Dados completos -> Pergunta sobre cupom antes da prévia
+    return await _perguntar_cupom(update, context)
 
 
 # ============================================================================
@@ -587,14 +592,14 @@ async def preencher_nome_faltante(update: Update, context: ContextTypes.DEFAULT_
         )
         return PREENCHER_PRECO_FALTANTE
 
-    return await _gerar_e_enviar_previa(update, context)
+    return await _perguntar_cupom(update, context)
 
 
 async def preencher_preco_faltante(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     preco = update.message.text.strip()
     context.user_data["dados_produto"]["preco"] = preco
     logger.info(f"[OFERTA_LINK] Preço preenchido manualmente: {preco}")
-    return await _gerar_e_enviar_previa(update, context)
+    return await _perguntar_cupom(update, context)
 
 
 # ============================================================================
@@ -603,9 +608,10 @@ async def preencher_preco_faltante(update: Update, context: ContextTypes.DEFAULT
 
 async def _perguntar_cupom(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Pergunta se a oferta possui cupom antes de gerar a prévia."""
-    keyboard = InlineKeyboardMarkup([[
-        InlineKeyboardButton("❌ Sem Cupom", callback_data=CB_SEM_CUPOM),
-    ]])
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("❌ Sem Cupom", callback_data=CB_SEM_CUPOM)],
+        [InlineKeyboardButton("⬅️ Voltar ao Menu", callback_data=CB_MENU_PRINCIPAL)]
+    ])
     await update.message.reply_text(
         "🎟️ <b>Essa oferta possui cupom de desconto?</b>\n\n"
         "👉 Digite o código do cupom abaixo, ou clique em <b>Sem Cupom</b>.\n"

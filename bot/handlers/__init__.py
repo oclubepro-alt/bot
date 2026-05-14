@@ -132,20 +132,24 @@ def build_main_handler() -> ConversationHandler:
             # Estado 1: recebe o link do produto
             LINK_PRODUTO: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, receber_link_produto),
+                CallbackQueryHandler(start_command, pattern=f"^({CB_VOLTAR_MENU}|{CB_MENU_PRINCIPAL})$"),
             ],
 
             # Estado 2/3: preenche nome ou preço quando extração falhou
             PREENCHER_NOME_FALTANTE: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, preencher_nome_faltante),
+                CallbackQueryHandler(start_command, pattern=f"^({CB_VOLTAR_MENU}|{CB_MENU_PRINCIPAL})$"),
             ],
             PREENCHER_PRECO_FALTANTE: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, preencher_preco_faltante),
+                CallbackQueryHandler(start_command, pattern=f"^({CB_VOLTAR_MENU}|{CB_MENU_PRINCIPAL})$"),
             ],
 
             # Estado NOVO: pergunta e recebe cupom de desconto
             AGUARDAR_CUPOM: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, receber_cupom),
                 CallbackQueryHandler(btn_sem_cupom, pattern=f"^{CB_SEM_CUPOM}$"),
+                CallbackQueryHandler(start_command, pattern=f"^({CB_VOLTAR_MENU}|{CB_MENU_PRINCIPAL})$"),
             ],
 
             # Fallback: link afiliado manual (mantido por compatibilidade)
