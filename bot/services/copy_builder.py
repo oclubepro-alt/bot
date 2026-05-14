@@ -330,6 +330,15 @@ def build_copy(
         f"telegram={len(telegram_copy)} chars | whatsapp={len(whatsapp_copy)} chars"
     )
 
+    # ── GARANTIA FINAL: Telegram SEM link no texto (apenas no botão) ──────
+    # Remove qualquer ocorrência do link curto se ele tiver "http"
+    if telegram_copy and short_url and "http" in short_url:
+        # Escapa o link para remover se ele estiver no texto MDV2
+        short_url_e = _escape_html(short_url)
+        telegram_copy = telegram_copy.replace(short_url_e, "").replace(short_url, "")
+        # Remove linhas vazias duplas criadas pela remoção
+        telegram_copy = re.sub(r"\n\s*\n", "\n\n", telegram_copy).strip()
+
     return {
         "telegram":  telegram_copy,
         "whatsapp":  whatsapp_copy,

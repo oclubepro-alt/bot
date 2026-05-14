@@ -116,7 +116,14 @@ class AmazonCreatorsAPI:
         # A estrutura da Creators API costuma ser: itemInfo -> title, images, etc.
         item_info = item.get("itemInfo", {})
         title_obj = item_info.get("title", {})
-        titulo = title_obj.get("displayValue") or title_obj.get("value")
+        
+        # Tenta vários campos de título
+        titulo = (
+            title_obj.get("displayValue") or 
+            title_obj.get("value") or 
+            item.get("itemName") or 
+            item.get("title")
+        )
         
         # Imagens
         images_obj = item_info.get("images", {})
@@ -137,43 +144,67 @@ class AmazonCreatorsAPI:
         preco_promo = None
         preco_orig = None
         
+        # Tenta extrair das listagens (Estrutura padrão PAAPI 5)
         if listings:
-            # Tenta pegar o preço da primeira listagem (geralmente a oferta principal)
             listing = listings[0]
             price_info = listing.get("price", {})
-            
-            # Tenta vários campos comuns
-            amount = price_info.get("amount") or price_info.get("value")
-            if not amount:
-                # Algumas versões retornam displayAmount
-                display = price_info.get("displayAmount")
-                if display:
-                    amount = display
+            amount = price_info.get("amount") or price_info.get("value") or price_info.get("displayAmount")
             
             if amount:
                 from bot.services.product_extractor_v2 import format_api_price
                 preco_promo = format_api_price(amount)
                 
                 # Preço original (Savings ou listPrice)
-                # Tenta recompor o original se houver savings
                 savings = listing.get("savings", {})
                 s_amount = savings.get("amount") or savings.get("value")
                 if s_amount and preco_promo:
                     try:
-                        # Se temos o promo e o desconto, podemos sugerir o original
                         from bot.services.product_extractor_v2 import _parse_price_to_float
                         p_float = _parse_price_to_float(preco_promo)
                         s_float = float(s_amount)
-                        if p_float:
-                            preco_orig = format_api_price(p_float + s_float)
-                    except:
+                        preco_orig = format_api_price(p_float + s_float)
+                    except: pass
+
+        # Fallback de preço: Alguns itens na Creators API vem direto no objeto ou em productInfo
+        if not preco_promo:
+            p_info = item.get("productInfo", {})
+            amount = (
+                item.get("price") or 
+                item.get("buyingPrice") or 
+                item.get("root_price") or
+                p_info.get("price") or
+                p_info.get("buyingPrice")
+            )
+            if amount:
+                from bot.services.product_extractor_v2 import format_api_price
+                preco_promo = format_api_price(amount)
+                try:
+                    from bot.services.product_extractor_v2 import _parse_price_to_float
+                    p_float = _parse_price_to_float(preco_promo)
+                    # Tenta pegar s_amount de onde der
+                    savings_info = item.get("savings") or p_info.get("savings") or {}
+                    savings_amount = savings_info.get("amount") or savings_info.get("value")
+                    if savings_amount and p_float:
+                        s_float = float(savings_amount)
+                        preco_orig = format_api_price(p_float + s_float)
+                except: pass
                         pass
         
-        # Fallback para productInfo se preço não estiver em offers
+        # Fallback para root 'price' ou 'itemInfo.productInfo'
         if not preco_promo:
+            # Tenta itemInfo.productInfo.listPrice
             prod_info = item_info.get("productInfo", {})
             lp = prod_info.get("listPrice", {})
-            lp_amount = lp.get("amount") or lp.get("value")
+            lp_amount = lp.get("amount") or lp.get("value") or lp.get("displayAmount")
+            
+            if not lp_amount:
+                # Tenta root 'price'
+                root_price = item.get("price", {})
+                if isinstance(root_price, dict):
+                    lp_amount = root_price.get("amount") or root_price.get("value") or root_price.get("displayAmount")
+                elif isinstance(root_price, (str, float, int)):
+                    lp_amount = root_price
+            
             if lp_amount:
                 from bot.services.product_extractor_v2 import format_api_price
                 preco_promo = format_api_price(lp_amount)

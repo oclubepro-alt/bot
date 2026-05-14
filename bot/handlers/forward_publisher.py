@@ -29,34 +29,34 @@ async def capturar_midia(message) -> dict:
         midia = {"tipo": "animation", "file_id": message.animation.file_id}
     return midia
 
-async def enviar_com_midia(bot, chat_id, midia, texto, affiliate_url: str | None = None):
+async def enviar_com_midia(bot, chat_id, midia, texto, affiliate_url: str | None = None, reply_markup=None):
     tipo = midia.get("tipo")
     file_id = midia.get("file_id")
     
-    keyboard = None
-    if affiliate_url:
-        keyboard = InlineKeyboardMarkup([[
+    # Se não veio o teclado pronto, mas tem link, cria o botão de oferta
+    if not reply_markup and affiliate_url:
+        reply_markup = InlineKeyboardMarkup([[
             InlineKeyboardButton("🛒 PEGAR OFERTA", url=affiliate_url)
         ]])
 
     try:
         if tipo == "photo" and file_id:
             await bot.send_photo(chat_id=chat_id, photo=file_id,
-                caption=texto, parse_mode="HTML", reply_markup=keyboard)
+                caption=texto, parse_mode="HTML", reply_markup=reply_markup)
         elif tipo == "video" and file_id:
             await bot.send_video(chat_id=chat_id, video=file_id,
-                caption=texto, parse_mode="HTML", reply_markup=keyboard)
+                caption=texto, parse_mode="HTML", reply_markup=reply_markup)
         elif tipo == "animation" and file_id:
             await bot.send_animation(chat_id=chat_id, animation=file_id,
-                caption=texto, parse_mode="HTML", reply_markup=keyboard)
+                caption=texto, parse_mode="HTML", reply_markup=reply_markup)
         else:
             await bot.send_message(chat_id=chat_id, text=texto,
-                parse_mode="HTML", reply_markup=keyboard)
+                parse_mode="HTML", reply_markup=reply_markup)
     except Exception as e:
         logger.error(f"[ENVIO] ❌ Erro: {e}")
         try:
             await bot.send_message(chat_id=chat_id, text=texto,
-                parse_mode="HTML", reply_markup=keyboard)
+                parse_mode="HTML", reply_markup=reply_markup)
         except: pass
 
 async def start_forward_mode(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -455,7 +455,7 @@ async def show_next_review(update: Update, context: ContextTypes.DEFAULT_TYPE):
         chat_id=chat_id,
         midia=item.get("midia", {}),
         texto=msg_texto,
-        keyboard=InlineKeyboardMarkup(keyboard)
+        reply_markup=InlineKeyboardMarkup(keyboard)
     )
 
 async def frev_aprovar(update: Update, context: ContextTypes.DEFAULT_TYPE):

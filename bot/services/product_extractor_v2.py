@@ -1201,8 +1201,12 @@ def _normalize_amazon_url(url: str) -> str:
     # Regex expandida para pegar em mais contextos (incluindo links patrocinados)
     asin_match = re.search(r"/(?:dp|gp/product|product-reviews|aw/d|vdp|d)/([A-Z0-9]{10})", url, re.I)
     if not asin_match:
-        # Tenta pegar qualquer string de 10 chars que comece com B0 (comum em ASINs) ou 8 (livros)
-        asin_match = re.search(r"[/\?&=]([B0][A-Z0-9]{9})", url)
+        # Tenta pegar pd_rd_i=... ou similar
+        asin_match = re.search(r"[/\?&](?:pd_rd_i|ASIN|item_id)=([A-Z0-9]{10})", url, re.I)
+    
+    if not asin_match:
+        # Tenta pegar qualquer string de 10 chars que comece com B0 (comum em ASINs)
+        asin_match = re.search(r"[/\?&=](B[A-Z0-9]{9})", url, re.I)
 
     if asin_match:
         asin = asin_match.group(1).upper()
@@ -1343,7 +1347,16 @@ async def extract_product_data_v2(url: str) -> dict:
 
     # ── CAMADA 4: Fallback Seguro ──────────────────────────────────────────
     if not result.get("titulo") or result["titulo"] == "Produto":
-        result["titulo"] = "Produto Disponível"
+        # Tenta inferir da URL se tudo falhar
+        if "amazon" in final_url.lower():
+            result["titulo"] = "Produto Amazon"
+        elif "magalu" in final_url.lower():
+            result["titulo"] = "Produto Magalu"
+        elif "mercadolivre" in final_url.lower():
+            result["titulo"] = "Produto Mercado Livre"
+        else:
+            result["titulo"] = "Produto Disponível"
+            
         if result["source_method"] == "FALHA_TOTAL":
             result["source_method"] = "FALLBACK_MINIMO"
 
