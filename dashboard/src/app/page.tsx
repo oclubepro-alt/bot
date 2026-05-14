@@ -24,6 +24,9 @@ interface Product {
   imagem?: string;
   created_at: string;
   status: string;
+  type?: string;
+  copy?: string;
+  preserve_fidelity?: boolean;
 }
 
 interface Health {
@@ -161,7 +164,12 @@ export default function Dashboard() {
                     <div className="flex-1 flex flex-col justify-between py-1">
                       <div>
                         <div className="flex items-center justify-between mb-1">
-                          <span className="text-[10px] font-bold uppercase tracking-widest text-primary bg-primary/10 px-2 py-0.5 rounded">{item.loja}</span>
+                          <div className="flex gap-2">
+                            <span className="text-[10px] font-bold uppercase tracking-widest text-primary bg-primary/10 px-2 py-0.5 rounded">{item.loja}</span>
+                            {item.preserve_fidelity && (
+                              <span className="text-[10px] font-bold uppercase tracking-widest text-orange-500 bg-orange-500/10 px-2 py-0.5 rounded border border-orange-500/20">Fidelity</span>
+                            )}
+                          </div>
                           <span className="text-[10px] text-foreground/40">{new Date(item.created_at).toLocaleTimeString()}</span>
                         </div>
                         <h3 className="text-sm font-semibold leading-tight line-clamp-2 mb-2 group-hover:text-primary transition-colors">{item.titulo}</h3>
@@ -218,10 +226,14 @@ export default function Dashboard() {
                     <img src={queue[0]?.imagem || "https://m.media-amazon.com/images/I/71XmkoS6vUL._AC_SL1500_.jpg"} alt="preview" className="w-full h-48 object-contain" />
                   </div>
                   <div className="text-sm leading-relaxed whitespace-pre-wrap">
-                    🔥 <b>{queue[0]?.titulo || "Smartphone Samsung Galaxy S23 Ultra"}</b>{"\n\n"}
-                    💰 Por apenas <b>{queue[0]?.preco || "R$ 5.499,00"}</b>{"\n\n"}
-                    👉 <span className="tg-link">Clique aqui para comprar</span>{"\n\n"}
-                    ⚡ <i>Oferta por tempo limitado. Corra!</i>
+                    {queue[0]?.preserve_fidelity ? queue[0]?.copy : (
+                      <>
+                        🔥 <b>{queue[0]?.titulo || "Smartphone Samsung Galaxy S23 Ultra"}</b>{"\n\n"}
+                        💰 Por apenas <b>{queue[0]?.preco || "R$ 5.499,00"}</b>{"\n\n"}
+                        👉 <span className="tg-link">Clique aqui para comprar</span>{"\n\n"}
+                        ⚡ <i>Oferta por tempo limitado. Corra!</i>
+                      </>
+                    )}
                   </div>
                   <div className="flex justify-end items-center gap-1 mt-1">
                     <span className="text-[10px] text-[#708499]">14:52</span>

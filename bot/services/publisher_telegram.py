@@ -43,34 +43,70 @@ async def publish_to_telegram(bot: Bot, message_text: str, photo_url_or_id: str 
             logger.info(f"[PUBLISHER_TELEGRAM] 📡 DISPARANDO PARA: {chat_id}")
             
             msg = None
-            # Tenta enviar com foto se houver URL
+            # Tenta enviar com foto se houver URL ou ID
             if photo_url_or_id:
                 try:
-                    import httpx
-                    # Baixa a imagem localmente para evitar que a API do Telegram trave (timeout)
-                    logger.info(f"[PUBLISHER_TELEGRAM] Baixando imagem da URL (timeout=8s): {photo_url_or_id[:60]}...")
-                    async with httpx.AsyncClient() as client:
-                        resp = await client.get(photo_url_or_id, timeout=8.0)
-                        resp.raise_for_status()
-                        photo_bytes = resp.content
+                    # Se for um dicionário (padrão do forward_publisher)
+                    if isinstance(photo_url_or_id, dict):
+                        m_type = photo_url_or_id.get("type", "photo")
+                        m_id = photo_url_or_id.get("file_id")
+                        if m_type == "photo" and m_id:
+                            msg = await bot.send_photo(
+                                chat_id=chat_id,
+                                photo=m_id,
+                                caption=message_text,
+                                parse_mode=ParseMode.HTML,
+                                reply_markup=reply_markup
+                            )
+                        elif m_type == "video" and m_id:
+                            msg = await bot.send_video(
+                                chat_id=chat_id,
+                                video=m_id,
+                                caption=message_text,
+                                parse_mode=ParseMode.HTML,
+                                reply_markup=reply_markup
+                            )
+                    
+                    # Se for uma string
+                    elif isinstance(photo_url_or_id, str):
+                        # Se parece uma URL
+                        if photo_url_or_id.startswith(("http://", "https://")):
+                            import httpx
+                            # Baixa a imagem localmente para evitar que a API do Telegram trave (timeout)
+                            logger.info(f"[PUBLISHER_TELEGRAM] Baixando imagem da URL (timeout=8s): {photo_url_or_id[:60]}...")
+                            async with httpx.AsyncClient() as client:
+                                resp = await client.get(photo_url_or_id, timeout=8.0)
+                                resp.raise_for_status()
+                                photo_bytes = resp.content
 
-                    logger.info(f"[PUBLISHER_TELEGRAM] Enviando foto baixada ao Telegram...")
-                    msg = await bot.send_photo(
-                        chat_id=chat_id,
-                        photo=photo_bytes,
-                        caption=message_text,
-                        parse_mode=ParseMode.HTML,
-                        reply_markup=reply_markup,
-                        read_timeout=15,
-                        write_timeout=15,
-                        connect_timeout=15
-                    )
-                    logger.info(f"[PUBLISHER_TELEGRAM] Foto enviada ao canal {chat_id} com sucesso.")
-                    sent_messages.append({"chat_id": chat_id, "message_id": msg.message_id})
-                    sucesso_algum = True
-                    continue # Próximo canal
+                            logger.info(f"[PUBLISHER_TELEGRAM] Enviando foto baixada ao Telegram...")
+                            msg = await bot.send_photo(
+                                chat_id=chat_id,
+                                photo=photo_bytes,
+                                caption=message_text,
+                                parse_mode=ParseMode.HTML,
+                                reply_markup=reply_markup,
+                                read_timeout=15,
+                                write_timeout=15,
+                                connect_timeout=15
+                            )
+                        else:
+                            # Assume que é um file_id do Telegram
+                            msg = await bot.send_photo(
+                                chat_id=chat_id,
+                                photo=photo_url_or_id,
+                                caption=message_text,
+                                parse_mode=ParseMode.HTML,
+                                reply_markup=reply_markup
+                            )
+
+                    if msg:
+                        logger.info(f"[PUBLISHER_TELEGRAM] Mídia enviada ao canal {chat_id} com sucesso.")
+                        sent_messages.append({"chat_id": chat_id, "message_id": msg.message_id})
+                        sucesso_algum = True
+                        continue # Próximo canal
                 except Exception as photo_err:
-                    logger.warning(f"[PUBLISHER_TELEGRAM] Falha ao processar foto para {chat_id}: {photo_err}. Tentando fallback de texto...")
+                    logger.warning(f"[PUBLISHER_TELEGRAM] Falha ao processar mídia para {chat_id}: {photo_err}. Tentando fallback de texto...")
                     # Fallback para texto abaixo
             
             # Envio de Texto (ou fallback se a foto falhou)

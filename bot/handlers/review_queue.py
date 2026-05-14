@@ -61,9 +61,12 @@ async def show_next_review_item(update: Update, context: ContextTypes.DEFAULT_TY
     original_url = offer.get("original_url", offer.get("product_url", ""))
     dados = offer.get("dados_produto", {})
     
+    is_fidelity = offer.get("preserve_fidelity", False)
+    
     preview_text = (
         f"📋 <b>REVISÃO DE FILA</b> (Página {index + 1} de {count})\n"
         "━━━━━━━━━━━━━━━━━━━━━\n"
+        + (f"✨ <b>MODO FIDELIDADE ABSOLUTA</b>\n" if is_fidelity else "") +
         f"📦 <b>{escape_html(nome)}</b>\n"
         f"💰 <b>Preço:</b> {escape_html(dados.get('preco', '—'))}"
         + (f"  <s>{escape_html(dados.get('preco_original', ''))}</s>" if dados.get('preco_original') else "") + "\n\n"
@@ -194,20 +197,25 @@ async def handle_review_callback(
             logger.info(f"[REVIEW] Link encurtado: {short_url}")
 
             # Reconstrói a copy com o link curto para o canal
-            dados = offer.get("dados_produto", {})
-            store_key = offer.get("store_key", "amazon")
-            copy_ia   = offer.get("copy_ia")
-            copies_final = build_copy(
-                nome=dados.get("titulo", nome),
-                preco=dados.get("preco", "Preço não disponível"),
-                loja=dados.get("store", "Loja"),
-                store_key=store_key,
-                short_url=short_url,
-                legenda_ia=copy_ia,
-                preco_original=dados.get("preco_original"),
-                cupom=offer.get("cupom"),
-                product_url=product_url,
-            )
+            if offer.get("preserve_fidelity"):
+                # Se for fidelidade absoluta, usamos a copy original (já processada)
+                # O encurtamento do link principal no botão é feito pelo publish_offer
+                copies_final = offer.get("copy", "Sem legenda")
+            else:
+                dados = offer.get("dados_produto", {})
+                store_key = offer.get("store_key", "amazon")
+                copy_ia   = offer.get("copy_ia")
+                copies_final = build_copy(
+                    nome=dados.get("titulo", nome),
+                    preco=dados.get("preco", "Preço não disponível"),
+                    loja=dados.get("store", "Loja"),
+                    store_key=store_key,
+                    short_url=short_url,
+                    legenda_ia=copy_ia,
+                    preco_original=dados.get("preco_original"),
+                    cupom=offer.get("cupom"),
+                    product_url=product_url,
+                )
 
             sent_msgs = await publish_offer(context.bot, copies_final, imagem, short_url)
             if sent_msgs and isinstance(sent_msgs, list):

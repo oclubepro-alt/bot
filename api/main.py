@@ -28,9 +28,13 @@ class Product(BaseModel):
     preco: str
     loja: str
     link: str
+    link_afiliado: Optional[str] = None
     imagem: Optional[str] = None
     created_at: str
     status: str = "pending" # pending, approved, rejected
+    type: Optional[str] = "scraped" # forward or scraped
+    copy: Optional[str] = None
+    preserve_fidelity: Optional[bool] = False
 
 def load_queue() -> List[dict]:
     if not QUEUE_FILE.exists():

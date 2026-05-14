@@ -374,19 +374,28 @@ async def process_all_forwardings(update: Update, context: ContextTypes.DEFAULT_
         await context.bot.edit_message_text(chat_id=chat_id, message_id=msg_id, text=prog_texto, parse_mode="HTML")
         await asyncio.sleep(0.6)
 
-        context.user_data["fila_revisao"].append({
+        import uuid
+        from datetime import datetime
+        offer_id = f"fwd_{uuid.uuid4().hex[:8]}"
+        if "pending_offers" not in context.bot_data:
+            context.bot_data["pending_offers"] = {}
+
+        context.bot_data["pending_offers"][offer_id] = {
+            "type": "forward",
             "midia": midia,
             "copy": copy_gerada,
             "texto_base": texto_original,
             "link_original": link_original,
-            "link_afiliado": link_final_botao, # Usa o primeiro link de afiliado encontrado para o botão
+            "link_afiliado": link_final_botao,
             "preco": preco,
             "loja": loja_detectada,
             "cupom": cupom,
             "aprovado": False,
-            "index": index,
-            "titulo": titulo_resumo
-        })
+            "preserve_fidelity": True, # FLAG CRÍTICA: Mantém o texto original
+            "nome": titulo_resumo,
+            "imagem": midia.get("file_id") if isinstance(midia, dict) else midia,
+            "created_at": datetime.now().isoformat()
+        }
         
         # Passo 4
         if atual < total:
@@ -398,6 +407,10 @@ async def process_all_forwardings(update: Update, context: ContextTypes.DEFAULT_
             )
             await context.bot.edit_message_text(chat_id=chat_id, message_id=msg_id, text=prog_texto, parse_mode="HTML")
             await asyncio.sleep(0.6)
+
+    # Salva na fila persistente (Dashboard)
+    from bot.utils.review_store import save_review_queue
+    save_review_queue(context.bot_data["pending_offers"])
             
     # Conclusão do Processamento
     sucesso_qtd = total - sem_link_qtd
@@ -413,8 +426,8 @@ async def process_all_forwardings(update: Update, context: ContextTypes.DEFAULT_
     )
     
     keyboard = [
-        [InlineKeyboardButton("👀 Revisar e Aprovar Uma a Uma", callback_data="encam_revisar")],
-        [InlineKeyboardButton("✅ Aprovar e Publicar Todas", callback_data="encam_aprovar_todas")],
+        [InlineKeyboardButton("👀 Abrir Fila de Revisão (Mission Control)", callback_data="review_view:0")],
+        [InlineKeyboardButton("✅ Aprovar Todas (Apenas Forward)", callback_data="encam_aprovar_todas")],
         [InlineKeyboardButton("❌ Cancelar Tudo", callback_data=CB_CANCELAR_ENCAM),
          InlineKeyboardButton("🏠 Voltar ao Menu", callback_data="menu_principal")]
     ]
