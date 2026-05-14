@@ -97,7 +97,7 @@ async def receive_forwarded_message(update: Update, context: ContextTypes.DEFAUL
         return
 
     midia = await capturar_midia(msg)
-    texto = msg.text or msg.caption or ""
+    texto = msg.text_html or msg.caption_html or ""
 
     if not texto and not midia.get("file_id"):
         return
@@ -377,10 +377,8 @@ async def process_all_forwardings(update: Update, context: ContextTypes.DEFAULT_
         import uuid
         from datetime import datetime
         offer_id = f"fwd_{uuid.uuid4().hex[:8]}"
-        if "pending_offers" not in context.bot_data:
-            context.bot_data["pending_offers"] = {}
-
-        context.bot_data["pending_offers"][offer_id] = {
+        
+        item_revisao = {
             "type": "forward",
             "midia": midia,
             "copy": copy_gerada,
@@ -396,6 +394,16 @@ async def process_all_forwardings(update: Update, context: ContextTypes.DEFAULT_
             "imagem": midia.get("file_id") if isinstance(midia, dict) else midia,
             "created_at": datetime.now().isoformat()
         }
+
+        # 1. Fila de revisão do usuário (para "Aprovar Todas" funcionar)
+        if "fila_revisao" not in context.user_data:
+            context.user_data["fila_revisao"] = []
+        context.user_data["fila_revisao"].append(item_revisao)
+
+        # 2. Fila persistente (Dashboard)
+        if "pending_offers" not in context.bot_data:
+            context.bot_data["pending_offers"] = {}
+        context.bot_data["pending_offers"][offer_id] = item_revisao
         
         # Passo 4
         if atual < total:
