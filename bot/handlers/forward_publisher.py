@@ -536,7 +536,7 @@ async def frev_aprovar(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 chat_id=cid, 
                 midia=item.get("midia", {}), 
                 texto=item["copy"],
-                affiliate_url=item.get("link_afiliado")
+                affiliate_url=item.get("affiliate_url")
             )
             await asyncio.sleep(2)
         
