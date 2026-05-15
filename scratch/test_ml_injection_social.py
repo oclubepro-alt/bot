@@ -2,6 +2,8 @@
 import asyncio
 from bot.services.affiliate_link_service import injetar_link_afiliado
 import os
+import logging
+logging.basicConfig(level=logging.INFO)
 
 # Simula ID configurado
 os.environ["AFFILIATE_ID_ML"] = "55765126"

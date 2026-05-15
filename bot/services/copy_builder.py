@@ -123,7 +123,7 @@ def _calc_desconto(preco: str, preco_original: str | None) -> str | None:
     """
     if not preco_original:
         return None
-    from bot.services.product_extractor_v2 import _parse_price_to_float
+    from bot.utils.price_utils import _parse_price_to_float
     atual = _parse_price_to_float(preco)
     orig  = _parse_price_to_float(preco_original)
     if atual and orig and orig > atual:

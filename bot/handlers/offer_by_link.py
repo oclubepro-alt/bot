@@ -164,7 +164,7 @@ def _gerar_copy_basica(
         f"🔥 <b>{_escape_html(titulo)}</b>\n\n"
         f"{preco_linha}\n"
         f"{cupom_linha}\n\n"
-        f"👉 <a href=\"{link}\">Clique aqui para comprar</a>\n\n"
+        f"👉 <a href=\"{link.replace('&', '&amp;')}\">Clique aqui para comprar</a>\n\n"
         f"⚡ <i>Oferta por tempo limitado. Corra!</i>"
     )
 

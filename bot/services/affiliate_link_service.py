@@ -24,7 +24,7 @@ def get_effective_affiliate_id(store_key: str) -> str:
     # 1. Tenta do JSON (configurado via menu /config_afiliado)
     config = get_affiliate(store_key)
     val = config.get("tag") if store_key == "amazon" else config.get("affiliate_url")
-    if val:
+    if val and val.strip():
         return val.strip()
     
     # 2. Fallback para .env
@@ -266,6 +266,28 @@ async def injetar_link_afiliado(url: str, store_key: str | None = None) -> str:
                 logger.info(f"[AFFILIATE_SERVICE] Expandido  {url[:80]}... | Loja: {store_key}")
         except Exception as e:
             logger.warning(f"[AFFILIATE_SERVICE] Falha ao expandir link curto: {e}")
+
+    # 2.5 Tratamento especial para paginas /social/ do Mercado Livre
+    if store_key == "mercadolivre" and "/social/" in url.lower():
+        logger.info(f"[AFFILIATE_SERVICE] Detectado link /social/. Extraindo produto real...")
+        try:
+            import httpx
+            headers_social = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0.0.0 Safari/537.36",
+                "Accept-Language": "pt-BR,pt;q=0.9",
+            }
+            async with httpx.AsyncClient(follow_redirects=True, timeout=15.0, headers=headers_social) as client:
+                resp = await client.get(url)
+                html = resp.text
+                m_code = re.search(r'MLB-?\d+', html) or re.search(r'short_name=([^&"]+)', url)
+                code = m_code.group(0) if m_code else ""
+                if code:
+                    m_link = re.search(fr'https?://[^"\s]*{code}[^"\s]*MLB[^"\s>]*', html)
+                    if m_link:
+                        url = m_link.group(0).replace("&amp;", "&")
+                        logger.info(f"[AFFILIATE_SERVICE] /social/ convertido para produto real: {url[:80]}")
+        except Exception as e:
+            logger.warning(f"[AFFILIATE_SERVICE] Falha ao extrair produto de /social/: {e}")
 
     # 3. Limpeza preventiva de rastreadores de terceiros
     for param in ["fbclid", "gclid", "aff_id", "clickid"]:
