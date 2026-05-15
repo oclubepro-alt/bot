@@ -36,7 +36,7 @@ class AmazonCreatorsAPI:
         
         # Lista de escopos para tentar. Prioriza o que estiver no .env
         env_scope = os.getenv("AMAZON_CREATORS_SCOPE")
-        scopes_to_try = [env_scope] if env_scope else [None, "advertising::campaign_management"]
+        scopes_to_try = [env_scope] if env_scope else [None, "advertising::campaign_management", "amazon_creators", "profile"]
         
         async with httpx.AsyncClient(timeout=15.0) as client:
             for scope in scopes_to_try:
@@ -182,7 +182,7 @@ class AmazonCreatorsAPI:
         image_url = None
         if primary:
             # Prioridade para imagens de alta resolução
-            for size in ["highRes", "HighRes", "large", "Large", "medium", "Medium"]:
+            for size in ["highRes", "HighRes", "extraLarge", "ExtraLarge", "large", "Large", "medium", "Medium"]:
                 size_obj = get_field(primary, [size])
                 if size_obj:
                     image_url = get_field(size_obj, ["url", "URL"])
@@ -212,7 +212,7 @@ class AmazonCreatorsAPI:
         if summaries and isinstance(summaries, list):
             lowest = get_field(summaries[0], ["lowestPrice", "LowestPrice"])
             if lowest:
-                price_found = get_field(lowest, ["amount", "Amount", "value", "Value", "displayAmount", "DisplayAmount"])
+                price_found = get_field(lowest, ["displayAmount", "DisplayAmount", "amount", "Amount", "value", "Value"])
 
         # B. Tenta Listings (BuyBox)
         if not price_found:
@@ -223,9 +223,9 @@ class AmazonCreatorsAPI:
                 if price_info:
                     # Preço de compra atual
                     price_found = (
+                        get_field(price_info, ["displayAmount", "DisplayAmount"]) or
                         get_field(price_info, ["amount", "Amount"]) or 
-                        get_field(price_info, ["value", "Value"]) or 
-                        get_field(price_info, ["displayAmount", "DisplayAmount"])
+                        get_field(price_info, ["value", "Value"])
                     )
                     # Preço original (se houver desconto)
                     savings = get_field(price_info, ["savings", "Savings"])
@@ -253,7 +253,7 @@ class AmazonCreatorsAPI:
                 get_field(p_info, ["buyingPrice", "BuyingPrice"])
             )
             if isinstance(price_found, dict):
-                price_found = get_field(price_found, ["amount", "Amount", "value", "Value", "displayAmount", "DisplayAmount"])
+                price_found = get_field(price_found, ["displayAmount", "DisplayAmount", "amount", "Amount", "value", "Value"])
             
             if not orig_price:
                 lp_obj = get_field(p_info, ["listPrice", "ListPrice"])

@@ -21,7 +21,7 @@ import os
 import random
 from bs4 import BeautifulSoup
 from urllib.parse import urlparse, unquote, urljoin
-from bot.utils.config import SCRAPERAPI_KEY
+from bot.utils.config import SCRAPINGDOG_API_KEY
 
 logger = logging.getLogger(__name__)
 
@@ -88,12 +88,13 @@ _MOBILE_HEADERS = {
 }
 
 _BLOCK_KEYWORDS = ["captcha", "blocked", "bot manager", "perfdrive", "shieldsquare", 
-                  "acesso negado", "access denied", "validate.perfdrive.com",
-                  "type the characters you see in this image", "human verification"]
+                  "acesso negado", "access denied", "validate.perfdrive.com", "radware",
+                  "type the characters you see in this image", "human verification",
+                  "verify you are human", "robot check", "unusual traffic from your computer"]
 
 _TIMEOUT_HTTP = 15
 _TIMEOUT_PLAYWRIGHT = 45
-_TIMEOUT_SCRAPERAPI = 60
+
 
 
 # ---------------------------------------------------------------------------
@@ -115,26 +116,27 @@ async def fetch_magalu_api(url: str) -> dict | None:
     product_id = match.group(1)
     logger.info(f"[MAGALU_API] ℹ️ Produto ID extraído: {product_id}")
 
-    headers_json = {
-        "User-Agent": "Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36",
+    # Headers robustos para emular app/mobile e evitar blocks simples
+    headers = {
+        "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4.1 Mobile/15E148 Safari/604.1",
         "Accept": "application/json, text/plain, */*",
         "Accept-Language": "pt-BR,pt;q=0.9",
-        "Referer": "https://www.magazineluiza.com.br/",
-        "x-requested-with": "com.magalu.magaluapp",
+        "Cache-Control": "no-cache",
+        "Pragma": "no-cache",
+        "x-requested-with": "com.magalu.magaluapp"
     }
 
     _ENDPOINTS_MAGALU = [
-        # Endpoint 1: API catalog mobile (ms.catalog)
-        f"https://ms.catalog.magazineluiza.com.br/api/v1/products/{product_id}",
-        # Endpoint 2: API de produto (site)
+        f"https://www.magazineluiza.com.br/api/v2/product/{product_id}",
         f"https://www.magazineluiza.com.br/api/v1/product/{product_id}/",
+        f"https://m.magazineluiza.com.br/api/v1/product/{product_id}/"
     ]
 
     async with httpx.AsyncClient(timeout=12, follow_redirects=True, verify=False) as client:
         for endpoint in _ENDPOINTS_MAGALU:
             try:
                 logger.info(f"[MAGALU_API] ℹ️ Tentando: {endpoint}")
-                resp = await client.get(endpoint, headers=headers_json)
+                resp = await client.get(endpoint, headers=headers)
                 
                 if resp.status_code != 200:
                     continue
@@ -169,31 +171,31 @@ async def fetch_magalu_api(url: str) -> dict | None:
                 logger.warning(f"[MAGALU_API] ❌ Erro em {endpoint}: {str(e)[:80]}")
                 continue
 
-    return None
-
-    # --- Fallback Camada 0b: JSON-LD leve da página ---
+    # Camada 0b: Scraping LEVE (Apenas MetaTags/JSON-LD) com Mobile Headers
     try:
-        logger.info("[MAGALU_API] ℹ️ Tentando JSON-LD leve da página...")
-        headers_html = {
-            "User-Agent": _HEADERS["User-Agent"],
-            "Accept-Language": "pt-BR,pt;q=0.9",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        }
-        async with httpx.AsyncClient(timeout=12, follow_redirects=True) as client:
-            resp = await client.get(url, headers=headers_html)
-            if resp.status_code == 200 and "radware" not in resp.text.lower():
-                soup = BeautifulSoup(resp.text, "html.parser")
-                preco_schema = _extract_price_from_schema(soup)
-                titulo_tag = soup.select_one("h1[itemprop='name'], h1.header-product__title, h1")
-                titulo_schema = titulo_tag.get_text(strip=True)[:80] if titulo_tag else None
-                meta_img = soup.find("meta", attrs={"property": "og:image"})
-                imagem_schema = meta_img["content"] if meta_img and meta_img.get("content") else None
-
+        logger.info("[MAGALU_API] ℹ️ Tentando extração leve via Mobile Headers...")
+        async with httpx.AsyncClient(timeout=10, follow_redirects=True, headers=headers) as client:
+            resp = await client.get(url)
+            if resp.status_code == 200:
+                html = resp.text
+                if any(p in html.lower() for p in ["radware", "captcha"]):
+                    logger.warning("[MAGALU_API] ⚠️ Bloqueio detectado no HTML leve.")
+                    return None
+                
+                # Tenta extrair do __NEXT_DATA__ ou similar se existir
+                soup = BeautifulSoup(html, 'html.parser')
+                
+                # 1. JSON-LD
+                scripts = soup.find_all("script", type="application/ld+json")
+                preco_schema, _ = _extract_price_from_schema(soup)
+                titulo_tag = soup.select_one("h1")
+                titulo_schema = titulo_tag.get_text(strip=True) if titulo_tag else None
+                
                 if titulo_schema and preco_schema:
-                    logger.info(f"[MAGALU_API] ✅ JSON-LD/HTML leve OK | {titulo_schema[:40]}")
+                    logger.info("[MAGALU_API] ✅ JSON-LD/HTML leve OK")
                     return {
                         "titulo": titulo_schema,
-                        "imagem": imagem_schema,
+                        "imagem": None,
                         "preco": preco_schema,
                         "preco_original": None,
                         "source_method": "MAGALU_HTML_LEVE",
@@ -201,6 +203,35 @@ async def fetch_magalu_api(url: str) -> dict | None:
                     }
     except Exception as e:
         logger.warning(f"[MAGALU_API] ⚠️ JSON-LD leve falhou: {str(e)[:80]}")
+
+    # Camada 0c: Fallback via Busca (Resiliente a blocks de produto direto)
+    try:
+        logger.info("[MAGALU_API] ℹ️ Tentando fallback via busca por ID...")
+        search_url = f"https://www.magazineluiza.com.br/busca/{product_id}"
+        async with httpx.AsyncClient(timeout=10, follow_redirects=True, headers=headers) as client:
+            resp = await client.get(search_url)
+            if resp.status_code == 200:
+                html = resp.text
+                if not any(p in html.lower() for p in ["radware", "captcha"]):
+                    soup = BeautifulSoup(html, 'html.parser')
+                    # Tenta pegar o primeiro produto da lista de busca
+                    first_prod = soup.select_one('a[data-testid="product-card-container"]')
+                    if first_prod:
+                        title_tag = first_prod.select_one('h3[data-testid="product-title"]')
+                        price_tag = first_prod.select_one('p[data-testid="price-value"]')
+                        img_tag = first_prod.select_one('img[data-testid="image"]')
+                        
+                        if title_tag and price_tag:
+                            logger.info("[MAGALU_API] ✅ Sucesso via Busca")
+                            return {
+                                "titulo": title_tag.get_text(strip=True),
+                                "imagem": img_tag.get("src") if img_tag else None,
+                                "preco": price_tag.get_text(strip=True),
+                                "source_method": "MAGALU_SEARCH_API",
+                                "is_pix_price": True
+                            }
+    except Exception as e:
+        logger.warning(f"[MAGALU_API] ❌ Fallback busca falhou: {str(e)[:80]}")
 
     logger.warning("[MAGALU_API] ❌ Todos os endpoints falharam → caindo para Camada 1")
     return None
@@ -240,7 +271,7 @@ async def fetch_netshoes_api(url: str) -> dict | None:
         f"https://www.netshoes.com.br/api/catalog/product/{sku}",
     ]
 
-    async with httpx.AsyncClient(timeout=12, follow_redirects=True) as client:
+    async with httpx.AsyncClient(timeout=12, follow_redirects=True, verify=False) as client:
         for endpoint in _ENDPOINTS_NETSHOES:
             try:
                 logger.info(f"[NETSHOES_API] ℹ️ Tentando: {endpoint}")
@@ -321,6 +352,82 @@ async def fetch_netshoes_api(url: str) -> dict | None:
                     }
     except Exception as e:
         logger.warning(f"[NETSHOES_API] ⚠️ HTML leve falhou: {str(e)[:80]}")
+
+
+async def fetch_amazon_scrapingdog(url: str) -> dict | None:
+    """
+    Extrai dados da Amazon via Scrapingdog API (Pago).
+    Custo: 5 créditos por request (com country=br).
+    """
+    if not SCRAPINGDOG_API_KEY:
+        logger.warning("[SCRAPINGDOG] ⚠️ SCRAPINGDOG_API_KEY não configurada!")
+        return None
+
+    # Extrai ASIN
+    asin_match = re.search(r"/(?:dp|gp/product|product-reviews|aw/d|vdp|d)/([A-Z0-9]{10})", url, re.I)
+    if not asin_match:
+        asin_match = re.search(r"[/\?&](?:pd_rd_i|ASIN|item_id)=([A-Z0-9]{10})", url, re.I)
+    
+    if not asin_match:
+        logger.warning(f"[SCRAPINGDOG] ⚠️ ASIN não encontrado na URL: {url[:60]}")
+        return None
+        
+    asin = asin_match.group(1).upper()
+    
+    endpoint = "https://api.scrapingdog.com/amazon/product"
+    params = {
+        "api_key": SCRAPINGDOG_API_KEY,
+        "asin": asin,
+        "domain": "com.br",
+        "country": "br"
+    }
+    
+    try:
+        logger.info(f"[SCRAPINGDOG] 📡 Consultando ASIN {asin} na Scrapingdog...")
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.get(endpoint, params=params)
+            
+            if resp.status_code == 200:
+                data = resp.json()
+                # Scrapingdog às vezes retorna uma lista com um objeto
+                if isinstance(data, list) and len(data) > 0:
+                    data = data[0]
+                
+                # Se houver erro na resposta da API (ex: crédito insuficiente)
+                if data.get("error"):
+                    logger.error(f"[SCRAPINGDOG] ❌ Erro da API: {data.get('error')}")
+                    return None
+
+                titulo = data.get("title") or data.get("name")
+                price_raw = data.get("price") or data.get("sale_price")
+                
+                # Imagem
+                imagem = None
+                if data.get("images") and isinstance(data["images"], list):
+                    imagem = data["images"][0]
+                elif data.get("main_image"):
+                    imagem = data["main_image"]
+
+                if titulo and price_raw:
+                    logger.info(f"[SCRAPINGDOG] ✅ Sucesso | {titulo[:50]} | Preço: {price_raw}")
+                    return {
+                        "titulo": titulo,
+                        "imagem": imagem,
+                        "preco": _clean_price(str(price_raw)),
+                        "preco_original": _clean_price(str(data.get("original_price"))) if data.get("original_price") else None,
+                        "source_method": "SCRAPINGDOG_API",
+                        "is_pix_price": False,
+                        "cupom": data.get("coupon_text") or data.get("coupon")
+                    }
+                else:
+                    logger.warning("[SCRAPINGDOG] ⚠️ Resposta da API sem título ou preço.")
+                    return None
+            else:
+                logger.error(f"[SCRAPINGDOG] ❌ Erro HTTP {resp.status_code}: {resp.text[:200]}")
+    except Exception as e:
+        logger.error(f"[SCRAPINGDOG] ❌ Exceção Scrapingdog: {str(e)}")
+    
+    return None
 # ---------------------------------------------------------------------------
 # Helpers de preço
 # ---------------------------------------------------------------------------
@@ -955,11 +1062,14 @@ def _extract_from_soup(soup: BeautifulSoup, base_url: str, store_key: str = "oth
     page_text_lower = soup.get_text().lower()
     page_title_lower = (soup.title.string.lower() if soup.title else "")
     
-    if any(p in page_title_lower for p in _BLOCK_KEYWORDS) or \
-       any(p in page_text_lower for p in ["radware bot manager", "please verify you are a human"]):
+    # Detecção proativa de bloqueio
+    is_blocked = any(p in page_title_lower for p in _BLOCK_KEYWORDS) or \
+                 any(p in page_text_lower for p in ["radware bot manager", "please verify you are a human", "unusual traffic from your computer"])
+
+    if is_blocked:
         logger.warning(f"[EXTRACTOR_V2] Bloqueio detectado no HTML: {page_title_lower}")
         return {
-            "titulo": None, # Retorna None para permitir fallback generico menos feio
+            "titulo": None, 
             "preco": None,
             "imagem": None,
             "source_method": "BLOCKED"
@@ -1002,6 +1112,19 @@ def _extract_from_soup(soup: BeautifulSoup, base_url: str, store_key: str = "oth
             # Limpa lixo comum
             raw_title = re.sub(r"^(Amazon\.com\.br|Mercado Livre|Magalu|Magazine Luiza)\s*[:\-]\s*", "", raw_title, flags=re.I)
             data["titulo"] = raw_title.split(":")[0].split("|")[0].strip()
+
+    # ── VALIDAÇÃO DE TÍTULO (Anti-Vazamento de Bloqueio) ────────────────────
+    if data["titulo"]:
+        t_low = data["titulo"].lower()
+        if any(p in t_low for p in _BLOCK_KEYWORDS) or "bloqueio" in t_low:
+            logger.warning(f"[EXTRACTOR_V2] Título suspeito de bloqueio rejeitado: {data['titulo']}")
+            data["titulo"] = None
+            return {
+                "titulo": None,
+                "preco": None,
+                "imagem": None,
+                "source_method": "BLOCKED"
+            }
 
     # ── PREÇO PRIORIDADE 0: PIX / à vista (Magalu, ML) ─────────────────────
     pix_price = None
@@ -1082,83 +1205,36 @@ def _extract_from_soup(soup: BeautifulSoup, base_url: str, store_key: str = "oth
 async def get_page_html(url: str) -> tuple[str | None, str]:
     """
     Pipeline Híbrido de Extração (V5 Hardened):
-    1. ScraperAPI (Premium + Browser Render)
-    2. Playwright Local (Anti-Detecção)
-    3. Requests Simples (Fallback)
+    1. HTTPX Mobile (Fallback de Alta Qualidade)
+    2. Requests Simples (Fallback)
     """
-    # [DEBUG] Diagnóstico de Bypass
-    if not SCRAPERAPI_KEY:
-        logger.info("[EXTRATOR V5] ℹ️ SCRAPERAPI_KEY ausente. Camada de bypass premium desativada.")
-    else:
-        logger.info("[EXTRATOR V5] ✅ SCRAPERAPI_KEY detectada. Iniciando Camada 1.")
 
-
-    # ── TENTATIVA 1: ScraperAPI ───────────────────────────────────────────
-    if SCRAPERAPI_KEY:
-        try:
-            logger.info(f"[EXTRACTOR_V2] Camada 1: ScraperAPI | url={url[:60]}")
+    # ── TENTATIVA 1b: HTTPX Direto com Mobile User-Agent (Fallback de Alta Qualidade) ──────
+    try:
+        logger.info(f"[EXTRACTOR_V2] Camada 1b: HTTPX Mobile | url={url[:60]}")
+        mobile_headers = {
+            "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4.1 Mobile/15E148 Safari/604.1",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "pt-BR,pt;q=0.9",
+            "Referer": "https://www.google.com/",
+        }
+        # Fallback de Alta Qualidade: Mobile User-Agent
+        async with httpx.AsyncClient(timeout=10, follow_redirects=True, headers=mobile_headers) as client:
+            # Se for Amazon, tenta a versão /gp/aw/d/ que é mais leve e menos protegida
+            target_url = url
+            if "amazon.com.br" in url:
+                asin_match = re.search(r"/(?:dp|gp/product|aw/d)/([A-Z0-9]{10})", url)
+                if asin_match:
+                    target_url = f"https://www.amazon.com.br/gp/aw/d/{asin_match.group(1)}?psc=1"
             
-            is_amazon = "amazon" in url.lower() or "amzn.to" in url.lower()
-            is_magalu = "magazineluiza" in url.lower() or "magalu" in url.lower()
-            is_shopee = "shopee" in url.lower()
-            is_netshoes = "netshoes" in url.lower()
-            
-            def get_payload(use_premium=True):
-                p = {
-                    'api_key': SCRAPERAPI_KEY,
-                    'url': url,
-                    'render': 'true',
-                    'country_code': 'br',
-                    'device_type': 'desktop'
-                }
-                if not use_premium:
-                    return p
-                
-                if is_magalu or is_netshoes:
-                    p['ultra_premium'] = 'true'
-                elif is_amazon:
-                    p['premium'] = 'true'
-                return p
-
-            # Tenta com premium se necessário
-            payload = get_payload(use_premium=True)
-            async with httpx.AsyncClient(timeout=_TIMEOUT_SCRAPERAPI) as client:
-                resp = await client.get('https://api.scraperapi.com', params=payload)
-                
-                # Se 403, pode ser que o plano não suporte premium ou CRÉDITOS ESGOTADOS.
-                if resp.status_code == 403:
-                    if "exhausted" in resp.text.lower() or "credits" in resp.text.lower():
-                        logger.error("[SCRAPERAPI] ❌ CRÉDITOS ESGOTADOS! O scraper não funcionará até você recarregar.")
-                        return None, "SCRAPERAPI_EXHAUSTED"
-                    
-                    if 'premium' in payload or 'ultra_premium' in payload:
-                        logger.warning("[SCRAPERAPI] ⚠️ 403 Forbidden (Premium negado). Tentando SEM premium...")
-                        payload = get_payload(use_premium=False)
-                        resp = await client.get('https://api.scraperapi.com', params=payload)
-
-                if resp.status_code == 200:
-                    html = resp.text
-                    html_lower = html.lower()
-                    
-                    # Detectar CAPTCHA/Bloqueio no conteúdo
-                    bloqueios = ["radware", "captcha", "blocked", "access denied", "unusual traffic", "verify you are human", "desculpe! algo deu errado", "robot check", "api error"]
-                    found_block = None
-                    for termo in bloqueios:
-                        if termo in html_lower:
-                            found_block = termo
-                            break
-                    
-                    if not found_block:
-                        logger.info(f"[SCRAPERAPI] ✅ Sucesso ({len(html)} chars)")
-                        return html, "SCRAPERAPI"
-                    else:
-                        logger.warning(f"[SCRAPERAPI] ❌ BLOQUEIO DETECTADO no conteúdo: '{found_block}'")
-                else:
-                    logger.warning(f"[SCRAPERAPI] ❌ Falhou com status {resp.status_code}: {resp.text[:100]}")
-        except Exception as e:
-            logger.warning(f"[SCRAPERAPI] ❌ Exceção: {str(e)[:150]}")
-
-    # ── TENTATIVA 2: Requests Simples (Sem Playwright/Google Chrome) ──────
+            resp = await client.get(target_url)
+            if resp.status_code == 200:
+                html = resp.text
+                if not any(p in html.lower() for p in ["radware", "captcha", "blocked"]):
+                    logger.info(f"[HTTPX_MOBILE] ✅ Sucesso | URL={target_url[:50]}...")
+                    return html, "HTTPX_MOBILE"
+    except Exception as e:
+        logger.warning(f"[HTTPX_MOBILE] ❌ Falhou: {str(e)[:100]}")
     try:
         logger.info(f"[EXTRACTOR_V2] Camada 2: Requests Simples | url={url[:60]}")
         async with httpx.AsyncClient(timeout=_TIMEOUT_HTTP, follow_redirects=True, headers=_HEADERS) as client:
@@ -1172,14 +1248,6 @@ async def get_page_html(url: str) -> tuple[str | None, str]:
     return None, "FALHA_TOTAL"
 
 
-def _extract_search_term_from_url(url: str) -> str | None:
-    """Extrai o nome do produto da URL para usar como busca na Lomadee."""
-    from bot.services.lomadee_service import extrair_termo_busca
-    try:
-        termo = extrair_termo_busca(url)
-        return termo if len(termo) >= 3 else None
-    except Exception:
-        return None
 
 
 def _normalize_amazon_url(url: str) -> str:
@@ -1259,31 +1327,6 @@ async def extract_product_data_v2(url: str) -> dict:
     logger.info(f"[EXTRATOR] Loja detectada: {store_key} | URL: {final_url[:80]}")
 
 
-    # ── CAMADA 0: LOMADEE API (Prioridade para Magalu e Netshoes) ─────────
-    if store_key in ["magalu", "netshoes"]:
-        search_term = _extract_search_term_from_url(final_url)
-        if search_term:
-            logger.info(f"[EXTRATOR] Camada 0: Tentando Lomadee API para '{search_term}'...")
-            try:
-                from bot.services.lomadee_service import buscar_produto_lomadee
-                # Como a função de busca é síncrona, rodamos em thread para não bloquear o loop
-                lomadee_results = await asyncio.to_thread(buscar_produto_lomadee, search_term, 1)
-                
-                if lomadee_results:
-                    p = lomadee_results[0]
-                    logger.info(f"[EXTRATOR] Camada 0 (LOMADEE): ✅ Sucesso | {p['nome'][:50]}")
-                    result.update({
-                        "titulo": p["nome"],
-                        "imagem": p["imagem"],
-                        "preco": p["preco"],
-                        "source_method": "LOMADEE_API",
-                        "is_pix_price": False,
-                    })
-                    return result
-                else:
-                    logger.warning(f"[EXTRATOR] Camada 0 (LOMADEE): ❌ Nenhum resultado para '{search_term}'")
-            except Exception as e:
-                logger.error(f"[EXTRATOR] Camada 0 (LOMADEE): ❌ Erro: {e}")
 
     # ── CAMADA 0b: API INTERNA (Magalu e Netshoes) ─────────────────────────
     if store_key == "magalu":
@@ -1297,26 +1340,29 @@ async def extract_product_data_v2(url: str) -> dict:
             logger.warning("[EXTRATOR] Camada 0 (MAGALU): ❌ Falhou — caindo para Camada 1")
 
     elif store_key == "amazon":
-        logger.info("[EXTRATOR] Camada 0: Tentando Amazon Creators API...")
+        # Tenta primeiro a Scrapingdog (Nova recomendação do usuário)
+        logger.info("[EXTRATOR] Camada 0: Tentando Scrapingdog API...")
+        api_data = await fetch_amazon_scrapingdog(final_url)
+        
+        if api_data:
+            logger.info("[EXTRATOR] Camada 0 (SCRAPINGDOG): ✅ Sucesso")
+            result.update(api_data)
+            return result
+            
+        # Se falhar Scrapingdog, tenta a Amazon Creators API (Antiga, pode estar inativa)
+        logger.info("[EXTRATOR] Camada 0b: Tentando Amazon Creators API (Fallback)...")
         try:
             from bot.services.amazon_api import amazon_api
             api_data = await amazon_api.get_product_details(final_url)
-            # Só aceita o resultado da API se ele contiver um preço válido.
-            # Se não tiver preço, deixamos cair para as camadas de scraping (ScraperAPI/Playwright)
-            # que podem conseguir minerar o preço da página.
             if api_data and api_data.get("preco") and api_data.get("preco") != "Preço não disponível":
-                logger.info(f"[EXTRATOR] Camada 0 (AMAZON): ✅ Sucesso via API (com preço)")
+                logger.info(f"[EXTRATOR] Camada 0b (AMAZON_API): ✅ Sucesso")
                 result.update(api_data)
                 return result
             elif api_data:
-                # Se a API retornou dados parciais (título/imagem), guardamos, 
-                # mas não retornamos ainda para tentar pegar o preço via scraping.
-                logger.warning("[EXTRATOR] Camada 0 (AMAZON): ⚠️ API retornou dados sem preço. Tentando scraping...")
+                logger.warning("[EXTRATOR] Camada 0b (AMAZON_API): ⚠️ Dados parciais. Tentando scraping...")
                 result.update({k: v for k, v in api_data.items() if v and v != "Preço não disponível"})
-            else:
-                logger.warning("[EXTRATOR] Camada 0 (AMAZON): ❌ Falhou — caindo para Camada 1")
         except Exception as e:
-            logger.error(f"[EXTRATOR] Camada 0 (AMAZON): ❌ Erro ao chamar API: {e}")
+            logger.error(f"[EXTRATOR] Camada 0b (AMAZON_API): ❌ Erro: {e}")
 
     elif store_key == "netshoes":
         logger.info("[EXTRATOR] Camada 0: Tentando Netshoes API Interna...")
@@ -1337,14 +1383,16 @@ async def extract_product_data_v2(url: str) -> dict:
         data = _extract_from_soup(BeautifulSoup(html, "html.parser"), final_url, store_key)
         
         # Merge de resultados se não estiver bloqueado no parser
-        if "BLOQUEIO" not in (data.get("titulo") or ""):
+        # Merge de resultados se não estiver bloqueado no parser
+        is_result_blocked = (data.get("source_method") == "BLOCKED")
+        
+        if not is_result_blocked:
             for k in ["titulo", "preco", "preco_original", "imagem", "is_pix_price", "cupom"]:
                 if data.get(k): result[k] = data[k]
             logger.info(f"[EXTRATOR] Camada {method}: ✅ Sucesso")
         else:
-            result["titulo"] = data.get("titulo")
-            result["source_method"] = f"{method}_BUT_PARSER_BLOCKED"
-            logger.warning(f"[EXTRATOR] Camada {method}: ❌ Bloqueio no conteúdo")
+            result["source_method"] = f"{method}_BUT_BLOCKED"
+            logger.warning(f"[EXTRATOR] Camada {method}: ❌ Bloqueio detectado no conteúdo")
 
     # ── CAMADA 4: Fallback Seguro ──────────────────────────────────────────
     if not result.get("titulo") or result["titulo"] == "Produto":

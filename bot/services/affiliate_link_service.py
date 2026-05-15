@@ -81,7 +81,7 @@ _STORE_DOMAINS = [
 # ---------------------------------------------------------------------------
 # Domínios de encurtadores que precisam ser expandidos antes da injeção
 # ---------------------------------------------------------------------------
-_SHORT_DOMAINS = ["amzn.to", "amzn.com", "shope.ee", "shp.ee", "bit.ly", "t.co", "is.gd"]
+_SHORT_DOMAINS = ["amzn.to", "amzn.com", "shope.ee", "shp.ee", "bit.ly", "t.co", "is.gd", "cupom.cc"]
 
 
 def _detectar_loja(url: str) -> str:

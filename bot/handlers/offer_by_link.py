@@ -471,14 +471,14 @@ async def receber_link_produto(update: Update, context: ContextTypes.DEFAULT_TYP
     if _store_key_pre in ("magalu", "netshoes"):
         prog_msg = (
             f"⏳ <b>Processando link {_store_display_pre}...</b>\n"
-            f"🔍 Tentando API interna ({_store_display_pre}) → ScraperAPI → Playwright\n"
+            f"🔍 Tentando API interna ({_store_display_pre}) → Playwright\n"
             f"<i>Pode levar até 60s. Aguarde...</i>"
         )
     else:
         prog_msg = (
             "⏳ <b>Processando...</b>\n"
             "✅ Link resolvido\n"
-            "🛍️ <b>Extraindo informações (Híbrido ScraperAPI + PW)...</b>"
+            "🛍️ <b>Extraindo informações (Playwright + HTTP)...</b>"
         )
 
     await msg_aguardo.edit_text(prog_msg, parse_mode=ParseMode.HTML)

@@ -336,21 +336,30 @@ async def process_all_forwardings(update: Update, context: ContextTypes.DEFAULT_
         await context.bot.edit_message_text(chat_id=chat_id, message_id=msg_id, text=prog_texto, parse_mode="HTML")
         await asyncio.sleep(0.6)
         
-        # Mantém a copy original e substitui TODOS os links encontrados pelos de afiliado
+        # Mantém a copy original e remove TODOS os links encontrados (vão para o botão)
         urls = re.findall(r'https?://[^\s<>"]+', texto_original)
         copy_gerada = texto_original
         link_principal_afiliado = None
 
         for url in urls:
-            # Tenta injetar o link de afiliado
+            # Tenta injetar o link de afiliado (para usar no botão)
             link_af = await injetar_link_afiliado(url)
             if link_af:
-                copy_gerada = copy_gerada.replace(url, link_af)
+                # Remove o link do corpo da mensagem
+                copy_gerada = copy_gerada.replace(url, "")
                 if not link_principal_afiliado:
                     link_principal_afiliado = link_af
         
+        # Limpeza de labels residuais e espaços extras
+        copy_gerada = re.sub(r'(?i)(?:link|compre aqui|oferta|🛒 pegar oferta|pegar oferta|🛒 compre aqui)[:\s]*$', '', copy_gerada, flags=re.MULTILINE)
+        copy_gerada = re.sub(r'\n\s*\n', '\n\n', copy_gerada).strip()
+        
+        # Se removeu links, garante que o usuário saiba que deve clicar no botão
+        if link_principal_afiliado and "botão abaixo" not in copy_gerada.lower():
+            copy_gerada += "\n\n🔗 <b>Acesse a oferta clicando no botão abaixo! 👇</b>"
+
         # Se não houver link de afiliado, usa o original para o botão
-        link_final_botao = link_principal_afiliado or link_original or "Sem link"
+        link_final_botao = link_principal_afiliado or (urls[0] if urls else "Sem link")
 
         # Mantém a detecção de preços e cupons apenas para metadados/revisão
         precos = re.findall(r'R\$\s*[\d.,]+', texto_original)

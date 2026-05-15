@@ -96,7 +96,9 @@ except ValueError:
 _raw_auto = os.getenv("AUTO_APPROVE", "false").strip().lower()
 AUTO_APPROVE: bool = _raw_auto in ("1", "true", "yes")
 
-SCRAPERAPI_KEY: str = os.getenv("SCRAPERAPI_KEY", "").strip()
+SCRAPINGDOG_API_KEY: str = os.getenv("SCRAPINGDOG_API_KEY", "").strip()
+
+
 
 if AUTO_APPROVE:
     logger.warning(
