@@ -821,10 +821,259 @@ async def encam_agendar_este_exec(update: Update, context: ContextTypes.DEFAULT_
         text=f"? <b>Agendado!</b>\nEsta promocao entrara na fila de postagem (aprox. {minutos} min).",
         parse_mode="HTML"
     )
-
-    # Deleta menu de tempo
-    try: await query.message.delete()
-    except: pass
-
-    # Segue para o proximo
-    await show_next_review(update, context)
+    await query.answer()
+    
+    try: await query.message.delete()
+    except: pass
+    
+    context.user_data["estado_correcao"] = "tudo"
+    await context.bot.send_message(query.message.chat_id, "✍️ Envie a nova copy completa (inclua os dados alterados):")
+
+async def receive_correction(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.user_data.get("estado_correcao"):
+        return
+
+    texto = update.message.text
+    if not texto: return
+
+    fila = context.user_data.get("fila_revisao", [])
+    if not fila:
+        context.user_data["estado_correcao"] = None
+        return
+
+    if context.user_data.get("estado_correcao") == "cupom_inicial":
+        fila_encam = context.user_data.get("fila_encaminhamentos", [])
+        if fila_encam:
+            fila_encam[-1]["cupom"] = texto.upper()
+            await update.message.reply_text(f"✅ Cupom <b>{texto.upper()}</b> adicionado à ultima mensagem!", parse_mode="HTML")
+        
+        context.user_data["estado_correcao"] = None
+        await finalizar_lote_encaminhamento(context, update.effective_chat.id, update.effective_user.id)
+        return
+
+    if context.user_data.get("estado_correcao") == "cupom":
+        if texto.lower() == "remover":
+            fila[0]["cupom"] = None
+        else:
+            fila[0]["cupom"] = texto.upper()
+        
+        # Se for encaminhamento, NAO gera copy nova, apenas anexa o cupom
+        item = fila[0]
+        if item.get("preserve_fidelity"):
+            # Apenas remove cupom antigo se houver e adiciona o novo no final para nao estragar a copy
+            clean_copy = re.sub(r'\n\n🎟️ Cupom:.*', '', item["copy"])
+            if item["cupom"]:
+                item["copy"] = f"{clean_copy}\n\n🎟️ Cupom: <b>{item['cupom']}</b>"
+            else:
+                item["copy"] = clean_copy
+        else:
+            item["copy"] = gerar_copy(
+                titulo=item.get("titulo", "Produto"),
+                preco=item.get("preco", ""),
+                loja=item.get("loja", ""),
+                link=item.get("link_afiliado", ""),
+                cupom=item["cupom"]
+            )
+        await update.message.reply_text("✅ Cupom atualizado!")
+    else:
+        fila[0]["copy"] = texto
+        await update.message.reply_text("✅ Legenda substituida!")
+
+    context.user_data["estado_correcao"] = None
+    await show_next_review(update, context)
+
+
+async def encam_aprovar_todas(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    fila = context.user_data.get("fila_revisao", [])
+    total = len(fila)
+    if total == 0:
+        await query.message.reply_text("⚠️ Nenhuma promocao para publicar.")
+        return
+
+    chat_id = query.message.chat_id
+    msg = await query.message.edit_text("📤 <b>Publicando todas as promocoes no canal...</b>\n\n", parse_mode="HTML")
+    msg_id = msg.message_id
+    
+    canais_destino = [TELEGRAM_CHANNEL_ID]
+    for ch in get_channels():
+        if ch not in canais_destino:
+            canais_destino.append(ch)
+
+    sucesso = 0
+    erros = 0
+
+    for index, item in enumerate(fila):
+        atual = index + 1
+        titulo = item.get("titulo", "Produto")
+
+        prog_texto = (
+            "📤 <b>Publicando todas as promocoes no canal...</b>\n\n"
+            f"⏳ Publicando {atual}/{total}: {titulo}\n\n"
+            f"{barra_progresso(atual-1, total)}"
+        )
+        try:
+            await context.bot.edit_message_text(chat_id=chat_id, message_id=msg_id, text=prog_texto, parse_mode="HTML")
+        except: pass
+
+        for ch in canais_destino:
+            cid = normalize_chat_id(ch)
+            try:
+                await enviar_com_midia(
+                    bot=context.bot, 
+                    chat_id=cid, 
+                    midia=item.get("midia", {}), 
+                    texto=item["copy"],
+                    affiliate_url=item.get("affiliate_url")
+                )
+            except Exception as e:
+                logger.error(f"Erro publicando: {e}")
+                erros += 1
+
+        sucesso += 1
+        
+        if atual < total:
+            prog_texto = (
+                "📤 <b>Publicando todas as promocoes no canal...</b>\n\n"
+                f"✅ Publicada {atual}/{total}: {titulo}\n"
+                f"⏳ Aguardando anti-spam...\n\n"
+                f"{barra_progresso(atual, total)}"
+            )
+            try:
+                await context.bot.edit_message_text(chat_id=chat_id, message_id=msg_id, text=prog_texto, parse_mode="HTML")
+            except: pass
+            await asyncio.sleep(3)
+            
+    context.user_data["fila_revisao"] = []
+    
+    relatorio = (
+        "🎉 <b>Todas as promocoes foram publicadas!</b>\n\n"
+        "📊 Resumo:\n"
+        f"✅ {sucesso} publicadas com sucesso\n"
+        f"❌ {erros} erros\n"
+    )
+    
+    keyboard = [[InlineKeyboardButton("🏠 Voltar ao Menu", callback_data="menu_principal")]]
+    await context.bot.edit_message_text(
+        chat_id=chat_id, 
+        message_id=msg_id, 
+        text=relatorio, 
+        parse_mode="HTML", 
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
+async def encam_agendar_este_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Exibe opcoes de tempo para agendar apenas o POST ATUAL."""
+    query = update.callback_query
+    await query.answer()
+
+    texto = (
+        "📅 <b>Agendar ESTA Promocao</b>\n\n"
+        "Em quanto tempo você deseja que esta promocao seja postada?\n"
+        "Ela sera movida para a fila de agendamento."
+    )
+
+    keyboard = [
+        [InlineKeyboardButton("🕙 Em 30 minutos", callback_data=f"{CB_AGENDAR_ESTE_EXEC}:30")],
+        [InlineKeyboardButton("🕙 Em 1 hora", callback_data=f"{CB_AGENDAR_ESTE_EXEC}:60")],
+        [InlineKeyboardButton("🕙 Em 2 horas", callback_data=f"{CB_AGENDAR_ESTE_EXEC}:120")],
+        [InlineKeyboardButton("🕙 Em 6 horas", callback_data=f"{CB_AGENDAR_ESTE_EXEC}:360")],
+        [InlineKeyboardButton("🔙 Voltar", callback_data="frev_proxima")] 
+    ]
+
+    await query.edit_message_text(texto, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(keyboard))
+
+async def encam_agendar_este_exec(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Agenda apenas o item atual da fila."""
+    query = update.callback_query
+    await query.answer()
+
+    try:
+        minutos = int(query.data.split(":")[-1])
+    except:
+        minutos = 30
+
+    fila = context.user_data.get("fila_revisao", [])
+    if not fila:
+        return
+
+    # O item sendo revisado e o FILA[0]
+    item = fila.pop(0)
+    context.user_data["fila_revisao"] = fila
+
+    from bot.services.scheduler_queue_service import add_to_queue
+    from bot.services.metrics_service import log_event
+    
+    # Adiciona à fila persistente
+    add_to_queue(item)
+    log_event("scheduled_single")
+
+    # Feedback rapido
+    await context.bot.send_message(
+        chat_id=update.effective_chat.id,
+        text=f"? <b>Agendado!</b>\nEsta promocao entrara na fila de postagem (aprox. {minutos} min).",
+        parse_mode="HTML"
+    )
+
+    # Deleta menu de tempo
+    try: await query.message.delete()
+    except: pass
+
+    # Segue para o proximo
+    await show_next_review(update, context)
+
+async def encam_agendar_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Exibe opcoes de tempo para agendar TODO o lote restante."""
+    query = update.callback_query
+    await query.answer()
+
+    texto = (
+        "📅 <b>Agendar Fila (Batch)</b>\n\n"
+        "As promocoes serao postadas uma a uma.\n"
+        "Escolha o intervalo de tempo entre as postagens:"
+    )
+
+    keyboard = [
+        [InlineKeyboardButton("🕙 A cada 15 minutos", callback_data=f"{CB_AGENDAR_EXEC}:15")],
+        [InlineKeyboardButton("🕙 A cada 30 minutos", callback_data=f"{CB_AGENDAR_EXEC}:30")],
+        [InlineKeyboardButton("🕙 A cada 1 hora", callback_data=f"{CB_AGENDAR_EXEC}:60")],
+        [InlineKeyboardButton("🔙 Voltar", callback_data="review_view:0")]
+    ]
+
+    await query.edit_message_text(texto, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(keyboard))
+
+async def encam_agendar_exec(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Adiciona TODA a fila restante ao Scheduler."""
+    query = update.callback_query
+    await query.answer()
+
+    try:
+        minutos = int(query.data.split(":")[-1])
+    except:
+        minutos = 30
+
+    fila = context.user_data.get("fila_revisao", [])
+    if not fila:
+        await query.message.reply_text("⚠️ Nenhuma promocao para agendar.")
+        return
+
+    from bot.services.scheduler_queue_service import add_to_queue
+    from bot.services.metrics_service import log_event
+    
+    total = len(fila)
+    for item in fila:
+        add_to_queue(item)
+        
+    context.user_data["fila_revisao"] = []
+    log_event("scheduled_batch", total)
+
+    relatorio = (
+        "✅ <b>Lote Agendado com Sucesso!</b>\n\n"
+        f"📦 {total} promocoes foram enviadas para a fila automatica.\n"
+        f"⏳ O bot postara 1 item a cada {minutos} minutos."
+    )
+    
+    keyboard = [[InlineKeyboardButton("🏠 Voltar ao Menu", callback_data="menu_principal")]]
+    await query.edit_message_text(relatorio, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(keyboard))
