@@ -13,6 +13,7 @@ from bot.utils.config import (
     AMAZON_CREATORS_CLIENT_SECRET,
     AFFILIATE_ID_AMAZON
 )
+from bot.utils.price_utils import _parse_price_to_float, format_api_price
 
 logger = logging.getLogger(__name__)
 
@@ -238,11 +239,11 @@ class AmazonCreatorsAPI:
                         # Se ainda não temos orig_price mas temos o valor do desconto, calculamos
                         if not orig_price:
                             try:
-                                from bot.services.product_extractor_v2 import _parse_price_to_float
                                 p_float = _parse_price_to_float(str(price_found))
                                 s_amount = get_field(savings, ["amount", "Amount", "value", "Value"])
                                 if s_amount and p_float:
                                     orig_price = p_float + float(s_amount)
+                            except: pass
                             except: pass
 
         # C. Fallback: ProductInfo (comum na Creators API v1)
@@ -260,13 +261,10 @@ class AmazonCreatorsAPI:
                 if lp_obj:
                     orig_price = get_field(lp_obj, ["amount", "Amount", "value", "Value", "displayAmount", "DisplayAmount"])
 
-        # Formatação
         if price_found:
-            from bot.services.product_extractor_v2 import format_api_price
             product["preco"] = format_api_price(price_found)
         
         if orig_price:
-            from bot.services.product_extractor_v2 import format_api_price
             product["preco_original"] = format_api_price(orig_price)
 
         logger.info(f"[AMAZON_API] Mapeado ASIN {asin}: Titulo={product['titulo'][:40]}, Preço={product['preco']}, Imagem={'Sim' if product['imagem'] else 'Não'}")

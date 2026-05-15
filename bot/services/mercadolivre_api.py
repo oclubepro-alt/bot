@@ -147,7 +147,7 @@ class MercadoLivreAPI:
 
     def _map_response(self, data: dict) -> dict:
         """Mapeia o JSON do Mercado Livre para o formato interno."""
-        from bot.services.product_extractor_v2 import _clean_price
+        from bot.utils.price_utils import _clean_price
         
         product = {
             "titulo": data.get("title", "Produto Mercado Livre"),
