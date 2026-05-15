@@ -1,5 +1,5 @@
 """
-affiliate_injector.py — Injeção de parâmetros de afiliado por loja.
+affiliate_injector.py — Injecao de parâmetros de afiliado por loja.
 
 Regras (Sniper V6.5):
   AMAZON        → adiciona ?tag=ID
@@ -34,16 +34,16 @@ _IDS: dict[str, str] = {
 
 def _inject_amazon(url: str, tag: str) -> str:
     """Amazon: canonical /dp/ASIN?tag=ID"""
-    # Tenta extrair o ASIN (10 caracteres alfanuméricos)
-    # Tenta extrair o ASIN (10 caracteres alfanuméricos) de vários formatos comuns
+    # Tenta extrair o ASIN (10 caracteres alfanumericos)
+    # Tenta extrair o ASIN (10 caracteres alfanumericos) de varios formatos comuns
     asin_match = re.search(r"/(?:dp|gp/product|product-reviews|aw/d|vdp)/([A-Z0-9]{10})", url, re.I)
     if asin_match:
         asin = asin_match.group(1).upper()
-        # Força domínio .com.br para consistência se for Amazon Brasil
+        # Forca dominio .com.br para consistência se for Amazon Brasil
         domain = "www.amazon.com.br" if "amazon.com.br" in url.lower() else "www.amazon.com"
         return f"https://{domain}/dp/{asin}?tag={tag}"
     
-    # Fallback se não achar ASIN: apenas garante a tag
+    # Fallback se nao achar ASIN: apenas garante a tag
     url = re.sub(r"[?&]tag=[^&]*", "", url)
     url = re.sub(r"\?&", "?", url).rstrip("?&")
     sep = "&" if "?" in url else "?"
@@ -73,7 +73,7 @@ def _inject_netshoes(url: str, ns_id: str) -> str:
     return f"https://click.linksynergy.com/deeplink?id={ns_id}&mid=43984&murl={encoded_url}"
 
 # ---------------------------------------------------------------------------
-# Ponto de entrada público
+# Ponto de entrada publico
 # ---------------------------------------------------------------------------
 
 def inject_affiliate(url: str, store_key: str = None) -> str:
@@ -81,7 +81,7 @@ def inject_affiliate(url: str, store_key: str = None) -> str:
     if not url or not isinstance(url, str):
         return url
 
-    # Limpeza nuclear: Remove parâmetros de rastro/afiliação de terceiros antes de injetar
+    # Limpeza nuclear: Remove parâmetros de rastro/afiliacao de terceiros antes de injetar
     # Remove utm_*, fbclid, gclid e tags comuns
     url = re.sub(r"[?&](utm_[^&]+|fbclid|gclid|aff_id|clickid)=[^&]*", "", url)
     
@@ -105,7 +105,7 @@ def inject_affiliate(url: str, store_key: str = None) -> str:
 
 def aplicar_link_afiliado(texto: str) -> str:
     """
-    Função Mestra: Scaneia o texto, encontra URLs e as converte.
+    Funcao Mestra: Scaneia o texto, encontra URLs e as converte.
     Garante que NADA saia sem tag.
     """
     if not texto: return texto

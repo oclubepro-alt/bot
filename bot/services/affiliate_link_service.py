@@ -1,8 +1,8 @@
 """
-affiliate_link_service.py — Serviço centralizado de geração de links de afiliado.
+affiliate_link_service.py — Servico centralizado de geracao de links de afiliado.
 
-Injeção via urllib.parse (à prova de falha).
-Logs obrigatórios: LINK_AFILIADO_GERADO, LOJA_NAO_SUPORTADA, LOJA_NAO_CONFIGURADA.
+Injecao via urllib.parse (à prova de falha).
+Logs obrigatorios: LINK_AFILIADO_GERADO, LOJA_NAO_SUPORTADA, LOJA_NAO_CONFIGURADA.
 """
 import logging
 import os
@@ -48,8 +48,8 @@ def get_effective_affiliate_id(store_key: str) -> str:
     return ""
 
 def log_config_status():
-    """Útil para diagnóstico no console."""
-    logger.info("─── AFILIADOS: STATUS DA CONFIGURAÇÃO ───")
+    """Util para diagnostico no console."""
+    logger.info("─── AFILIADOS: STATUS DA CONFIGURACAO ───")
     stores = ["amazon", "mercadolivre", "magalu", "netshoes", "shopee", "aliexpress", "kabum", "casasbahia", "ponto", "extra", "samsung"]
     for store in stores:
         aid = get_effective_affiliate_id(store)
@@ -57,14 +57,14 @@ def log_config_status():
             masked = aid[:4] + "***" + aid[-4:] if len(aid) > 8 else aid
             logger.info(f"✅ {store.upper()}: Conectado ({masked})")
         else:
-            logger.warning(f"❌ {store.upper()}: ID não configurado (use /config_afiliado)")
+            logger.warning(f"❌ {store.upper()}: ID nao configurado (use /config_afiliado)")
 
 # Executa log no startup
 log_config_status()
 
 
 # ---------------------------------------------------------------------------
-# Detecção de loja pela URL
+# Deteccao de loja pela URL
 # ---------------------------------------------------------------------------
 
 _STORE_DOMAINS = [
@@ -95,7 +95,7 @@ _STORE_DOMAINS = [
 
 
 # ---------------------------------------------------------------------------
-# Domínios de encurtadores que precisam ser expandidos antes da injeção
+# Dominios de encurtadores que precisam ser expandidos antes da injecao
 # ---------------------------------------------------------------------------
 _SHORT_DOMAINS = ["amzn.to", "amzn.com", "shope.ee", "shp.ee", "bit.ly", "t.co", "is.gd", "cupom.cc"]
 
@@ -115,13 +115,13 @@ def _detectar_loja(url: str) -> str:
 def _injetar_amazon(url: str, tag: str) -> str:
     """
     Amazon: canonical /dp/ASIN?tag=ID.
-    Extrai o ASIN e força o formato canônico para evitar parâmetros de rastreio de terceiros.
+    Extrai o ASIN e forca o formato canônico para evitar parâmetros de rastreio de terceiros.
     """
-    # Tenta extrair o ASIN (10 caracteres alfanuméricos)
+    # Tenta extrair o ASIN (10 caracteres alfanumericos)
     asin_match = re.search(r"/(?:dp|gp/product|product-reviews|aw/d|vdp)/([A-Z0-9]{10})", url, re.I)
     if asin_match:
         asin = asin_match.group(1).upper()
-        # Força domínio .com.br para consistência se for Amazon Brasil
+        # Forca dominio .com.br para consistência se for Amazon Brasil
         domain = "www.amazon.com.br" if "amazon.com.br" in url.lower() else "www.amazon.com"
         resultado = f"https://{domain}/dp/{asin}?tag={tag}"
         logger.info(f"[AFFILIATE_SERVICE] Amazon (Canonical) | ASIN={asin} | tag={tag}")
@@ -157,10 +157,10 @@ def _injetar_magalu(url: str, id_magalu: str) -> str:
     parsed = urlparse(url)
     params = parse_qs(parsed.query, keep_blank_values=True)
     
-    # Se o ID for numérico (ID de promotor), usamos o formato oficial de Divulgador
+    # Se o ID for numerico (ID de promotor), usamos o formato oficial de Divulgador
     if id_magalu.isdigit():
         params["promoter_id"] = [id_magalu]
-        params["partner_id"] = ["3440"] # ID padrão para Magazine Você
+        params["partner_id"] = ["3440"] # ID padrao para Magazine Você
     
     params["utm_medium"] = ["affiliate"]
     params["utm_source"]  = [id_magalu]
@@ -183,7 +183,7 @@ def _injetar_shopee(url: str, shopee_id: str) -> str:
 
 
 def _injetar_netshoes(url: str, ns_id: str) -> str:
-    """Netshoes via Rakuten. O * no ID é URL-encoded como %2A."""
+    """Netshoes via Rakuten. O * no ID e URL-encoded como %2A."""
     encoded_url = quote(url, safe="")
     encoded_id  = quote(ns_id, safe="")  # Codifica o * → %2A
     resultado = f"https://click.linksynergy.com/deeplink?id={encoded_id}&mid=43984&murl={encoded_url}"
@@ -200,7 +200,7 @@ def _injetar_aliexpress(url: str, id_ali: str) -> str:
     return urlunparse(parsed._replace(query=nova_query))
 
 def _injetar_generic(url: str, aff_id: str, store_key: str) -> str:
-    """Injetor genérico que usa UTMs ou parâmetros comuns."""
+    """Injetor generico que usa UTMs ou parâmetros comuns."""
     parsed = urlparse(url)
     params = parse_qs(parsed.query, keep_blank_values=True)
     
@@ -224,14 +224,14 @@ def _injetar_generic(url: str, aff_id: str, store_key: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Função pública central
+# Funcao publica central
 # ---------------------------------------------------------------------------
 
 async def injetar_link_afiliado(url: str, store_key: str | None = None) -> str:
     """
     Injeta o link de afiliado correto por loja.
 
-    IMPORTANTE: Agora é ASYNC para permitir expansão de links curtos via Playwright.
+    IMPORTANTE: Agora e ASYNC para permitir expansao de links curtos via Playwright.
 
     Args:
         url:        URL (pode ser curta ou longa).
@@ -241,14 +241,14 @@ async def injetar_link_afiliado(url: str, store_key: str | None = None) -> str:
         URL com parâmetros de afiliado corretos.
     """
     if not url or not isinstance(url, str):
-        logger.warning("[AFFILIATE_SERVICE] ERRO_GERANDO_LINK_AFILIADO: URL inválida.")
+        logger.warning("[AFFILIATE_SERVICE] ERRO_GERANDO_LINK_AFILIADO: URL invalida.")
         return url or ""
 
-    # 1. Detectar loja se não informado
+    # 1. Detectar loja se nao informado
     if not store_key:
         store_key = _detectar_loja(url)
 
-    # 2. SE FOR LINK CURTO: Obrigatório esticar antes de injetar
+    # 2. SE FOR LINK CURTO: Obrigatorio esticar antes de injetar
     is_short = any(s in url.lower() for s in _SHORT_DOMAINS)
     if is_short:
         logger.info(f"[AFFILIATE_SERVICE] Link curto detectado ({url[:30]}). Expandindo...")
@@ -256,7 +256,7 @@ async def injetar_link_afiliado(url: str, store_key: str | None = None) -> str:
             expanded = await resolve_short_url_httpx(url)
             if expanded and expanded != url:
                 url = expanded
-                # Redetecta loja após expansão
+                # Redetecta loja apos expansao
                 store_key = _detectar_loja(url)
                 logger.info(f"[AFFILIATE_SERVICE] Expandido → {url[:80]}... | Loja: {store_key}")
         except Exception as e:
@@ -267,7 +267,7 @@ async def injetar_link_afiliado(url: str, store_key: str | None = None) -> str:
         url = re.sub(rf"[?&]{param}=[^&]*", "", url)
     url = re.sub(r"\?&", "?", url).rstrip("?&")
 
-    logger.info(f"[AFFILIATE_SERVICE] Iniciando injeção | loja={store_key} | url={url[:80]}")
+    logger.info(f"[AFFILIATE_SERVICE] Iniciando injecao | loja={store_key} | url={url[:80]}")
 
     affiliate_id = get_effective_affiliate_id(store_key)
 
@@ -275,7 +275,7 @@ async def injetar_link_afiliado(url: str, store_key: str | None = None) -> str:
         if store_key != "other":
             logger.warning(
                 f"[AFFILIATE_SERVICE] LOJA_NAO_CONFIGURADA: {store_key} "
-                f"— verifique as variáveis de ambiente no Railway"
+                f"— verifique as variaveis de ambiente no Railway"
             )
         else:
             logger.info(f"[AFFILIATE_SERVICE] LOJA_NAO_SUPORTADA | url={url[:60]}")
@@ -316,13 +316,13 @@ async def resolve_short_url_httpx(url: str) -> str:
     Resolve URLs curtas (amzn.to, shope.ee, ml.tidd.ly, etc.) via httpx.
     Substitui o Playwright para evitar bloqueios ou uso excessivo de recursos.
 
-    SÓ usa httpx (Requests) seguindo os redirecionamentos HTTP (301/302).
+    SO usa httpx (Requests) seguindo os redirecionamentos HTTP (301/302).
 
     Args:
         url: URL curta.
 
     Returns:
-        URL final após redirecionamentos. Retorna a original em caso de falha.
+        URL final apos redirecionamentos. Retorna a original em caso de falha.
     """
     try:
         import httpx
@@ -337,7 +337,7 @@ async def resolve_short_url_httpx(url: str) -> str:
             "Accept-Language": "pt-BR,pt;q=0.9",
         }
 
-        # Siga até 5 redirecionamentos
+        # Siga ate 5 redirecionamentos
         async with httpx.AsyncClient(follow_redirects=True, max_redirects=5, timeout=15.0, headers=headers) as client:
             resp = await client.get(url)
             final_url = str(resp.url)
@@ -345,13 +345,13 @@ async def resolve_short_url_httpx(url: str) -> str:
         if final_url and final_url != url:
             logger.info(f"[AFFILIATE_SERVICE] HTTPX resolveu: {final_url[:100]}")
         else:
-            logger.info("[AFFILIATE_SERVICE] HTTPX: URL não redirecionada (já é final).")
+            logger.info("[AFFILIATE_SERVICE] HTTPX: URL nao redirecionada (ja e final).")
             final_url = url
 
         return final_url
 
     except ImportError:
-        logger.warning("[AFFILIATE_SERVICE] httpx não instalado. Usando URL original.")
+        logger.warning("[AFFILIATE_SERVICE] httpx nao instalado. Usando URL original.")
         return url
     except Exception as e:
         logger.warning(f"[AFFILIATE_SERVICE] HTTPX resolver falhou ({e}). Usando URL original.")

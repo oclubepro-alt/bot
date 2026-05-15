@@ -1,6 +1,6 @@
 """
 metrics_service.py - Sistema de rastreamento de performance do bot.
-Registra descobertas, aprovações e publicações.
+Registra descobertas, aprovacoes e publicacoes.
 """
 import json
 import logging
@@ -33,7 +33,7 @@ def log_event(event_type: str) -> None:
     data = _load_metrics()
     today = datetime.date.today().isoformat()
     
-    # Inicia dia se não existir
+    # Inicia dia se nao existir
     if today not in data["daily"]:
         data["daily"][today] = {"scanned": 0, "approved": 0, "published": 0, "rejected": 0}
     
@@ -48,7 +48,7 @@ def log_event(event_type: str) -> None:
     _save_metrics(data)
 
 def get_stats() -> dict:
-    """Retorna estatísticas formatadas."""
+    """Retorna estatisticas formatadas."""
     data = _load_metrics()
     today = datetime.date.today().isoformat()
     return {

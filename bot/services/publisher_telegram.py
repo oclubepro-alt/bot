@@ -1,5 +1,5 @@
 """
-publisher_telegram.py - Responsável por enviar mensagens para o canal do Telegram
+publisher_telegram.py - Responsavel por enviar mensagens para o canal do Telegram
 """
 import logging
 from telegram import Bot
@@ -15,7 +15,7 @@ async def publish_to_telegram(bot: Bot, message_text: str, photo_url_or_id: str 
     """
     Publica a mensagem no canal configurado e nos canais extras adicionados.
     Se photo_url_or_id for fornecido, tenta postar como imagem + caption.
-    Se affiliate_url for fornecido, adiciona um botão no rodapé.
+    Se affiliate_url for fornecido, adiciona um botao no rodape.
     """
     from telegram import InlineKeyboardMarkup, InlineKeyboardButton
     
@@ -46,7 +46,7 @@ async def publish_to_telegram(bot: Bot, message_text: str, photo_url_or_id: str 
             # Tenta enviar com foto se houver URL ou ID
             if photo_url_or_id:
                 try:
-                    # Se for um dicionário (padrão do forward_publisher)
+                    # Se for um dicionario (padrao do forward_publisher)
                     if isinstance(photo_url_or_id, dict):
                         m_type = photo_url_or_id.get("type", "photo")
                         m_id = photo_url_or_id.get("file_id")
@@ -91,7 +91,7 @@ async def publish_to_telegram(bot: Bot, message_text: str, photo_url_or_id: str 
                                 connect_timeout=15
                             )
                         else:
-                            # Assume que é um file_id do Telegram
+                            # Assume que e um file_id do Telegram
                             msg = await bot.send_photo(
                                 chat_id=chat_id,
                                 photo=photo_url_or_id,
@@ -101,12 +101,12 @@ async def publish_to_telegram(bot: Bot, message_text: str, photo_url_or_id: str 
                             )
 
                     if msg:
-                        logger.info(f"[PUBLISHER_TELEGRAM] Mídia enviada ao canal {chat_id} com sucesso.")
+                        logger.info(f"[PUBLISHER_TELEGRAM] Midia enviada ao canal {chat_id} com sucesso.")
                         sent_messages.append({"chat_id": chat_id, "message_id": msg.message_id})
                         sucesso_algum = True
-                        continue # Próximo canal
+                        continue # Proximo canal
                 except Exception as photo_err:
-                    logger.warning(f"[PUBLISHER_TELEGRAM] Falha ao processar mídia para {chat_id}: {photo_err}. Tentando fallback de texto...")
+                    logger.warning(f"[PUBLISHER_TELEGRAM] Falha ao processar midia para {chat_id}: {photo_err}. Tentando fallback de texto...")
                     # Fallback para texto abaixo
             
             # Envio de Texto (ou fallback se a foto falhou)
@@ -122,9 +122,9 @@ async def publish_to_telegram(bot: Bot, message_text: str, photo_url_or_id: str 
             sucesso_algum = True
             
         except Exception as e:
-            err_msg = f"Falha crítica ao enviar para o canal {chat_id}: {str(e)}"
+            err_msg = f"Falha critica ao enviar para o canal {chat_id}: {str(e)}"
             logger.error(f"[PUBLISHER_TELEGRAM] {err_msg}")
-            # Não engole o erro se for o único destino
+            # Nao engole o erro se for o unico destino
             if len(canais_destino) == 1:
                 raise Exception(err_msg)
             

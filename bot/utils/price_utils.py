@@ -1,5 +1,5 @@
 """
-price_utils.py - Utilitários para limpeza e formatação de preços.
+price_utils.py - Utilitarios para limpeza e formatacao de precos.
 """
 import re
 import logging
@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 
 def _parse_price_to_float(price_str: str) -> float | None:
     """
-    Converte strings de preço em float, lidando com formatos variados:
+    Converte strings de preco em float, lidando com formatos variados:
     - R$ 49,90 -> 49.9
     - 1.249,00 -> 1249.0
     - 1,249.00 -> 1249.0 (Internacional)
@@ -24,12 +24,12 @@ def _parse_price_to_float(price_str: str) -> float | None:
         return None
 
     try:
-        # 1. Limpeza básica: remove parênteses e caracteres não numéricos (exceto , e .)
+        # 1. Limpeza basica: remove parênteses e caracteres nao numericos (exceto , e .)
         text = re.sub(r"\(.*?\)", "", price_str)
         clean = re.sub(r'[^\d,.]', '', text)
         if not clean: return None
 
-        # 2. Heurística para decidir o formato (BR vs US)
+        # 2. Heuristica para decidir o formato (BR vs US)
         last_comma = clean.rfind(',')
         last_dot = clean.rfind('.')
 
@@ -40,11 +40,11 @@ def _parse_price_to_float(price_str: str) -> float | None:
             # Formato US: 1,249.00
             clean = clean.replace(',', '')
         elif last_comma != -1:
-            # Só tem vírgula: 49,90
+            # So tem virgula: 49,90
             clean = clean.replace(',', '.')
 
         val = float(clean)
-        # Sanity check: preços absurdos (> 1M) costumam ser erro de parsing
+        # Sanity check: precos absurdos (> 1M) costumam ser erro de parsing
         if val > 1000000:
             return None
         return val
@@ -53,13 +53,13 @@ def _parse_price_to_float(price_str: str) -> float | None:
 
 
 def _clean_price(raw: str) -> str | None:
-    """Normaliza preço para exibição: R$ 1.299,90 (Para HTML)"""
+    """Normaliza preco para exibicao: R$ 1.299,90 (Para HTML)"""
     if not raw:
         return None
     val = _parse_price_to_float(raw)
     if val is None:
         return None
-    # Re-formata no padrão BR
+    # Re-formata no padrao BR
     reais = int(val)
     centavos = round((val - reais) * 100)
     reais_fmt = f"{reais:,}".replace(",", ".")
@@ -68,17 +68,17 @@ def _clean_price(raw: str) -> str | None:
 
 def format_api_price(amount: any) -> str | None:
     """
-    Formata um preço vindo de uma API (número ou string puramente numérica com ponto).
-    Evita a heurística de _clean_price que pode confundir milhar com decimal.
+    Formata um preco vindo de uma API (numero ou string puramente numerica com ponto).
+    Evita a heuristica de _clean_price que pode confundir milhar com decimal.
     """
     if amount is None:
         return None
     try:
-        # Se for string, remove símbolos mas mantém o ponto
+        # Se for string, remove simbolos mas mantem o ponto
         if isinstance(amount, str):
-            # Remove R$, espaços, etc, mas preserva o ponto decimal
+            # Remove R$, espacos, etc, mas preserva o ponto decimal
             amount = amount.replace("R$", "").replace(" ", "").replace(",", ".")
-            # Se tiver múltiplos pontos, remove todos exceto o último
+            # Se tiver multiplos pontos, remove todos exceto o ultimo
             if amount.count(".") > 1:
                 parts = amount.split(".")
                 amount = "".join(parts[:-1]) + "." + parts[-1]

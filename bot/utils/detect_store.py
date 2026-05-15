@@ -1,5 +1,5 @@
 """
-detect_store.py - Detecta a loja pelo domínio da URL final resolvida.
+detect_store.py - Detecta a loja pelo dominio da URL final resolvida.
 
 Regras (ordem de prioridade):
   - "amazon."                        → Amazon
@@ -13,7 +13,7 @@ from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
 
-# (substring_no_netloc, nome_exibição, chave_interna)
+# (substring_no_netloc, nome_exibicao, chave_interna)
 _STORE_MAP: list[tuple[str, str, str]] = [
     ("amazon.",          "Amazon",        "amazon"),
     ("amzn.",            "Amazon",        "amazon"),
@@ -47,7 +47,7 @@ def detect_store(url: str) -> tuple[str, str]:
 
     Returns:
         (store_display_name, store_key)
-        Onde store_key é a chave usada em affiliate_config.json.
+        Onde store_key e a chave usada em affiliate_config.json.
         Ex.: ("Amazon", "amazon") ou ("Magalu", "magalu") ou ("Outra", "other")
     """
     try:
@@ -60,5 +60,5 @@ def detect_store(url: str) -> tuple[str, str]:
             logger.info(f"[DETECT_STORE] '{fragment}' encontrado → {display}")
             return display, key
 
-    logger.info(f"[DETECT_STORE] Loja não identificada para '{netloc or url[:40]}' → Outra")
+    logger.info(f"[DETECT_STORE] Loja nao identificada para '{netloc or url[:40]}' → Outra")
     return "Outra", "other"

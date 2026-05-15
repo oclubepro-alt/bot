@@ -1,6 +1,6 @@
 """
 scheduler_queue_service.py - Gerencia a fila de postagens agendadas.
-Permite enfileirar ofertas para postagem automática com intervalo controlado.
+Permite enfileirar ofertas para postagem automatica com intervalo controlado.
 """
 import json
 import logging
@@ -27,7 +27,7 @@ def _save_queue(data: list) -> None:
         logger.error(f"[SCHEDULE_QUEUE] Erro ao salvar: {e}")
 
 def add_to_queue(offer_data: dict) -> int:
-    """Adiciona uma oferta à fila de agendamento. Retorna a posição."""
+    """Adiciona uma oferta à fila de agendamento. Retorna a posicao."""
     queue = _load_queue()
     queue.append({
         "offer": offer_data,
@@ -37,7 +37,7 @@ def add_to_queue(offer_data: dict) -> int:
     return len(queue)
 
 def get_next_from_queue() -> dict | None:
-    """Retorna e remove o próximo item da fila."""
+    """Retorna e remove o proximo item da fila."""
     queue = _load_queue()
     if not queue:
         return None

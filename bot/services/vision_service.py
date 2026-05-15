@@ -8,18 +8,18 @@ logger = logging.getLogger(__name__)
 
 async def detect_watermark(image_bytes: bytes) -> bool:
     """
-    Detecta se uma imagem possui marca d'água ou identificação de outros canais
-    usando a capacidade de visão do GPT-4o-mini.
+    Detecta se uma imagem possui marca d'agua ou identificacao de outros canais
+    usando a capacidade de visao do GPT-4o-mini.
     """
     try:
         # Encode para base64
         base64_image = base64.b64encode(image_bytes).decode('utf-8')
         
-        # O GPT-4o-mini suporta visão e é extremamente barato
-        # Prompt focado em identificar @usernames, logos ou textos de verificação
+        # O GPT-4o-mini suporta visao e e extremamente barato
+        # Prompt focado em identificar @usernames, logos ou textos de verificacao
         prompt = (
-            "Análise esta imagem de oferta. Ela possui alguma 'marca d'água', logo de outro canal do Telegram, "
-            "ou selo de 'oferta verificada' (ex: '@usuario', 'promoção verificada', 'exclusivo')? "
+            "Analise esta imagem de oferta. Ela possui alguma 'marca d'agua', logo de outro canal do Telegram, "
+            "ou selo de 'oferta verificada' (ex: '@usuario', 'promocao verificada', 'exclusivo')? "
             "Responda APENAS 'SIM' ou 'NAO'."
         )
 
@@ -44,12 +44,12 @@ async def detect_watermark(image_bytes: bytes) -> bool:
         )
         
         answer = response.choices[0].message.content.strip().upper()
-        logger.info(f"[VISION] Resposta detecção marca d'água: {answer}")
+        logger.info(f"[VISION] Resposta deteccao marca d'agua: {answer}")
         
-        # Se a IA responder SIM, retornamos True (tem marca d'água)
+        # Se a IA responder SIM, retornamos True (tem marca d'agua)
         return "SIM" in answer or "YES" in answer
 
     except Exception as e:
-        logger.error(f"[VISION] Erro ao detectar marca d'água: {e}")
-        # Em caso de erro na IA, permitimos a imagem para não bloquear o fluxo por falha técnica
+        logger.error(f"[VISION] Erro ao detectar marca d'agua: {e}")
+        # Em caso de erro na IA, permitimos a imagem para nao bloquear o fluxo por falha tecnica
         return False

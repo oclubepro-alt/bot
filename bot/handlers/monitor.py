@@ -14,7 +14,7 @@ from bot.utils.constants import (
 from bot.services.scheduler_service import is_monitor_active, start_monitor, stop_monitor, _run_scan
 
 async def monitor_menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Exibe o menu de controle do monitoramento automático."""
+    """Exibe o menu de controle do monitoramento automatico."""
     query = update.callback_query
     if query:
         await query.answer()
@@ -23,14 +23,14 @@ async def monitor_menu_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     status_text = "🟢 <b>ATIVO</b>" if active else "🔴 <b>PARADO</b>"
     
     texto = (
-        "🔍 <b>Monitoramento Automático</b>\n\n"
+        "🔍 <b>Monitoramento Automatico</b>\n\n"
         f"Status: {status_text}\n\n"
         "O monitor busca novas ofertas automaticamente nas fontes configuradas. "
         "Você pode iniciar o ciclo ou fazer uma busca manual agora."
     )
     
     keyboard = []
-    # Botão de Varredura Imediata
+    # Botao de Varredura Imediata
     keyboard.append([InlineKeyboardButton("⚡ Buscar 10 Ofertas Agora", callback_data="monitor_scrape_now")])
 
     if not active:
@@ -41,7 +41,7 @@ async def monitor_menu_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     keyboard.append([InlineKeyboardButton("⏰ Ver Fila de Agendamento", callback_data="monitor_view_queue")])
         
     keyboard.append([
-        InlineKeyboardButton("📊 Estatísticas", callback_data="stats_summary"),
+        InlineKeyboardButton("📊 Estatisticas", callback_data="stats_summary"),
         InlineKeyboardButton("🏠 Menu Principal", callback_data=CB_MENU_PRINCIPAL)
     ])
 
@@ -55,23 +55,23 @@ async def monitor_menu_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 
 
 async def monitor_action_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Executa a ação de ligar, desligar ou varrer agora."""
+    """Executa a acao de ligar, desligar ou varrer agora."""
     query = update.callback_query
     action = query.data
     
     if action == "monitor_scrape_now":
-        # Implementação de Cooldown de 60 minutos solicitada pelo usuário
+        # Implementacao de Cooldown de 60 minutos solicitada pelo usuario
         last_scan = context.bot_data.get("last_manual_scan")
         if last_scan:
             now = datetime.datetime.now()
             diff = now - last_scan
             if diff.total_seconds() < 3600:
                 remaining = 60 - int(diff.total_seconds() / 60)
-                await query.answer(f"⏳ Cooldown Ativo: Você poderá fazer uma nova varredura em {remaining} minutos.", show_alert=True)
+                await query.answer(f"⏳ Cooldown Ativo: Você podera fazer uma nova varredura em {remaining} minutos.", show_alert=True)
                 return
 
         await query.answer("🚀 Iniciando busca de 10 ofertas... Veja o canal em instantes!", show_alert=True)
-        # Atualiza o timestamp do último scan manual
+        # Atualiza o timestamp do ultimo scan manual
         context.bot_data["last_manual_scan"] = datetime.datetime.now()
         
         try:

@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Exibe mensagem de boas-vindas com menu inline."""
     user = update.effective_user
-    logger.info(f"[START] Usuário: {user.id} ({user.username}) abriu o menu.")
+    logger.info(f"[START] Usuario: {user.id} ({user.username}) abriu o menu.")
 
     keyboard = [
         [
@@ -24,25 +24,25 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         ],
         [
             InlineKeyboardButton("⚙️ Monitoramento", callback_data=CB_MONITOR_MENU),
-            InlineKeyboardButton("📋 Fila de Revisão", callback_data=CB_MENU_REVISAR)
+            InlineKeyboardButton("📋 Fila de Revisao", callback_data=CB_MENU_REVISAR)
         ],
         [
             InlineKeyboardButton("💼 Afiliados", callback_data="menu_config_afiliado"),
             InlineKeyboardButton("📲 WhatsApp", callback_data=CB_GERENCIAR_WHATS)
         ],
         [
-            InlineKeyboardButton("📊 Estatísticas", callback_data="stats_summary"),
+            InlineKeyboardButton("📊 Estatisticas", callback_data="stats_summary"),
             InlineKeyboardButton("❌ Fechar Menu", callback_data=CB_CANCELAR_MENU)
         ],
     ]
 
     texto = (
         f"💎 <b>SNIPER OFERTAS — PAINEL ADMIN</b>\n\n"
-        f"Olá, <b>{user.first_name}</b>! Bem-vindo ao centro de comando.\n"
-        "Selecione uma ação abaixo para gerenciar suas ofertas:\n\n"
-        "📦 <b>Publicação:</b> Link, Manual ou Encaminhamento.\n"
-        "🏪 <b>Lojas:</b> Configuração de IDs de Afiliado.\n"
-        "🛰️ <b>Automação:</b> Monitoramento de fontes externas."
+        f"Ola, <b>{user.first_name}</b>! Bem-vindo ao centro de comando.\n"
+        "Selecione uma acao abaixo para gerenciar suas ofertas:\n\n"
+        "📦 <b>Publicacao:</b> Link, Manual ou Encaminhamento.\n"
+        "🏪 <b>Lojas:</b> Configuracao de IDs de Afiliado.\n"
+        "🛰️ <b>Automacao:</b> Monitoramento de fontes externas."
     )
 
     if update.message:
@@ -60,7 +60,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
                 reply_markup=InlineKeyboardMarkup(keyboard),
             )
         except Exception:
-            # Se não conseguir editar (ex: mensagem velha), envia nova
+            # Se nao conseguir editar (ex: mensagem velha), envia nova
             await update.callback_query.message.reply_text(
                 texto,
                 parse_mode=ParseMode.HTML,
@@ -85,19 +85,19 @@ async def test_id_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     await update.message.reply_text(msg, parse_mode=ParseMode.HTML)
     
     try:
-        await context.bot.send_message(chat_id=norm, text="✅ Teste de conexão do Bot!")
+        await context.bot.send_message(chat_id=norm, text="✅ Teste de conexao do Bot!")
         await update.message.reply_text("✅ Mensagem enviada com sucesso ao canal!")
     except Exception as e:
         await update.message.reply_text(f"❌ Erro ao enviar: <code>{e}</code>", parse_mode=ParseMode.HTML)
 
 
 async def check_config_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Comando de diagnóstico para verificar IDs de afiliado (Apenas Admin)."""
+    """Comando de diagnostico para verificar IDs de afiliado (Apenas Admin)."""
     from bot.permissions import is_admin
     if not is_admin(update.effective_user.id):
         return
 
-    msg = ["🛠️ <b>DIAGNÓSTICO DE CONFIGURAÇÃO</b>\n"]
+    msg = ["🛠️ <b>DIAGNOSTICO DE CONFIGURACAO</b>\n"]
     
     # 1. Verificar IDs de Afiliado
     msg.append("<b>🔗 Afiliados:</b>")
@@ -107,13 +107,13 @@ async def check_config_command(update: Update, context: ContextTypes.DEFAULT_TYP
     for store in stores:
         aid = get_effective_affiliate_id(store)
         if aid:
-            # Mascarar por segurança (mostra só as pontas)
+            # Mascarar por seguranca (mostra so as pontas)
             masked = aid[:4] + "*" * (len(aid)-6) + aid[-2:] if len(aid) > 6 else aid
             msg.append(f"✅ {store.upper()}: <code>{masked}</code>")
         else:
-            msg.append(f"❌ {store.upper()}: <i>Não configurado</i>")
+            msg.append(f"❌ {store.upper()}: <i>Nao configurado</i>")
 
-    # 2. Outras Configurações
+    # 2. Outras Configuracoes
     import os
     from bot.utils.config import TELEGRAM_CHANNEL_ID
     
@@ -122,7 +122,7 @@ async def check_config_command(update: Update, context: ContextTypes.DEFAULT_TYP
     msg.append(f"✂️ Encurtador: <code>{os.getenv('SHORTENER_BACKEND', 'isgd')}</code>")
     
 
-    # 3. Verificação de Arquivo .env (no cloud ele costuma não existir)
+    # 3. Verificacao de Arquivo .env (no cloud ele costuma nao existir)
     has_env = os.path.exists(".env")
     msg.append(f"📄 Arquivo .env existe: {'✅' if has_env else '❌ (Railway usa Variables tab)'}")
 
@@ -131,7 +131,7 @@ async def check_config_command(update: Update, context: ContextTypes.DEFAULT_TYP
 
 
 async def test_link_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Passo a passo da transformação de um link (Apenas Admin)."""
+    """Passo a passo da transformacao de um link (Apenas Admin)."""
     from bot.permissions import is_admin
     from bot.services.affiliate_link_service import injetar_link_afiliado, _detectar_loja
     from bot.utils.url_resolver import resolve_url
@@ -150,7 +150,7 @@ async def test_link_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     
     logs = [f"📥 <b>Original:</b> <code>{original_url}</code>"]
     
-    # 1. Resolver encurtador básico
+    # 1. Resolver encurtador basico
     resolved = await asyncio.to_thread(resolve_url, original_url)
     if resolved != original_url:
         logs.append(f"🔍 <b>Resolvido:</b> <code>{resolved[:100]}...</code>")
@@ -177,7 +177,7 @@ async def test_link_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     await msg_wait.edit_text("\n".join(logs), parse_mode=ParseMode.HTML)
 
 async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Verifica a saúde do bot e a versão atual para detectar conflitos (Apenas Admin)."""
+    """Verifica a saude do bot e a versao atual para detectar conflitos (Apenas Admin)."""
     from bot.permissions import is_admin
     from bot.utils.config import INSTANCE_ID, BOOT_TIME, TELEGRAM_CHANNEL_ID
     import os
@@ -188,20 +188,20 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     msg = (
         "📊 <b>STATUS DO SISTEMA</b>\n\n"
-        f"🏷️ <b>Versão:</b> <code>V5 (Bypass Radware)</code>\n"
+        f"🏷️ <b>Versao:</b> <code>V5 (Bypass Radware)</code>\n"
         f"🆔 <b>Instância ID:</b> <code>{INSTANCE_ID}</code>\n"
         f"🕒 <b>Ligado em:</b> <code>{BOOT_TIME}</code>\n"
         f"🐍 <b>Python:</b> <code>{sys.version.split()[0]}</code>\n"
         f"🖥️ <b>Plataforma:</b> <code>{sys.platform}</code>\n"
         f"📡 <b>Canal:</b> <code>{TELEGRAM_CHANNEL_ID}</code>\n"
-        f"🛠️ <b>Modo:</b> <code>{'PRODUÇÃO' if os.getenv('RAILWAY_STATIC_URL') else 'DESENVOLVIMENTO'}</code>\n\n"
+        f"🛠️ <b>Modo:</b> <code>{'PRODUCAO' if os.getenv('RAILWAY_STATIC_URL') else 'DESENVOLVIMENTO'}</code>\n\n"
         "⚠️ <b>COMO DETECTAR CONFLITO:</b>\n"
         "Se você receber **DUAS** respostas com IDs diferentes, delete o deploy antigo no Railway!"
     )
     await update.message.reply_text(msg, parse_mode=ParseMode.HTML)
 
 async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Exibe estatísticas de performance (Apenas Admin)."""
+    """Exibe estatisticas de performance (Apenas Admin)."""
     from bot.permissions import is_admin
     from bot.services.metrics_service import get_stats
     
@@ -217,28 +217,28 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     pending_count = len(context.bot_data.get("pending_offers", {}))
 
     msg = (
-        "📊 <b>ESTATÍSTICAS DE PERFORMANCE</b>\n\n"
+        "📊 <b>ESTATISTICAS DE PERFORMANCE</b>\n\n"
         "📅 <b>Hoje:</b>\n"
         f"🔍 Escaneados: <code>{today['scanned']}</code>\n"
         f"✅ Aprovados: <code>{today['approved']}</code>\n"
         f"🚀 Publicados: <code>{today['published']}</code>\n"
         f"🗑️ Rejeitados: <code>{today['rejected']}</code>\n\n"
         "⏳ <b>Filas Atuais:</b>\n"
-        f"📋 Pendentes p/ Revisão: <code>{pending_count}</code>\n"
+        f"📋 Pendentes p/ Revisao: <code>{pending_count}</code>\n"
         f"⏰ Agendados p/ Postar: <code>{scheduled_count}</code>\n\n"
         "📈 <b>Total Acumulado:</b>\n"
         f"🔍 Escaneados: <code>{total['scanned']}</code>\n"
         f"✅ Aprovados: <code>{total['approved']}</code>\n"
         f"🚀 Publicados: <code>{total['published']}</code>\n"
         f"🗑️ Rejeitados: <code>{total['rejected']}</code>\n\n"
-        "<i>Métricas coletadas a partir de agora.</i>"
+        "<i>Metricas coletadas a partir de agora.</i>"
     )
     
     if update.message:
         await update.message.reply_text(msg, parse_mode=ParseMode.HTML)
     elif update.callback_query:
         await update.callback_query.answer()
-        # Botão de voltar ao menu principal
+        # Botao de voltar ao menu principal
         from telegram import InlineKeyboardButton, InlineKeyboardMarkup
         kb = [[InlineKeyboardButton("⬅️ Voltar ao Menu", callback_data="back_to_main")]]
         await update.callback_query.edit_message_text(msg, parse_mode=ParseMode.HTML, reply_markup=InlineKeyboardMarkup(kb))

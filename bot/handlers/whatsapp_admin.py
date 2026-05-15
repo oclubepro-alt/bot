@@ -57,7 +57,7 @@ async def btn_add_whatsapp(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         "Envie o nome e o JID do grupo/canal no formato:\n"
         "`Nome | JID`\n\n"
         "Exemplo:\n"
-        "`Promoções TOP | 1203632948102@g.us`"
+        "`Promocoes TOP | 1203632948102@g.us`"
     )
     keyboard = [[InlineKeyboardButton("❌ Cancelar", callback_data=CB_GERENCIAR_WHATS)]]
     await query.edit_message_text(texto, parse_mode=ParseMode.MARKDOWN, reply_markup=InlineKeyboardMarkup(keyboard))
@@ -66,7 +66,7 @@ async def btn_add_whatsapp(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 async def receber_jid_whatsapp(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     text = update.message.text.strip()
     if "|" not in text:
-        await update.message.reply_text("❌ Formato inválido. Use: `Nome | JID`")
+        await update.message.reply_text("❌ Formato invalido. Use: `Nome | JID`")
         return AGUARDAR_JID_WHATS
 
     nome, jid = [x.strip() for x in text.split("|", 1)]
@@ -74,7 +74,7 @@ async def receber_jid_whatsapp(update: Update, context: ContextTypes.DEFAULT_TYP
     if add_whatsapp_channel(nome, jid):
         await update.message.reply_text(f"✅ Destino *{nome}* adicionado!")
     else:
-        await update.message.reply_text("ℹ️ Este JID já está cadastrado.")
+        await update.message.reply_text("ℹ️ Este JID ja esta cadastrado.")
 
     # Volta pro menu
     return await menu_whatsapp(update, context)

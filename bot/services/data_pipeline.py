@@ -1,11 +1,11 @@
 """
-data_pipeline.py — Limpeza e validação de dados de e-commerce.
+data_pipeline.py — Limpeza e validacao de dados de e-commerce.
 
 Responsabilidades:
-  1. Limpar o nome do produto (remove ruídos de scraping).
-  2. Converter preço bruto em float.
-  3. Validar se o preço não é suspeito (>50% de desvio da média histórica).
-  4. Retornar dict padronizado com status "valid" ou "ERRO: PREÇO_SUSPEITO".
+  1. Limpar o nome do produto (remove ruidos de scraping).
+  2. Converter preco bruto em float.
+  3. Validar se o preco nao e suspeito (>50% de desvio da media historica).
+  4. Retornar dict padronizado com status "valid" ou "ERRO: PRECO_SUSPEITO".
 
 Usage:
     from bot.services.data_pipeline import process_product_data
@@ -19,27 +19,27 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Ruídos comuns que devem ser removidos do nome
+# Ruidos comuns que devem ser removidos do nome
 # ---------------------------------------------------------------------------
 _NOISE_PATTERNS: list[str] = [
-    r"frete\s+gr[aá]tis",
+    r"frete\s+gr[aa]tis",
     r"em\s+estoque",
-    r"promo[çc][aã]o\s+limitada",
+    r"promo[cc][aa]o\s+limitada",
     r"oferta\s+limitada",
     r"limited\s+offer",
     r"\bfree\s+shipping\b",
     r"\bstock\b",
-    r"\bPromo[çc][aã]o\b",
+    r"\bPromo[cc][aa]o\b",
     r"\bPromo\b",
     r"\|\s*$",            # pipe no final
-    r"-\s*$",            # traço no final
+    r"-\s*$",            # traco no final
 ]
 _NOISE_RE = re.compile(
     "|".join(_NOISE_PATTERNS), re.IGNORECASE
 )
 
 # ---------------------------------------------------------------------------
-# Histórico de preços médios por loja/categoria (seed inicial)
+# Historico de precos medios por loja/categoria (seed inicial)
 # Caminho: data/price_history.json
 # Estrutura: { "amazon": {"iphone": 5000.0, ...}, ... }
 # ---------------------------------------------------------------------------
@@ -54,13 +54,13 @@ _DEFAULT_HISTORY: dict = {
     "other":         {},
 }
 
-SUSPICIOUS_DEVIATION = 0.50   # 50 % de desvio máximo
+SUSPICIOUS_DEVIATION = 0.50   # 50 % de desvio maximo
 
 
 # ── Helpers ─────────────────────────────────────────────────────────────────
 
 def _load_history() -> dict:
-    """Carrega histórico de preços do JSON (cria se não existir)."""
+    """Carrega historico de precos do JSON (cria se nao existir)."""
     _DATA_DIR.mkdir(parents=True, exist_ok=True)
     if not _HISTORY_FILE.exists():
         _HISTORY_FILE.write_text(
@@ -71,7 +71,7 @@ def _load_history() -> dict:
         with open(_HISTORY_FILE, "r", encoding="utf-8") as f:
             return json.load(f)
     except Exception as e:
-        logger.warning(f"[PIPELINE] Erro ao ler histórico: {e}. Usando padrão vazio.")
+        logger.warning(f"[PIPELINE] Erro ao ler historico: {e}. Usando padrao vazio.")
         return dict(_DEFAULT_HISTORY)
 
 
@@ -81,17 +81,17 @@ def _save_history(history: dict) -> None:
         with open(_HISTORY_FILE, "w", encoding="utf-8") as f:
             json.dump(history, f, indent=2, ensure_ascii=False)
     except Exception as e:
-        logger.warning(f"[PIPELINE] Erro ao salvar histórico: {e}")
+        logger.warning(f"[PIPELINE] Erro ao salvar historico: {e}")
 
 
 def _normalize_key(nome: str) -> str:
-    """Gera chave simples de produto para lookup no histórico."""
+    """Gera chave simples de produto para lookup no historico."""
     return re.sub(r"[^a-z0-9]", "_", nome.lower().strip())[:60]
 
 
 def clean_name(raw: str) -> str:
     """
-    Limpa o nome do produto removendo strings de ruído.
+    Limpa o nome do produto removendo strings de ruido.
 
     Args:
         raw: Nome bruto capturado pelo scraper (pode conter lixo).
@@ -102,7 +102,7 @@ def clean_name(raw: str) -> str:
     if not raw:
         return ""
     cleaned = _NOISE_RE.sub("", raw)
-    # Normaliza espaços múltiplos e remove pontuação solta no final
+    # Normaliza espacos multiplos e remove pontuacao solta no final
     cleaned = re.sub(r"\s{2,}", " ", cleaned).strip(" |,-")
     logger.debug(f"[PIPELINE] Nome limpo: '{raw[:60]}' → '{cleaned[:60]}'")
     return cleaned
@@ -110,7 +110,7 @@ def clean_name(raw: str) -> str:
 
 def parse_price(raw_preco: str) -> float | None:
     """
-    Converte string de preço PT-BR em float.
+    Converte string de preco PT-BR em float.
 
     Exemplos:
         "R$ 1.299,99" → 1299.99
@@ -118,11 +118,11 @@ def parse_price(raw_preco: str) -> float | None:
         "3500"        → 3500.0
 
     Returns:
-        float ou None se não for possível converter.
+        float ou None se nao for possivel converter.
     """
     if not raw_preco:
         return None
-    # Remove símbolo e espaços
+    # Remove simbolo e espacos
     s = re.sub(r"[R$\s]", "", raw_preco)
     # Formato PT-BR: 1.299,99 → 1299.99
     if re.match(r"^\d{1,3}(\.\d{3})+(,\d{2})?$", s):
@@ -133,7 +133,7 @@ def parse_price(raw_preco: str) -> float | None:
     try:
         return float(s)
     except ValueError:
-        logger.warning(f"[PIPELINE] Não foi possível converter preço: '{raw_preco}'")
+        logger.warning(f"[PIPELINE] Nao foi possivel converter preco: '{raw_preco}'")
         return None
 
 
@@ -145,19 +145,19 @@ def validate_price(
     update_history: bool = True,
 ) -> str:
     """
-    Valida o preço contra o histórico.
+    Valida o preco contra o historico.
 
-    Se o preço estiver >50% diferente da média histórica, marca como suspeito.
-    Se não houver histórico, aceita e registra o preço.
+    Se o preco estiver >50% diferente da media historica, marca como suspeito.
+    Se nao houver historico, aceita e registra o preco.
 
     Args:
-        price_float:    Preço em float.
+        price_float:    Preco em float.
         store_key:      Chave da loja (ex: "amazon").
         product_key:    Chave normalizada do produto.
-        update_history: Se True, atualiza a média histórica após validar.
+        update_history: Se True, atualiza a media historica apos validar.
 
     Returns:
-        "valid" ou "ERRO: PREÇO_SUSPEITO"
+        "valid" ou "ERRO: PRECO_SUSPEITO"
     """
     history = _load_history()
     store_hist = history.setdefault(store_key, {})
@@ -167,12 +167,12 @@ def validate_price(
         diff = abs(price_float - avg) / avg
         if diff > SUSPICIOUS_DEVIATION:
             logger.warning(
-                f"[PIPELINE] ⚠️ PREÇO SUSPEITO — {store_key}/{product_key}: "
-                f"atual={price_float:.2f} | média={avg:.2f} | desvio={diff:.0%}"
+                f"[PIPELINE] ⚠️ PRECO SUSPEITO — {store_key}/{product_key}: "
+                f"atual={price_float:.2f} | media={avg:.2f} | desvio={diff:.0%}"
             )
-            return "ERRO: PREÇO_SUSPEITO"
+            return "ERRO: PRECO_SUSPEITO"
 
-    # Atualiza média histórica (média móvel simples com peso 0.3)
+    # Atualiza media historica (media movel simples com peso 0.3)
     if update_history:
         if avg is None:
             store_hist[product_key] = price_float
@@ -196,8 +196,8 @@ def process_product_data(
 
     Args:
         raw_nome:   Nome bruto do produto.
-        raw_preco:  Preço bruto (string PT-BR).
-        loja:       Nome de exibição da loja.
+        raw_preco:  Preco bruto (string PT-BR).
+        loja:       Nome de exibicao da loja.
         store_key:  Chave interna da loja.
 
     Returns:
@@ -207,19 +207,19 @@ def process_product_data(
             "preco_float": float | None,
             "loja":       str,
             "store_key":  str,
-            "status":     "valid" | "ERRO: PREÇO_SUSPEITO",
+            "status":     "valid" | "ERRO: PRECO_SUSPEITO",
         }
     """
     # 1. Limpeza do nome
     nome_limpo = clean_name(raw_nome or "")
 
-    # 2. Conversão de preço
+    # 2. Conversao de preco
     preco_float = parse_price(raw_preco or "")
     preco_formatado = None
     if preco_float is not None:
         preco_formatado = f"R$ {preco_float:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
-    # 3. Validação de preço suspeito
+    # 3. Validacao de preco suspeito
     status = "valid"
     if preco_float is not None and nome_limpo:
         product_key = _normalize_key(nome_limpo)
@@ -227,7 +227,7 @@ def process_product_data(
 
     result = {
         "nome":        nome_limpo,
-        "preco":       preco_formatado or raw_preco,  # mantém original se não converteu
+        "preco":       preco_formatado or raw_preco,  # mantem original se nao converteu
         "preco_float": preco_float,
         "loja":        loja,
         "store_key":   store_key,
@@ -237,7 +237,7 @@ def process_product_data(
     logger.info(
         f"[PIPELINE] ── Resultado do pipeline ──────────────────────\n"
         f"[PIPELINE] Nome    : {result['nome'][:60]}\n"
-        f"[PIPELINE] Preço   : {result['preco']} ({preco_float})\n"
+        f"[PIPELINE] Preco   : {result['preco']} ({preco_float})\n"
         f"[PIPELINE] Status  : {status}"
     )
 

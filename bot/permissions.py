@@ -15,11 +15,11 @@ def admin_required(func):
         user = update.effective_user
         if not is_admin(user.id):
             logger.warning(
-                f"[ACESSO NEGADO] Usuário {user.id} ({user.username}) "
+                f"[ACESSO NEGADO] Usuario {user.id} ({user.username}) "
                 "tentou usar comando de admin."
             )
             await update.message.reply_text(
-                "⛔ Você não tem permissão para usar este bot."
+                "⛔ Você nao tem permissao para usar este bot."
             )
             return ConversationHandler.END
         return await func(update, context)

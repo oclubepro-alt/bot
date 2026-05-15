@@ -1,15 +1,15 @@
 """
-link_shortener.py — Encurtamento de URLs para publicação.
+link_shortener.py — Encurtamento de URLs para publicacao.
 
-Princípio de segurança:
-  - Nunca expõe a URL longa com parâmetros de afiliado na mensagem final.
+Principio de seguranca:
+  - Nunca expoe a URL longa com parâmetros de afiliado na mensagem final.
   - Sempre retorna um link curto (ou o original puro se o encurtador falhar).
 
 Backends suportados (em ordem de prioridade):
-  1. is.gd    — sem autenticação, rápido, saída: https://is.gd/XXXXXXX
+  1. is.gd    — sem autenticacao, rapido, saida: https://is.gd/XXXXXXX
   2. Simulado — fallback local que mascara a URL longa com um hash visual
 
-Configuração no .env:
+Configuracao no .env:
   SHORTENER_BACKEND=isgd   # ou simulated | direct (default: isgd)
 """
 import hashlib
@@ -35,7 +35,7 @@ _MAX_RETRIES = 2
 # ---------------------------------------------------------------------------
 
 def _shorten_isgd(url: str) -> str:
-    """Encurta via is.gd (sem auth necessária)."""
+    """Encurta via is.gd (sem auth necessaria)."""
     api = "https://is.gd/create.php"
     resp = requests.get(
         api,
@@ -51,31 +51,31 @@ def _shorten_isgd(url: str) -> str:
 
 def _shorten_simulated(url: str) -> str:
     """
-    Fallback local — gera um link curto simulado determinístico.
+    Fallback local — gera um link curto simulado deterministico.
     Formato: https://go.achadinho.bot/XXXXXXX
-    Útil para desenvolvimento e quando os serviços externos estão indisponíveis.
+    Util para desenvolvimento e quando os servicos externos estao indisponiveis.
     """
     digest = hashlib.md5(url.encode()).hexdigest()[:7].upper()
     return f"https://go.achadinho.bot/{digest}"
 
 
 # ---------------------------------------------------------------------------
-# Entrada pública
+# Entrada publica
 # ---------------------------------------------------------------------------
 
 def shorten_url(url: str, *, force_backend: str | None = None) -> str:
     """
     Encurta a URL e retorna o link curto.
 
-    A URL longa com parâmetros de afiliado NUNCA fica exposta na saída.
+    A URL longa com parâmetros de afiliado NUNCA fica exposta na saida.
     Em caso de falha de todos os backends externos, usa o simulado.
 
     Args:
         url:            URL completa (pode conter parâmetros de afiliado).
-        force_backend:  Força um backend específico ('isgd'|'simulated'|'direct').
+        force_backend:  Forca um backend especifico ('isgd'|'simulated'|'direct').
 
     Returns:
-        URL curta pronta para publicação.
+        URL curta pronta para publicacao.
     """
     if not url:
         logger.warning("[SHORTENER] URL vazia recebida.")
@@ -108,7 +108,7 @@ def shorten_url(url: str, *, force_backend: str | None = None) -> str:
                     f"[SHORTENER] ⚠️ {name} falhou (tentativa {attempt}): {e}"
                 )
 
-    # Último recurso: simulado
+    # Ultimo recurso: simulado
     simulated = _shorten_simulated(url)
     logger.info(f"[SHORTENER] ℹ️ Usando link simulado: {simulated}")
     return simulated
@@ -116,8 +116,8 @@ def shorten_url(url: str, *, force_backend: str | None = None) -> str:
 
 def shorten_for_publication(affiliate_url: str) -> str:
     """
-    Alias semântico para uso nos handlers de publicação.
-    Garante que os parâmetros de afiliado nunca ficam visíveis na mensagem.
+    Alias semântico para uso nos handlers de publicacao.
+    Garante que os parâmetros de afiliado nunca ficam visiveis na mensagem.
 
     Args:
         affiliate_url: URL longa com parâmetros de afiliado.

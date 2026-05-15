@@ -22,7 +22,7 @@ from bot.handlers.offer_by_link import (
     # Cupom (NOVO)
     receber_cupom,
     btn_sem_cupom,
-    # Prévia e edição
+    # Previa e edicao
     btn_editar_oferta,
     escolher_campo_edicao,
     salvar_edicao,
@@ -135,7 +135,7 @@ def build_main_handler() -> ConversationHandler:
                 CallbackQueryHandler(start_command, pattern=f"^({CB_VOLTAR_MENU}|{CB_MENU_PRINCIPAL})$"),
             ],
 
-            # Estado 2/3: preenche nome ou preço quando extração falhou
+            # Estado 2/3: preenche nome ou preco quando extracao falhou
             PREENCHER_NOME_FALTANTE: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, preencher_nome_faltante),
                 CallbackQueryHandler(start_command, pattern=f"^({CB_VOLTAR_MENU}|{CB_MENU_PRINCIPAL})$"),
@@ -158,7 +158,7 @@ def build_main_handler() -> ConversationHandler:
                 CommandHandler("pular", pular_link_afiliado),
             ],
 
-            # Estado 4: prévia exibida — aguarda Confirmar / Corrigir / Cancelar
+            # Estado 4: previa exibida — aguarda Confirmar / Corrigir / Cancelar
             CONFIRMAR_LINK: [
                 CallbackQueryHandler(confirmar_envio_link, pattern=f"^{CB_CONFIRMAR_LINK}$"),
                 CallbackQueryHandler(confirmar_envio_link, pattern=f"^{CB_CANCELAR_OFERTA_LINK}$"),
@@ -171,7 +171,7 @@ def build_main_handler() -> ConversationHandler:
                 CallbackQueryHandler(start_command,        pattern=f"^({CB_VOLTAR_MENU}|{CB_MENU_PRINCIPAL})$"),
             ],
 
-            # Estado 5: submenu de edição — mostra botões Preço/Copy/Link/Cupom/Voltar
+            # Estado 5: submenu de edicao — mostra botoes Preco/Copy/Link/Cupom/Voltar
             EDITAR_CAMPOS: [
                 CallbackQueryHandler(
                     escolher_campo_edicao,
@@ -190,14 +190,14 @@ def build_main_handler() -> ConversationHandler:
             CommandHandler("start", start_command),
         ],
         allow_reentry=True,
-        per_message=False,  # CRÍTICO: True quebra MessageHandlers de texto (estado rastreado por msg_id, não por user)
-        per_chat=True,      # Mantém estado por conversa (padrão correto para bots admin)
-        per_user=True,      # Garante isolamento por usuário
+        per_message=False,  # CRITICO: True quebra MessageHandlers de texto (estado rastreado por msg_id, nao por user)
+        per_chat=True,      # Mantem estado por conversa (padrao correto para bots admin)
+        per_user=True,      # Garante isolamento por usuario
     )
 
 
 def build_review_queue_handler() -> CallbackQueryHandler:
-    """Handler único para callbacks da fila de aprovação."""
+    """Handler unico para callbacks da fila de aprovacao."""
     return CallbackQueryHandler(
         handle_review_callback,
         pattern=r"^review_(aprovar|rejeitar|agendar|bulk|view|corrigir):"

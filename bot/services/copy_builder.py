@@ -1,15 +1,15 @@
 """
-copy_builder.py — Geração de copy multi-plataforma para ofertas.
+copy_builder.py — Geracao de copy multi-plataforma para ofertas.
 
 Gera dois blocos distintos a partir dos dados do produto:
-  1. VERSÃO TELEGRAM  — Markdown V2 compatível com parse_mode=MarkdownV2.
-  2. VERSÃO WHATSAPP  — Texto puro com negrito via asteriscos (*texto*).
+  1. VERSAO TELEGRAM  — Markdown V2 compativel com parse_mode=MarkdownV2.
+  2. VERSAO WHATSAPP  — Texto puro com negrito via asteriscos (*texto*).
 
 Regras gerais:
-  - Link curto é sempre o que aparece (nunca a URL longa de afiliado).
-  - Telegram: todos os caracteres especiais são escapados conforme spec Bot API.
-  - WhatsApp: texto curtíssimo (≤ 160 chars sem link) para evitar botão "Ler mais".
-  - Emoji de categoria é detectado automaticamente pelo nome/loja.
+  - Link curto e sempre o que aparece (nunca a URL longa de afiliado).
+  - Telegram: todos os caracteres especiais sao escapados conforme spec Bot API.
+  - WhatsApp: texto curtissimo (≤ 160 chars sem link) para evitar botao "Ler mais".
+  - Emoji de categoria e detectado automaticamente pelo nome/loja.
 
 Usage:
     from bot.services.copy_builder import build_copy
@@ -29,7 +29,7 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Configurações
+# Configuracoes
 # ---------------------------------------------------------------------------
 _WA_CHANNEL = os.getenv("WHATSAPP_CHANNEL_URL", "").strip()
 
@@ -41,44 +41,44 @@ _CATEGORY_EMOJIS: list[tuple[list[str], str]] = [
     (["iphone", "samsung", "xiaomi", "celular", "smartphone", "fone", "airpod",
       "tablet", "ipad", "note", "galaxy", "motorola", "poco"], "📱"),
     (["notebook", "macbook", "laptop", "pc", "computador", "monitor",
-      "teclado", "mouse", "webcam", "processador", "ssd", "hd", "placa de vídeo", "gpu"], "💻"),
-    (["tv", "smart tv", "televisão", "televisor", "led", "4k", "oled"], "📺"),
-    (["câmera", "camera", "gopro", "lens", "lente", "tripé", "drone", "instax", "polaroid"], "📷"),
+      "teclado", "mouse", "webcam", "processador", "ssd", "hd", "placa de video", "gpu"], "💻"),
+    (["tv", "smart tv", "televisao", "televisor", "led", "4k", "oled"], "📺"),
+    (["câmera", "camera", "gopro", "lens", "lente", "tripe", "drone", "instax", "polaroid"], "📷"),
     (["fone", "headphone", "headset", "earphone", "speaker", "caixa de som",
       "soundbar", "jbl", "bose", "sony", "alexa", "echo dot"], "🔊"),
     (["console", "playstation", "xbox", "nintendo", "switch", "videogame",
       "controle", "joystick", "game", "gamer", "cadeira gamer"], "🎮"),
-    # Moda / Vestuário
+    # Moda / Vestuario
     (["tênis", "tenis", "adidas", "nike", "puma", "vans", "sapato",
-      "bota", "sandália", "chinelo", "oakley"], "👟"),
-    (["camisa", "camiseta", "blusa", "calça", "casaco", "jaqueta",
+      "bota", "sandalia", "chinelo", "oakley"], "👟"),
+    (["camisa", "camiseta", "blusa", "calca", "casaco", "jaqueta",
       "vestido", "moletom", "agasalho", "bermuda", "cueca", "meia"], "👕"),
     (["bolsa", "mochila", "carteira", "necessaire", "mala", "kipling"], "👜"),
-    (["relógio", "relogio", "watch", "smartwatch", "apple watch", "amazfit"], "⌚"),
-    (["óculos", "oculos", "ray ban", "sunglasses"], "🕶️"),
+    (["relogio", "relogio", "watch", "smartwatch", "apple watch", "amazfit"], "⌚"),
+    (["oculos", "oculos", "ray ban", "sunglasses"], "🕶️"),
     # Casa e Cozinha
-    (["airfryer", "fritadeira", "panela", "fogão", "forno", "microondas",
+    (["airfryer", "fritadeira", "panela", "fogao", "forno", "microondas",
       "cafeteira", "nespresso", "dolce gusto", "liquidificador", "batedeira", "sanduicheira"], "🍳"),
-    (["geladeira", "freezer", "refrigerador", "lavadora", "máquina de lavar",
+    (["geladeira", "freezer", "refrigerador", "lavadora", "maquina de lavar",
       "secadora", "aspirador", "robô aspirador", "mop"], "🏠"),
-    (["jogo de cama", "lençol", "travesseiro", "toalha", "edredom"], "🛏️"),
+    (["jogo de cama", "lencol", "travesseiro", "toalha", "edredom"], "🛏️"),
     (["ferramenta", "bosch", "furadeira", "parafusadeira", "jogo de chaves"], "🛠️"),
     # Esportes / Fitness
     (["haltere", "halter", "kettlebell", "bicicleta", "bike", "esteira",
-      "suplemento", "whey", "proteína", "creatina", "pre treino"], "🏋️"),
+      "suplemento", "whey", "proteina", "creatina", "pre treino"], "🏋️"),
     # Beleza / Cuidados
     (["perfume", "colônia", "fragrância", "maquiagem", "batom", "shampoo",
       "condicionador", "creme", "hidratante", "protetor", "skincare", "dove", "nivea"], "✨"),
     (["escova", "chapinha", "secador", "barbeador", "philips"], "🪮"),
-    # Livros / Educação
+    # Livros / Educacao
     (["livro", "book", "curso", "kindle", "ebook", "papelaria"], "📚"),
     # Bebês / Infantil
-    (["bebê", "bebe", "infantil", "fraldas", "carrinho", "berço", "pampers", "huggies"], "👶"),
-    (["brinquedo", "lego", "boneca", "carrinho", "quebra cabeça"], "🧸"),
+    (["bebê", "bebe", "infantil", "fraldas", "carrinho", "berco", "pampers", "huggies"], "👶"),
+    (["brinquedo", "lego", "boneca", "carrinho", "quebra cabeca"], "🧸"),
     # Pets
-    (["pet", "cachorro", "gato", "ração", "coleira", "arranhador", "whiskas"], "🐾"),
+    (["pet", "cachorro", "gato", "racao", "coleira", "arranhador", "whiskas"], "🐾"),
     # Higiene / Limpeza
-    (["sabão", "omo", "detergente", "amaciante", "papel higiênico", "limpeza"], "🧼"),
+    (["sabao", "omo", "detergente", "amaciante", "papel higiênico", "limpeza"], "🧼"),
     # Lojas (como fallback)
     (["netshoes"], "👟"),
     (["magalu", "magazine"], "🛒"),
@@ -118,8 +118,8 @@ def _escape_html(text: str) -> str:
 
 def _calc_desconto(preco: str, preco_original: str | None) -> str | None:
     """
-    Calcula o percentual de desconto entre preço original e atual.
-    Retorna string formatada '(↓ XX%)' ou None se não puder calcular.
+    Calcula o percentual de desconto entre preco original e atual.
+    Retorna string formatada '(↓ XX%)' ou None se nao puder calcular.
     """
     if not preco_original:
         return None
@@ -154,16 +154,16 @@ def _build_telegram(
 
     linhas = []
     
-    # Título com emoji de destaque (Imagem 2 usa 💥)
+    # Titulo com emoji de destaque (Imagem 2 usa 💥)
     main_emoji = emoji if emoji and emoji != "📦" else "💥"
     linhas.append(f"{main_emoji} <b>{nome_e}</b>")
     
     if is_lowest:
-        linhas.append("📉 <b>MENOR PREÇO HISTÓRICO!</b>")
+        linhas.append("📉 <b>MENOR PRECO HISTORICO!</b>")
     
     linhas.append("")
 
-    # Seção de Preço
+    # Secao de Preco
     if preco_original and preco_original != preco:
         orig_e = _escape_html(preco_original)
         linhas.append(f"De: <s>{orig_e}</s>")
@@ -194,7 +194,7 @@ def _build_telegram(
         linhas.append("")
 
     # Call to Action (Layout Imagem 2)
-    linhas.append("🔗 <b>Acesse a oferta clicando no botão abaixo! 👇</b>")
+    linhas.append("🔗 <b>Acesse a oferta clicando no botao abaixo! 👇</b>")
     
     linhas.append("")
     linhas.append("⚠️ <i>Ofertas por tempo limitado.</i>")
@@ -216,8 +216,8 @@ def _build_whatsapp(
     """
     Monta copy para WhatsApp em texto simples com negritos via *.
 
-    Mantido ultra-curto (evita botão "Ler mais"):
-        EMOJI *NOME* (até 60 chars)
+    Mantido ultra-curto (evita botao "Ler mais"):
+        EMOJI *NOME* (ate 60 chars)
         💰 *R$ XX,XX* [De R$ YY,YY] (↓ZZ%)
         🏪 Loja
 
@@ -251,7 +251,7 @@ def _build_whatsapp(
 
 
 # ---------------------------------------------------------------------------
-# Ponto de entrada público
+# Ponto de entrada publico
 # ---------------------------------------------------------------------------
 
 def build_copy(
@@ -272,13 +272,13 @@ def build_copy(
 
     Args:
         nome:             Nome limpo do produto.
-        preco:            Preço formatado (ex: "R$ 299,90").
-        loja:             Nome de exibição da loja.
+        preco:            Preco formatado (ex: "R$ 299,90").
+        loja:             Nome de exibicao da loja.
         store_key:        Chave interna da loja.
         short_url:        Link encurtado (nunca a URL longa de afiliado!).
         legenda_ia:       Texto gerado pela IA (opcional).
-        preco_original:   Preço riscado/original (opcional).
-        whatsapp_channel: URL do canal do WhatsApp para rodapé.
+        preco_original:   Preco riscado/original (opcional).
+        whatsapp_channel: URL do canal do WhatsApp para rodape.
 
     Returns:
         {
@@ -298,7 +298,7 @@ def build_copy(
             history_info = log_price(product_url, preco)
             is_lowest = history_info.get("is_lowest", False)
         except Exception as e:
-            logger.error(f"[COPY_BUILDER] Erro ao logar preço: {e}")
+            logger.error(f"[COPY_BUILDER] Erro ao logar preco: {e}")
 
     telegram_copy = _build_telegram(
         nome=nome,
@@ -330,13 +330,13 @@ def build_copy(
         f"telegram={len(telegram_copy)} chars | whatsapp={len(whatsapp_copy)} chars"
     )
 
-    # ── GARANTIA FINAL: Telegram SEM link no texto (apenas no botão) ──────
+    # ── GARANTIA FINAL: Telegram SEM link no texto (apenas no botao) ──────
     # Remove qualquer ocorrência do link curto se ele tiver "http"
     if telegram_copy and short_url and "http" in short_url:
         # Escapa o link para remover se ele estiver no texto MDV2
         short_url_e = _escape_html(short_url)
         telegram_copy = telegram_copy.replace(short_url_e, "").replace(short_url, "")
-        # Remove linhas vazias duplas criadas pela remoção
+        # Remove linhas vazias duplas criadas pela remocao
         telegram_copy = re.sub(r"\n\s*\n", "\n\n", telegram_copy).strip()
 
     return {
@@ -349,11 +349,11 @@ def build_copy(
 
 def build_copy_from_pipeline(pipeline_result: dict, short_url: str, **kwargs) -> dict:
     """
-    Atalho: recebe o dicionário de saída do data_pipeline e gera o copy.
+    Atalho: recebe o dicionario de saida do data_pipeline e gera o copy.
 
     Args:
-        pipeline_result: Saída de data_pipeline.process_product_data().
-        short_url:       Link curto para publicação.
+        pipeline_result: Saida de data_pipeline.process_product_data().
+        short_url:       Link curto para publicacao.
         **kwargs:        Argumentos extras para build_copy (legenda_ia, etc.).
 
     Returns:

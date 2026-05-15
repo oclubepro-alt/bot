@@ -1,5 +1,5 @@
 """
-cancel.py - Handler genérico para cancelar conversas
+cancel.py - Handler generico para cancelar conversas
 """
 import logging
 from telegram import Update
@@ -13,16 +13,16 @@ async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     """Cancela via comando /cancel."""
     context.user_data.clear()
     logger.info(f"[CANCEL] Usou /cancel.")
-    await update.message.reply_text("🚫 Operação cancelada. Use /start para recomeçar.")
+    await update.message.reply_text("🚫 Operacao cancelada. Use /start para recomecar.")
     return ConversationHandler.END
 
 async def cancel_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Cancela via botão Cancelar do menu inline."""
+    """Cancela via botao Cancelar do menu inline."""
     query = update.callback_query
     await query.answer()
     
     if query.data == CB_CANCELAR_MENU:
         context.user_data.clear()
-        await query.edit_message_text("✅ Operação cancelada. Use /start para recomeçar.")
+        await query.edit_message_text("✅ Operacao cancelada. Use /start para recomecar.")
     
     return ConversationHandler.END

@@ -1,6 +1,6 @@
 """
-price_history_service.py - Registra e consulta o histórico de preços de produtos.
-Útil para identificar 'Menor Preço' e variações significativas.
+price_history_service.py - Registra e consulta o historico de precos de produtos.
+Util para identificar 'Menor Preco' e variacoes significativas.
 """
 import json
 import logging
@@ -28,12 +28,12 @@ def _save_history(data: dict) -> None:
 
 def log_price(url: str, price_str: str) -> dict:
     """
-    Registra o preço atual para a URL. 
-    Retorna info se é o menor preço histórico.
+    Registra o preco atual para a URL. 
+    Retorna info se e o menor preco historico.
     """
     history = _load_history()
     
-    # Limpeza básica do preço para comparação numérica
+    # Limpeza basica do preco para comparacao numerica
     # Ex: "R$ 1.299,00" -> 1299.0
     try:
         clean_price = price_str.replace("R$", "").replace(".", "").replace(",", ".").strip()
@@ -55,7 +55,7 @@ def log_price(url: str, price_str: str) -> dict:
             is_lowest = True
         
         history[url]["last"] = numeric_price
-        # Mantém apenas os últimos 10 registros para não inflar o JSON
+        # Mantem apenas os ultimos 10 registros para nao inflar o JSON
         history[url]["history"].append({
             "p": numeric_price,
             "d": datetime.now().strftime("%Y-%m-%d")

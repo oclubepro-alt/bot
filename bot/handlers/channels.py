@@ -1,5 +1,5 @@
 """
-channels.py - Handler para adicionar e remover canais de publicação.
+channels.py - Handler para adicionar e remover canais de publicacao.
 """
 import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -20,20 +20,20 @@ async def menu_canais(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     user = query.from_user
 
     if not is_admin(user.id):
-        await query.edit_message_text("⛔ Sem permissão.")
+        await query.edit_message_text("⛔ Sem permissao.")
         return ConversationHandler.END
 
     canais = get_channels()
     texto = "📢 <b>CANAIS CADASTRADOS</b>\n\n"
     if not canais:
-        texto += "Nenhum canal extra cadastrado.\n<i>(O canal base do .env é usado por padrão).</i>"
+        texto += "Nenhum canal extra cadastrado.\n<i>(O canal base do .env e usado por padrao).</i>"
     else:
         for idx, ch in enumerate(canais, 1):
             texto += f"{idx}. <code>{ch}</code>\n"
     
     keyboard = []
     if canais:
-        # Cria botão de remoção para cada canal
+        # Cria botao de remocao para cada canal
         for ch in canais:
             keyboard.append([InlineKeyboardButton(f"🗑️ Remover {ch}", callback_data=f"remove_chan|{ch}")])
             
@@ -53,9 +53,9 @@ async def btn_add_canal(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     
     texto = (
         "Envie o ID do canal ou Username (ex: `@meucanal` ou `-100123...`).\n"
-        "Certifique-se que o Bot já é administrador desse canal antes de adicioná-lo."
+        "Certifique-se que o Bot ja e administrador desse canal antes de adiciona-lo."
     )
-    # Mostra botão de cancelar local
+    # Mostra botao de cancelar local
     kb = InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancelar", callback_data="menu_principal")]])
     await query.edit_message_text(texto, parse_mode=ParseMode.MARKDOWN, reply_markup=kb)
     return AGUARDAR_NOVO_CANAL
@@ -66,7 +66,7 @@ async def receber_novo_canal(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if add_channel(novo):
         msg = f"✅ Canal {novo} adicionado com sucesso!"
     else:
-        msg = f"ℹ️ O canal {novo} já está na lista."
+        msg = f"ℹ️ O canal {novo} ja esta na lista."
         
     kb = InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Voltar aos Canais", callback_data=CB_GERENCIAR_CANAIS)]])
     await update.message.reply_text(msg, reply_markup=kb)
@@ -82,7 +82,7 @@ async def btn_remover_canal(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     if remove_channel(ch):
         msg = f"✅ Canal {ch} removido com sucesso."
     else:
-        msg = f"❌ Canal {ch} não encontrado."
+        msg = f"❌ Canal {ch} nao encontrado."
         
     kb = InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Voltar aos Canais", callback_data=CB_GERENCIAR_CANAIS)]])
     await query.edit_message_text(msg, reply_markup=kb)

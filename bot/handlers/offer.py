@@ -25,7 +25,7 @@ async def start_offer_manual(update: Update, context: ContextTypes.DEFAULT_TYPE)
     
     if not is_admin(user.id):
         logger.warning(f"[ACESSO NEGADO] {user.id} tentou acessar publicar manual.")
-        await query.edit_message_text("⛔ Você não tem permissão para publicar.")
+        await query.edit_message_text("⛔ Você nao tem permissao para publicar.")
         return ConversationHandler.END
 
     logger.info(f"[OFERTA MANUAL] Admin {user.id} iniciou.")
@@ -33,7 +33,7 @@ async def start_offer_manual(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     await query.edit_message_text(
         "💎 <b>OFERTA MANUAL — Passo 1/6</b>\n\n"
-        "📝 Qual é o <b>nome do produto</b>?\n"
+        "📝 Qual e o <b>nome do produto</b>?\n"
         "<i>Ex: iPhone 15 Pro Max 256GB</i>",
         parse_mode=ParseMode.HTML,
     )
@@ -44,7 +44,7 @@ async def receber_nome(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     context.user_data["nome"] = nome
     await update.message.reply_text(
         f"✅ Produto: <b>{nome}</b>\n\n"
-        "💰 <b>Passo 2/6</b> — Qual é o <b>preço</b>?\n"
+        "💰 <b>Passo 2/6</b> — Qual e o <b>preco</b>?\n"
         "<i>Ex: R$ 7.499,00</i>",
         parse_mode=ParseMode.HTML,
     )
@@ -55,7 +55,7 @@ async def receber_preco(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     context.user_data["preco"] = preco
     keyboard = [[InlineKeyboardButton(loja, callback_data=f"loja_{loja}")] for loja in LOJAS]
     await update.message.reply_text(
-        f"✅ Preço: <b>{preco}</b>\n\n🏪 <b>Passo 3/6</b> — Escolha a <b>loja</b>:",
+        f"✅ Preco: <b>{preco}</b>\n\n🏪 <b>Passo 3/6</b> — Escolha a <b>loja</b>:",
         parse_mode=ParseMode.HTML,
         reply_markup=InlineKeyboardMarkup(keyboard),
     )
@@ -94,7 +94,7 @@ async def pular_imagem(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
 
 async def _pedir_descricao(update: Update):
     await update.message.reply_text(
-        "📝 <b>Passo 6/6</b> — Alguma <b>descrição adicional</b>? (opcional — /pular para ignorar)",
+        "📝 <b>Passo 6/6</b> — Alguma <b>descricao adicional</b>? (opcional — /pular para ignorar)",
         parse_mode=ParseMode.HTML,
     )
 
@@ -141,7 +141,7 @@ async def _processar_e_exibir_previa(update: Update, context: ContextTypes.DEFAU
     ]
 
     preview_text = (
-        "💎 <b>PRÉVIA — Confirme os detalhes</b>\n\n"
+        "💎 <b>PREVIA — Confirme os detalhes</b>\n\n"
         f"{context.user_data['mensagem_final']}\n\n"
         "━━━━━━━━━━━━━━━\n"
         f"🔗 <b>Link de conferência:</b>\n"
@@ -191,7 +191,7 @@ async def confirmar_envio(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     })
 
     try:
-        # Passa o copy_dict completo e o link explicitamente para o botão
+        # Passa o copy_dict completo e o link explicitamente para o botao
         await publish_offer(
             bot=context.bot, 
             copies=copy_dict, 

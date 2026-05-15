@@ -1,5 +1,5 @@
 """
-amazon_api.py - Integração com Amazon Creators API (v1)
+amazon_api.py - Integracao com Amazon Creators API (v1)
 Focado em extrair dados oficiais sem risco de bloqueio de scraping.
 """
 import os
@@ -25,12 +25,12 @@ class AmazonCreatorsAPI:
         self._token_expires = None
 
     async def _get_access_token(self) -> str | None:
-        """Obtém ou renova o token OAuth2 via LWA (Login with Amazon)."""
+        """Obtem ou renova o token OAuth2 via LWA (Login with Amazon)."""
         if self._token and self._token_expires and datetime.now() < self._token_expires:
             return self._token
 
         if not self.client_id or not self.client_secret:
-            logger.error("[AMAZON_API] ❌ Client ID ou Secret não configurados!")
+            logger.error("[AMAZON_API] ❌ Client ID ou Secret nao configurados!")
             return None
 
         url = "https://api.amazon.com/auth/o2/token"
@@ -65,17 +65,17 @@ class AmazonCreatorsAPI:
                     err_msg = str(err_data.get("error_description") or err_data.get("error") or "").lower()
                     
                     if "missing" in err_msg and "scope" in err_msg:
-                        logger.warning(f"[AMAZON_API] ⚠️ Servidor exige scope. Tentando próximo...")
+                        logger.warning(f"[AMAZON_API] ⚠️ Servidor exige scope. Tentando proximo...")
                         continue
                     elif "invalid" in err_msg and "scope" in err_msg:
-                        logger.warning(f"[AMAZON_API] ⚠️ Scope '{scope}' inválido. Tentando próximo...")
+                        logger.warning(f"[AMAZON_API] ⚠️ Scope '{scope}' invalido. Tentando proximo...")
                         continue
                     else:
                         logger.error(f"[AMAZON_API] ❌ Erro fatal no token: {response.status_code} - {err_msg}")
                         return None
                         
                 except Exception as e:
-                    logger.error(f"[AMAZON_API] ❌ Exceção no token: {e}")
+                    logger.error(f"[AMAZON_API] ❌ Excecao no token: {e}")
                     return None
         
         return None
@@ -101,14 +101,14 @@ class AmazonCreatorsAPI:
         
         asin = self._extract_asin(url)
         if not asin:
-            logger.warning(f"[AMAZON_API] ⚠️ ASIN não encontrado: {url[:60]}")
+            logger.warning(f"[AMAZON_API] ⚠️ ASIN nao encontrado: {url[:60]}")
             return None
         
         token = await self._get_access_token()
         if not token: return None
 
         marketplace = "www.amazon.com.br"
-        # Usa a versão do config ou v1 como default
+        # Usa a versao do config ou v1 como default
         version = AMAZON_API_VERSION or "v1"
         endpoint = f"https://creatorsapi.amazon.com/catalog/{version}/getItems"
         
@@ -135,13 +135,13 @@ class AmazonCreatorsAPI:
                     if items:
                         return self._map_response(items[0], asin)
                     else:
-                        logger.warning(f"[AMAZON_API] ⚠️ ASIN {asin} não retornou itens. Resposta: {data}")
+                        logger.warning(f"[AMAZON_API] ⚠️ ASIN {asin} nao retornou itens. Resposta: {data}")
                         return None
                 else:
                     logger.error(f"[AMAZON_API] ❌ Erro API {resp.status_code}: {resp.text}")
                     return None
         except Exception as e:
-            logger.error(f"[AMAZON_API] ❌ Exceção GetItems: {e}")
+            logger.error(f"[AMAZON_API] ❌ Excecao GetItems: {e}")
             return None
 
     def _map_response(self, item_info: dict, asin: str) -> dict:
@@ -161,7 +161,7 @@ class AmazonCreatorsAPI:
 
         product = {
             "titulo": f"Produto Amazon {asin}",
-            "preco": "Preço não disponível",
+            "preco": "Preco nao disponivel",
             "preco_original": None,
             "imagem": None,
             "descricao": "",
@@ -170,7 +170,7 @@ class AmazonCreatorsAPI:
             "source_method": "AMAZON_CREATORS_API"
         }
 
-        # 1. Título
+        # 1. Titulo
         item_info_data = get_field(item_info, ["itemInfo", "ItemInfo"]) or item_info
         title_obj = get_field(item_info_data, ["title", "Title"])
         if title_obj:
@@ -182,14 +182,14 @@ class AmazonCreatorsAPI:
         
         image_url = None
         if primary:
-            # Prioridade para imagens de alta resolução
+            # Prioridade para imagens de alta resolucao
             for size in ["highRes", "HighRes", "extraLarge", "ExtraLarge", "large", "Large", "medium", "Medium"]:
                 size_obj = get_field(primary, [size])
                 if size_obj:
                     image_url = get_field(size_obj, ["url", "URL"])
                     if image_url: break
         
-        # Se não achou na Primary, tenta Variants
+        # Se nao achou na Primary, tenta Variants
         if not image_url:
             variants = get_field(images_obj, ["variants", "Variants"]) or []
             if variants and isinstance(variants, list):
@@ -203,12 +203,12 @@ class AmazonCreatorsAPI:
 
         product["imagem"] = image_url
 
-        # 3. Preço
+        # 3. Preco
         offers = get_field(item_info, ["offers", "Offers"]) or {}
         price_found = None
         orig_price = None
 
-        # A. Tenta Summaries (LowestPrice é comum aqui)
+        # A. Tenta Summaries (LowestPrice e comum aqui)
         summaries = get_field(offers, ["summaries", "Summaries"]) or []
         if summaries and isinstance(summaries, list):
             lowest = get_field(summaries[0], ["lowestPrice", "LowestPrice"])
@@ -222,21 +222,21 @@ class AmazonCreatorsAPI:
                 listing = listings[0]
                 price_info = get_field(listing, ["price", "Price"])
                 if price_info:
-                    # Preço de compra atual
+                    # Preco de compra atual
                     price_found = (
                         get_field(price_info, ["displayAmount", "DisplayAmount"]) or
                         get_field(price_info, ["amount", "Amount"]) or 
                         get_field(price_info, ["value", "Value"])
                     )
-                    # Preço original (se houver desconto)
+                    # Preco original (se houver desconto)
                     savings = get_field(price_info, ["savings", "Savings"])
                     if savings:
-                        # Se temos savings, buscamos listPrice para o preço "De"
+                        # Se temos savings, buscamos listPrice para o preco "De"
                         list_price_info = get_field(listing, ["listPrice", "ListPrice"])
                         if list_price_info:
                             orig_price = get_field(list_price_info, ["amount", "Amount", "value", "Value", "displayAmount", "DisplayAmount"])
                         
-                        # Se ainda não temos orig_price mas temos o valor do desconto, calculamos
+                        # Se ainda nao temos orig_price mas temos o valor do desconto, calculamos
                         if not orig_price:
                             try:
                                 p_float = _parse_price_to_float(str(price_found))
@@ -267,7 +267,7 @@ class AmazonCreatorsAPI:
         if orig_price:
             product["preco_original"] = format_api_price(orig_price)
 
-        logger.info(f"[AMAZON_API] Mapeado ASIN {asin}: Titulo={product['titulo'][:40]}, Preço={product['preco']}, Imagem={'Sim' if product['imagem'] else 'Não'}")
+        logger.info(f"[AMAZON_API] Mapeado ASIN {asin}: Titulo={product['titulo'][:40]}, Preco={product['preco']}, Imagem={'Sim' if product['imagem'] else 'Nao'}")
 
         return product
 

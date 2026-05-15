@@ -28,7 +28,7 @@ async def start_config_afiliado(update: Update, context: ContextTypes.DEFAULT_TY
         return ConversationHandler.END
 
     texto = (
-        "⚙️ <b>Configuração de Afiliados</b>\n\n"
+        "⚙️ <b>Configuracao de Afiliados</b>\n\n"
         "Selecione a loja para configurar sua <b>Tag</b> ou <b>Link de Afiliado</b> base.\n"
         "Isso garante que todas as ofertas geradas usem seu link!"
     )
@@ -120,6 +120,6 @@ async def receber_credencial(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 
 async def cancelar_config(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    await update.message.reply_text("❌ Configuração de afiliado cancelada.")
+    await update.message.reply_text("❌ Configuracao de afiliado cancelada.")
     context.user_data.clear()
     return ConversationHandler.END

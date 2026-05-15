@@ -2,15 +2,15 @@
 product_extractor_v2.py — Extrator de produtos em camadas.
 
 Ordem de prioridade:
-  Prioridade 0 — Preço PIX/à-vista (antes de tudo)
-  Camada 1 — Playwright (renderização real de JS)
+  Prioridade 0 — Preco PIX/à-vista (antes de tudo)
+  Camada 1 — Playwright (renderizacao real de JS)
   Camada 2 — requests + BeautifulSoup (fallback HTML)
-  Camada 3 — Retorno seguro mínimo (nunca quebra o fluxo)
+  Camada 3 — Retorno seguro minimo (nunca quebra o fluxo)
 
-Regra de preço:
-  1. Se existe preço PIX/à-vista → usa ele (is_pix_price=True)
-  2. Senão: pega o MENOR entre promocional e original.
-  Log obrigatório: PRECO_TIPO=PIX | PROMOCIONAL | ORIGINAL
+Regra de preco:
+  1. Se existe preco PIX/à-vista → usa ele (is_pix_price=True)
+  2. Senao: pega o MENOR entre promocional e original.
+  Log obrigatorio: PRECO_TIPO=PIX | PROMOCIONAL | ORIGINAL
 """
 import logging
 import re
@@ -27,17 +27,17 @@ from bot.utils.price_utils import _parse_price_to_float, _clean_price, format_ap
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Contrato de saída — garante que o dict retornado NUNCA tem chaves ausentes
-# Qualquer código que consuma extract_product_data_v2 pode usar .get() com
-# segurança, mas esta função elimina KeyError mesmo com acesso direto.
+# Contrato de saida — garante que o dict retornado NUNCA tem chaves ausentes
+# Qualquer codigo que consuma extract_product_data_v2 pode usar .get() com
+# seguranca, mas esta funcao elimina KeyError mesmo com acesso direto.
 # ---------------------------------------------------------------------------
 _RESULT_SCHEMA: dict = {
     "store":          "Loja",
     "store_key":      "other",
     "final_url":      "",
-    "titulo":         "Produto Disponível",
+    "titulo":         "Produto Disponivel",
     "imagem":         None,
-    "preco":          "Preço não disponível",
+    "preco":          "Preco nao disponivel",
     "preco_original": None,
     "source_method":  "UNKNOWN",
     "is_pix_price":   False,
@@ -47,25 +47,25 @@ _RESULT_SCHEMA: dict = {
 
 def _validate_result(result: dict) -> dict:
     """
-    Garante que o dict de saída do pipeline sempre contém todas as chaves
+    Garante que o dict de saida do pipeline sempre contem todas as chaves
     definidas em _RESULT_SCHEMA com tipos corretos.
 
     Regras:
-      - Chaves ausentes recebem o valor padrão do schema.
-      - 'preco' None ou vazio vira 'Preço não disponível'.
-      - 'titulo' None ou vazio vira 'Produto Disponível'.
-      - 'is_pix_price' é sempre bool.
-      - 'final_url' vazio herda o valor de entrada se disponível.
+      - Chaves ausentes recebem o valor padrao do schema.
+      - 'preco' None ou vazio vira 'Preco nao disponivel'.
+      - 'titulo' None ou vazio vira 'Produto Disponivel'.
+      - 'is_pix_price' e sempre bool.
+      - 'final_url' vazio herda o valor de entrada se disponivel.
     """
     for key, default in _RESULT_SCHEMA.items():
         if key not in result or result[key] is None and default is not None:
             result.setdefault(key, default)
 
-    # Garante strings não-vazias nas chaves críticas
+    # Garante strings nao-vazias nas chaves criticas
     if not result.get("preco"):
-        result["preco"] = "Preço não disponível"
+        result["preco"] = "Preco nao disponivel"
     if not result.get("titulo"):
-        result["titulo"] = "Produto Disponível"
+        result["titulo"] = "Produto Disponivel"
 
     # Garante tipo bool
     result["is_pix_price"] = bool(result.get("is_pix_price", False))
@@ -108,14 +108,14 @@ async def fetch_magalu_api(url: str) -> dict | None:
       1. API mobile catalog (ms.catalog.magazineluiza.com.br)
       2. API site product (www.magazineluiza.com.br/api/v1/product/)
     """
-    # Extrai o ID do produto da URL — padrão: /p/XXXXXXXX/
+    # Extrai o ID do produto da URL — padrao: /p/XXXXXXXX/
     match = re.search(r'/p/(\w+)/?', url)
     if not match:
-        logger.warning("[MAGALU_API] ⚠️ ID do produto não encontrado na URL")
+        logger.warning("[MAGALU_API] ⚠️ ID do produto nao encontrado na URL")
         return None
 
     product_id = match.group(1)
-    logger.info(f"[MAGALU_API] ℹ️ Produto ID extraído: {product_id}")
+    logger.info(f"[MAGALU_API] ℹ️ Produto ID extraido: {product_id}")
 
     # Headers robustos para emular app/mobile e evitar blocks simples
     headers = {
@@ -144,11 +144,11 @@ async def fetch_magalu_api(url: str) -> dict | None:
 
                 data = resp.json()
 
-                # --- Mapeamento flexível ---
+                # --- Mapeamento flexivel ---
                 # Se for do ms.catalog, os dados podem estar direto ou em 'product'
                 titulo = data.get("title") or data.get("name") or data.get("product", {}).get("title")
                 
-                # Preço
+                # Preco
                 p_obj = data.get("price") or data.get("product", {}).get("price") or {}
                 best_price = p_obj.get("best_price") or p_obj.get("sale_price") or data.get("price_in_cash")
                 
@@ -174,7 +174,7 @@ async def fetch_magalu_api(url: str) -> dict | None:
 
     # Camada 0b: Scraping LEVE (Apenas MetaTags/JSON-LD) com Mobile Headers
     try:
-        logger.info("[MAGALU_API] ℹ️ Tentando extração leve via Mobile Headers...")
+        logger.info("[MAGALU_API] ℹ️ Tentando extracao leve via Mobile Headers...")
         async with httpx.AsyncClient(timeout=10, follow_redirects=True, headers=headers) as client:
             resp = await client.get(url)
             if resp.status_code == 200:
@@ -239,24 +239,24 @@ async def fetch_magalu_api(url: str) -> dict | None:
 
 
 # ---------------------------------------------------------------------------
-# Camada 0: API Interna da Netshoes — extração por SKU
+# Camada 0: API Interna da Netshoes — extracao por SKU
 # ---------------------------------------------------------------------------
 
 async def fetch_netshoes_api(url: str) -> dict | None:
     """
     Extrai dados da Netshoes sem scraping usando a API interna por SKU.
-    Padrão de URL: /nome-do-produto/NKB-4396-001-M (SKU é o último segmento)
+    Padrao de URL: /nome-do-produto/NKB-4396-001-M (SKU e o ultimo segmento)
     Tenta 2 endpoints em cascata + fallback HTML leve.
     """
-    # Extrai SKU do último segmento da URL
+    # Extrai SKU do ultimo segmento da URL
     path = urlparse(url).path.rstrip("/")
     sku_match = re.search(r'/([A-Z0-9]{2,6}-[\w-]{4,30})$', path)
     if not sku_match:
-        logger.warning("[NETSHOES_API] ⚠️ SKU não encontrado na URL")
+        logger.warning("[NETSHOES_API] ⚠️ SKU nao encontrado na URL")
         return None
 
     sku = sku_match.group(1)
-    logger.info(f"[NETSHOES_API] ℹ️ SKU extraído: {sku}")
+    logger.info(f"[NETSHOES_API] ℹ️ SKU extraido: {sku}")
 
     headers_json = {
         "User-Agent": "Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36",
@@ -307,7 +307,7 @@ async def fetch_netshoes_api(url: str) -> dict | None:
                 orig_price = price_obj.get("list_price") or price_obj.get("original_price")
 
                 if titulo and best_price:
-                    logger.info(f"[NETSHOES_API] ✅ Sucesso | {titulo[:50]} | Preço: {best_price}")
+                    logger.info(f"[NETSHOES_API] ✅ Sucesso | {titulo[:50]} | Preco: {best_price}")
                     return {
                         "titulo": titulo,
                         "imagem": imagem,
@@ -320,7 +320,7 @@ async def fetch_netshoes_api(url: str) -> dict | None:
                     logger.warning(f"[NETSHOES_API] ⚠️ Dados incompletos neste endpoint")
 
             except Exception as e:
-                logger.warning(f"[NETSHOES_API] ❌ Exceção: {str(e)[:80]}")
+                logger.warning(f"[NETSHOES_API] ❌ Excecao: {str(e)[:80]}")
                 continue
 
     # --- Fallback Camada 0b: HTML leve + JSON-LD ---
@@ -358,10 +358,10 @@ async def fetch_netshoes_api(url: str) -> dict | None:
 async def fetch_amazon_scrapingdog(url: str) -> dict | None:
     """
     Extrai dados da Amazon via Scrapingdog API (Pago).
-    Custo: 5 créditos por request (com country=br).
+    Custo: 5 creditos por request (com country=br).
     """
     if not SCRAPINGDOG_API_KEY:
-        logger.warning("[SCRAPINGDOG] ⚠️ SCRAPINGDOG_API_KEY não configurada!")
+        logger.warning("[SCRAPINGDOG] ⚠️ SCRAPINGDOG_API_KEY nao configurada!")
         return None
 
     # Extrai ASIN
@@ -370,7 +370,7 @@ async def fetch_amazon_scrapingdog(url: str) -> dict | None:
         asin_match = re.search(r"[/\?&](?:pd_rd_i|ASIN|item_id)=([A-Z0-9]{10})", url, re.I)
     
     if not asin_match:
-        logger.warning(f"[SCRAPINGDOG] ⚠️ ASIN não encontrado na URL: {url[:60]}")
+        logger.warning(f"[SCRAPINGDOG] ⚠️ ASIN nao encontrado na URL: {url[:60]}")
         return None
         
     asin = asin_match.group(1).upper()
@@ -394,7 +394,7 @@ async def fetch_amazon_scrapingdog(url: str) -> dict | None:
                 if isinstance(data, list) and len(data) > 0:
                     data = data[0]
                 
-                # Se houver erro na resposta da API (ex: crédito insuficiente)
+                # Se houver erro na resposta da API (ex: credito insuficiente)
                 if data.get("error"):
                     logger.error(f"[SCRAPINGDOG] ❌ Erro da API: {data.get('error')}")
                     return None
@@ -410,7 +410,7 @@ async def fetch_amazon_scrapingdog(url: str) -> dict | None:
                     imagem = data["main_image"]
 
                 if titulo and price_raw:
-                    logger.info(f"[SCRAPINGDOG] ✅ Sucesso | {titulo[:50]} | Preço: {price_raw}")
+                    logger.info(f"[SCRAPINGDOG] ✅ Sucesso | {titulo[:50]} | Preco: {price_raw}")
                     return {
                         "titulo": titulo,
                         "imagem": imagem,
@@ -421,12 +421,12 @@ async def fetch_amazon_scrapingdog(url: str) -> dict | None:
                         "cupom": data.get("coupon_text") or data.get("coupon")
                     }
                 else:
-                    logger.warning("[SCRAPINGDOG] ⚠️ Resposta da API sem título ou preço.")
+                    logger.warning("[SCRAPINGDOG] ⚠️ Resposta da API sem titulo ou preco.")
                     return None
             else:
                 logger.error(f"[SCRAPINGDOG] ❌ Erro HTTP {resp.status_code}: {resp.text[:200]}")
     except Exception as e:
-        logger.error(f"[SCRAPINGDOG] ❌ Exceção Scrapingdog: {str(e)}")
+        logger.error(f"[SCRAPINGDOG] ❌ Excecao Scrapingdog: {str(e)}")
     
     return None
 def _choose_lower_price(p1: str | None, p2: str | None) -> tuple[str | None, str | None]:
@@ -451,7 +451,7 @@ def _choose_lower_price(p1: str | None, p2: str | None) -> tuple[str | None, str
 
 
 # ---------------------------------------------------------------------------
-# Prioridade 0: Preço PIX / à vista — buscado ANTES dos seletores padrão
+# Prioridade 0: Preco PIX / à vista — buscado ANTES dos seletores padrao
 # ---------------------------------------------------------------------------
 
 _PIX_PATTERN = re.compile(r'pix|à\s*vista', re.IGNORECASE)
@@ -460,8 +460,8 @@ _PIX_PATTERN = re.compile(r'pix|à\s*vista', re.IGNORECASE)
 def _find_price_near_text(soup: BeautifulSoup, text_pattern, price_selectors: list[str]) -> str | None:
     """
     Procura pelo texto que casa com text_pattern e tenta encontrar
-    um preço nos elementos vizinhos (subindo até 6 níveis na árvore).
-    Retorna o primeiro valor numérico válido encontrado.
+    um preco nos elementos vizinhos (subindo ate 6 niveis na arvore).
+    Retorna o primeiro valor numerico valido encontrado.
     """
     for text_node in soup.find_all(string=text_pattern):
         parent = text_node.parent
@@ -479,7 +479,7 @@ def _find_price_near_text(soup: BeautifulSoup, text_pattern, price_selectors: li
 
 
 def _extract_pix_price_amazon(soup: BeautifulSoup) -> str | None:
-    """Amazon: busca preço 'no Pix' / 'à vista no Pix'."""
+    """Amazon: busca preco 'no Pix' / 'à vista no Pix'."""
     price_selectors = [
         ".a-price .a-offscreen",
         ".a-price-whole",
@@ -493,8 +493,8 @@ def _extract_pix_price_amazon(soup: BeautifulSoup) -> str | None:
 
 
 def _extract_pix_price_ml(soup: BeautifulSoup) -> str | None:
-    """Mercado Livre: busca preço 'no Pix' na seção de desconto Pix."""
-    # Tenta primeiro via seletor específico de desconto Pix
+    """Mercado Livre: busca preco 'no Pix' na secao de desconto Pix."""
+    # Tenta primeiro via seletor especifico de desconto Pix
     pix_section = soup.select_one(".ui-pdp-price--pix, [data-testid='pix-price']")
     if pix_section:
         frac = pix_section.select_one(".andes-money-amount__fraction")
@@ -510,12 +510,12 @@ def _extract_pix_price_ml(soup: BeautifulSoup) -> str | None:
 
 
 def _extract_price_from_meta(soup: BeautifulSoup) -> str | None:
-    """Extrai preço de meta tags (OG, Twitter, Product)."""
+    """Extrai preco de meta tags (OG, Twitter, Product)."""
     meta_selectors = [
         ("property", "product:sale_price:amount"),
         ("property", "product:price:amount"),
         ("property", "og:price:amount"),
-        ("name", "twitter:data1"), # Comum no Twitter Card para preço
+        ("name", "twitter:data1"), # Comum no Twitter Card para preco
         ("itemprop", "price"),
     ]
     for attr, val in meta_selectors:
@@ -529,7 +529,7 @@ def _extract_price_from_meta(soup: BeautifulSoup) -> str | None:
 
 
 def _extract_price_from_schema(soup: BeautifulSoup) -> tuple[str | None, str | None]:
-    """Tenta extrair preço via application/ld+json."""
+    """Tenta extrair preco via application/ld+json."""
     for script in soup.find_all("script", type="application/ld+json"):
         try:
             content = script.string or ""
@@ -559,35 +559,35 @@ def _extract_price_from_schema(soup: BeautifulSoup) -> tuple[str | None, str | N
 
 def _extract_price_from_body_regex(soup: BeautifulSoup) -> str | None:
     """
-    ULTIMATO: Busca qualquer padrão de R$ no corpo da página.
+    ULTIMATO: Busca qualquer padrao de R$ no corpo da pagina.
     Ideal para quando a Amazon bloqueia seletores mas deixa o texto.
     """
-    # Remove scripts e estilos para não pegar números de lá
+    # Remove scripts e estilos para nao pegar numeros de la
     for s in soup(["script", "style"]): s.decompose()
     
     text = soup.get_text(separator=" ")
     
-    # Padrão 1: R$ 1.234,56 ou R$ 49,90
+    # Padrao 1: R$ 1.234,56 ou R$ 49,90
     matches = re.findall(r"R\$\s*(\d{1,3}(?:\.\d{3})*,\d{2})", text)
     if matches:
         for m in matches:
             if m != "0,00":
-                logger.info(f"[EXTRACTOR_V2] Preço minerado via Regex Body (BR): R$ {m}")
+                logger.info(f"[EXTRACTOR_V2] Preco minerado via Regex Body (BR): R$ {m}")
                 return f"R$ {m}"
     
-    # Padrão 2: 49.90 (Comum em JSON ou labels de API)
+    # Padrao 2: 49.90 (Comum em JSON ou labels de API)
     matches_intl = re.findall(r"(?:\s|^)(\d{1,5}\.\d{2})(?:\s|$)", text)
     if matches_intl:
         for m in matches_intl:
             if float(m) > 1.0:
-                logger.info(f"[EXTRACTOR_V2] Preço minerado via Regex Body (Intl): {m}")
+                logger.info(f"[EXTRACTOR_V2] Preco minerado via Regex Body (Intl): {m}")
                 return f"R$ {m.replace('.', ',')}"
 
     return None
 
 
 def _extract_pix_price_magalu(soup: BeautifulSoup) -> str | None:
-    """Magalu: busca preço 'no Pix' próximo ao label PIX."""
+    """Magalu: busca preco 'no Pix' proximo ao label PIX."""
     price_selectors = [
         "[data-testid='price-value']",
         ".sc-kLojnp",
@@ -600,25 +600,25 @@ def _extract_pix_price_magalu(soup: BeautifulSoup) -> str | None:
 
 
 # ---------------------------------------------------------------------------
-# Extração de preço por loja — seletores com prioridade por tipo
+# Extracao de preco por loja — seletores com prioridade por tipo
 # ---------------------------------------------------------------------------
 
 def _is_valid_price_tag(tag) -> bool:
-    """Verifica se a tag não pertence a um preço unitário ou a um preço riscado/tachado."""
+    """Verifica se a tag nao pertence a um preco unitario ou a um preco riscado/tachado."""
     if not tag: return False
 
-    # Verifica se a própria tag ou um pai imediato tem classe de preço tachado (a-text-price)
-    # Isso exclui o preço original que aparece riscado antes do preço real
+    # Verifica se a propria tag ou um pai imediato tem classe de preco tachado (a-text-price)
+    # Isso exclui o preco original que aparece riscado antes do preco real
     tag_classes = set(tag.get("class") or [])
     parent = tag.parent
     parent_classes = set(parent.get("class") or []) if parent else set()
     grandparent = parent.parent if parent else None
     grandparent_classes = set(grandparent.get("class") or []) if grandparent else set()
 
-    # Exclui se está dentro de elemento de preço riscado (mas só nas baixas-confiança)
-    # Nota: a-text-price é o container do preço original na Amazon
+    # Exclui se esta dentro de elemento de preco riscado (mas so nas baixas-confianca)
+    # Nota: a-text-price e o container do preco original na Amazon
     if "a-text-price" in parent_classes or "a-text-price" in grandparent_classes:
-        # Permite apenas se também tiver 'priceToPay' ou 'apexPriceToPay' no contexto (é o preço real)
+        # Permite apenas se tambem tiver 'priceToPay' ou 'apexPriceToPay' no contexto (e o preco real)
         valid_contexts = {"priceToPay", "apexPriceToPay", "priceToBuy"}
         has_valid_context = any(c in parent_classes or c in grandparent_classes for c in valid_contexts)
         if not has_valid_context:
@@ -627,18 +627,18 @@ def _is_valid_price_tag(tag) -> bool:
     texto = tag.get_text(strip=True)
     classes = tag.get("class") or []
 
-    # Sobe até 5 níveis para buscar contexto de 'unidade' (Amazon pattern)
+    # Sobe ate 5 niveis para buscar contexto de 'unidade' (Amazon pattern)
     text_context = texto.lower()
     p = tag.parent
     for _ in range(5):
         if p is None: break
-        # Coleta só o texto direto (não o texto de todos os filhos)
+        # Coleta so o texto direto (nao o texto de todos os filhos)
         direct_text = " ".join(t for t in p.strings if t.strip()).lower()
         text_context += " " + direct_text
         p = p.parent
     
-    # 1. Filtro de palavras banidas (preço por unidade, etc)
-    # MODIFICAÇÃO: 'unidade' e 'ml' agora só bloqueiam se houver um slash '/' antes (indica preço unitário)
+    # 1. Filtro de palavras banidas (preco por unidade, etc)
+    # MODIFICACAO: 'unidade' e 'ml' agora so bloqueiam se houver um slash '/' antes (indica preco unitario)
     # ou se for explicitamente 'cada' / 'por unidade'.
     blacklist_strong = ["cada", "por unidade", "valor do ml", "valor do kg", "valor do grama"]
     for term in blacklist_strong:
@@ -646,8 +646,8 @@ def _is_valid_price_tag(tag) -> bool:
             return False
 
     # Filtros contextuais que podem estar no nome do produto (ex: Pack 12 Unidades)
-    # Só bloqueamos se parecer um cálculo de preço unitário (R$ X / unidade)
-    if re.search(r"/\s*(unidade|unid|ml|kg|g|m|pç|unit)", text_context):
+    # So bloqueamos se parecer um calculo de preco unitario (R$ X / unidade)
+    if re.search(r"/\s*(unidade|unid|ml|kg|g|m|pc|unit)", text_context):
         return False
 
     # 2. Filtro de Classes CSS
@@ -655,7 +655,7 @@ def _is_valid_price_tag(tag) -> bool:
         "a-text-price", "basisPrice", "listPrice", "unitPrice", 
         "price-per-unit", "a-size-small", "a-color-secondary", "strikethrough"
     ]
-    # 'a-offscreen' não deve ser bloqueado, pois a Amazon usa para o preço principal em leitores de tela
+    # 'a-offscreen' nao deve ser bloqueado, pois a Amazon usa para o preco principal em leitores de tela
     if any(c in bad_classes for c in classes):
         return False
         
@@ -663,11 +663,11 @@ def _is_valid_price_tag(tag) -> bool:
 
 
 def _extract_price_amazon(soup: BeautifulSoup) -> tuple[str | None, str | None]:
-    """Amazon: pegar preço promo e original."""
+    """Amazon: pegar preco promo e original."""
     preco_promo = None
     preco_orig  = None
 
-    # 1. TENTA JSON-LD OU SCRIPTS (ALTA CONFIANÇA)
+    # 1. TENTA JSON-LD OU SCRIPTS (ALTA CONFIANCA)
     preco_promo, preco_orig = _extract_price_from_schema(soup)
     if not preco_promo:
         p_script, o_script = _extract_price_from_scripts_amazon(soup)
@@ -698,7 +698,7 @@ def _extract_price_amazon(soup: BeautifulSoup) -> tuple[str | None, str | None]:
             ".a-size-base.a-color-price",
             "#price",
             ".price",
-            # Seletores de baixa confiança (outros vendedores / listings)
+            # Seletores de baixa confianca (outros vendedores / listings)
             "#olp_feature_div .a-color-price",
             ".olp-padding-right .a-color-price",
             "#alternativeOffer .a-price .a-offscreen",
@@ -718,11 +718,11 @@ def _extract_price_amazon(soup: BeautifulSoup) -> tuple[str | None, str | None]:
                 
                 if _parse_price_to_float(val):
                     preco_promo = val
-                    logger.info(f"[EXTRACTOR_V2] Amazon preço promo via '{sel}': {preco_promo}")
+                    logger.info(f"[EXTRACTOR_V2] Amazon preco promo via '{sel}': {preco_promo}")
                     break
             if preco_promo: break
 
-    # 3. PREÇO ORIGINAL (DE)
+    # 3. PRECO ORIGINAL (DE)
     if not preco_orig:
         orig_selectors = [
             ".a-price.a-text-price .a-offscreen",
@@ -745,7 +745,7 @@ def _extract_price_amazon(soup: BeautifulSoup) -> tuple[str | None, str | None]:
 
 def _extract_price_from_scripts_amazon(soup: BeautifulSoup) -> tuple[str | None, str | None]:
     """
-    Busca em tags <script> por dados de preço (a-state, P.register).
+    Busca em tags <script> por dados de preco (a-state, P.register).
     """
     for script in soup.find_all("script"):
         content = script.string or ""
@@ -754,7 +754,7 @@ def _extract_price_from_scripts_amazon(soup: BeautifulSoup) -> tuple[str | None,
         # Tenta extrair blocos JSON de a-state
         if "a-state" in content or "desktop-dp-price-detail" in content:
             try:
-                # Busca por algo que pareça um JSON dentro do script
+                # Busca por algo que pareca um JSON dentro do script
                 json_matches = re.findall(r"({.*})", content)
                 for json_str in json_matches:
                     try:
@@ -769,7 +769,7 @@ def _extract_price_from_scripts_amazon(soup: BeautifulSoup) -> tuple[str | None,
 
 def _extract_coupon_amazon(soup: BeautifulSoup) -> str | None:
     """
-    Detecta cupons de desconto na página da Amazon.
+    Detecta cupons de desconto na pagina da Amazon.
     Ex: 'Aplique o cupom de R$ 50,00', 'Economize 10% com cupom'.
     """
     coupon_selectors = [
@@ -785,7 +785,7 @@ def _extract_coupon_amazon(soup: BeautifulSoup) -> str | None:
         if tag:
             text = tag.get_text(strip=True)
             if "cupom" in text.lower() or "coupon" in text.lower() or "economize" in text.lower():
-                # Limpa excesso de espaços e retorna
+                # Limpa excesso de espacos e retorna
                 return re.sub(r"\s+", " ", text).strip()
                 
     # Busca por texto direto se o seletor falhar
@@ -799,11 +799,11 @@ def _extract_coupon_amazon(soup: BeautifulSoup) -> str | None:
 
 def _parse_amazon_paapi_dict(item: dict) -> tuple[str | None, str | None]:
     """
-    Processa um dicionário no formato Amazon PA-API v5 ou similar (a-state).
-    Lógica baseada na sugestão do usuário.
+    Processa um dicionario no formato Amazon PA-API v5 ou similar (a-state).
+    Logica baseada na sugestao do usuario.
     """
     try:
-        # Suporte a múltiplos níveis de aninhamento comuns em a-state
+        # Suporte a multiplos niveis de aninhamento comuns em a-state
         offers = item.get("Offers") or item.get("offers")
         if not offers and "desktop-dp-price-detail" in item:
             offers = item["desktop-dp-price-detail"].get("Offers")
@@ -811,7 +811,7 @@ def _parse_amazon_paapi_dict(item: dict) -> tuple[str | None, str | None]:
         if not offers:
             # Tenta busca recursiva simples por 'Listings'
             if "Listings" in str(item):
-                pass # Poderia implementar, mas vamos focar no óbvio primeiro
+                pass # Poderia implementar, mas vamos focar no obvio primeiro
             else:
                 return None, None
 
@@ -821,15 +821,15 @@ def _parse_amazon_paapi_dict(item: dict) -> tuple[str | None, str | None]:
 
         listing = listings[0]
         
-        # Preço Atual (Price)
+        # Preco Atual (Price)
         price_obj = listing.get("Price") or listing.get("price") or {}
         p_promo = price_obj.get("DisplayAmount") or price_obj.get("Amount")
 
-        # Preço Original (SavingBasis)
+        # Preco Original (SavingBasis)
         saving_obj = listing.get("SavingBasis") or listing.get("savingBasis") or {}
         p_orig = saving_obj.get("DisplayAmount") or saving_obj.get("Amount")
 
-        # Fallback se DisplayAmount vier vazio mas Amount tiver número
+        # Fallback se DisplayAmount vier vazio mas Amount tiver numero
         if p_promo and not isinstance(p_promo, str): p_promo = str(p_promo)
         if p_orig and not isinstance(p_orig, str): p_orig = str(p_orig)
 
@@ -844,19 +844,19 @@ def _extract_price_ml(soup: BeautifulSoup) -> tuple[str | None, str | None]:
     preco_promo = None
     preco_orig  = None
 
-    # Preço promocional
+    # Preco promocional
     promo_selectors = [
         ".ui-pdp-price__second-line .andes-money-amount__fraction",
         ".andes-money-amount--main .andes-money-amount__fraction",
         ".ui-pdp-price .andes-money-amount__fraction",
-        ".andes-money-amount__fraction", # Genérico como última opção
+        ".andes-money-amount__fraction", # Generico como ultima opcao
     ]
     for sel in promo_selectors:
-        # Pega todas as tags e filtra explicitly as que são "previous" (riscadas)
+        # Pega todas as tags e filtra explicitly as que sao "previous" (riscadas)
         for tag in soup.select(sel):
             parent_container = tag.find_parent(class_=re.compile(r"andes-money-amount"))
             if parent_container and "andes-money-amount--previous" in parent_container.get("class", []):
-                continue # Pula preço riscado
+                continue # Pula preco riscado
             
             val = tag.get_text(strip=True)
             parent = tag.parent
@@ -866,12 +866,12 @@ def _extract_price_ml(soup: BeautifulSoup) -> tuple[str | None, str | None]:
             
             if _parse_price_to_float(val):
                 preco_promo = val
-                logger.info(f"[EXTRACTOR_V2] ML preço promo via '{sel}': {preco_promo}")
+                logger.info(f"[EXTRACTOR_V2] ML preco promo via '{sel}': {preco_promo}")
                 break
         if preco_promo:
             break
 
-    # Preço original riscado — seletor da classe "previous"
+    # Preco original riscado — seletor da classe "previous"
     orig_tag = soup.select_one(".andes-money-amount--previous .andes-money-amount__fraction")
     if orig_tag:
         preco_orig = orig_tag.get_text(strip=True)
@@ -880,7 +880,7 @@ def _extract_price_ml(soup: BeautifulSoup) -> tuple[str | None, str | None]:
 
 
 def _extract_price_magalu(soup: BeautifulSoup) -> tuple[str | None, str | None]:
-    """Magalu: pegar preço do [data-testid='price-value'], ignorar 'no-price-value'."""
+    """Magalu: pegar preco do [data-testid='price-value'], ignorar 'no-price-value'."""
     preco_promo = None
     preco_orig  = None
 
@@ -896,7 +896,7 @@ def _extract_price_magalu(soup: BeautifulSoup) -> tuple[str | None, str | None]:
 
 
 def _extract_price_netshoes(soup: BeautifulSoup) -> tuple[str | None, str | None]:
-    """Netshoes: .product-final-price é o promo, .old-price é o original."""
+    """Netshoes: .product-final-price e o promo, .old-price e o original."""
     promo_tag = soup.select_one(".product-final-price, .best-price")
     orig_tag  = soup.select_one(".old-price")
     preco_promo = promo_tag.get_text(strip=True) if promo_tag else None
@@ -905,7 +905,7 @@ def _extract_price_netshoes(soup: BeautifulSoup) -> tuple[str | None, str | None
 
 
 def _extract_price_generic(soup: BeautifulSoup) -> tuple[str | None, str | None]:
-    """Genérico: meta tags de preço de venda têm prioridade."""
+    """Generico: meta tags de preco de venda têm prioridade."""
     preco_promo = None
     preco_orig  = None
 
@@ -923,7 +923,7 @@ def _extract_price_generic(soup: BeautifulSoup) -> tuple[str | None, str | None]
             preco_promo = candidate
 
     if preco_promo:
-        logger.info(f"[EXTRACTOR_V2] Preço via meta tag: promo={preco_promo}, orig={preco_orig}")
+        logger.info(f"[EXTRACTOR_V2] Preco via meta tag: promo={preco_promo}, orig={preco_orig}")
         return _choose_lower_price(preco_promo, preco_orig)
 
     # 2. JSON-LD
@@ -941,7 +941,7 @@ def _extract_price_generic(soup: BeautifulSoup) -> tuple[str | None, str | None]
                         else None
                     )
                     if price:
-                        logger.info(f"[EXTRACTOR_V2] Preço via JSON-LD: {price}")
+                        logger.info(f"[EXTRACTOR_V2] Preco via JSON-LD: {price}")
                         return _clean_price(str(price)), None
         except Exception:
             continue
@@ -950,25 +950,25 @@ def _extract_price_generic(soup: BeautifulSoup) -> tuple[str | None, str | None]
     match = re.search(r"R\$\s*(\d{1,3}(?:\.\d{3})*,\d{2})", str(soup))
     if match:
         val = f"R$ {match.group(1)}"
-        logger.info(f"[EXTRACTOR_V2] Preço via regex bruto: {val}")
+        logger.info(f"[EXTRACTOR_V2] Preco via regex bruto: {val}")
         return val, None
 
     return None, None
 
 
 # ---------------------------------------------------------------------------
-# Extração completa da página
+# Extracao completa da pagina
 # ---------------------------------------------------------------------------
 
 def _extract_from_soup(soup: BeautifulSoup, base_url: str, store_key: str = "other") -> dict:
-    """Extrai título, preço promocional, preço original, imagem, cupom e flag PIX."""
+    """Extrai titulo, preco promocional, preco original, imagem, cupom e flag PIX."""
     data = {"titulo": None, "preco": None, "preco_original": None, "imagem": None, "is_pix_price": False, "cupom": None}
 
-    # ── DETECÇÃO DE BLOQUEIO ────────────────────────────────────────────────
+    # ── DETECCAO DE BLOQUEIO ────────────────────────────────────────────────
     page_text_lower = soup.get_text().lower()
     page_title_lower = (soup.title.string.lower() if soup.title else "")
     
-    # Detecção proativa de bloqueio
+    # Deteccao proativa de bloqueio
     is_blocked = any(p in page_title_lower for p in _BLOCK_KEYWORDS) or \
                  any(p in page_text_lower for p in ["radware bot manager", "please verify you are a human", "unusual traffic from your computer"])
 
@@ -981,13 +981,13 @@ def _extract_from_soup(soup: BeautifulSoup, base_url: str, store_key: str = "oth
             "source_method": "BLOCKED"
         }
 
-    # ── TÍTULO ──────────────────────────────────────────────────────────────
+    # ── TITULO ──────────────────────────────────────────────────────────────
     title_selectors = [
         "#productTitle",             # Amazon principal
-        "#title",                    # Amazon secundário
-        ".product-title",            # Genérico
+        "#title",                    # Amazon secundario
+        ".product-title",            # Generico
         ".ui-pdp-title",             # Mercado Livre
-        "h1[itemprop='name']",       # Magalu / genérico
+        "h1[itemprop='name']",       # Magalu / generico
         ".header-product__title",    # Netshoes
         "h1.product-name", 
         "h1.title",
@@ -1003,7 +1003,7 @@ def _extract_from_soup(soup: BeautifulSoup, base_url: str, store_key: str = "oth
                 data["titulo"] = raw.strip()
                 break
 
-    # Fallback título via Meta
+    # Fallback titulo via Meta
     if not data["titulo"]:
         for attr_name, attr_val in [("property", "og:title"), ("name", "twitter:title"), ("name", "title")]:
             meta = soup.find("meta", attrs={attr_name: attr_val})
@@ -1011,7 +1011,7 @@ def _extract_from_soup(soup: BeautifulSoup, base_url: str, store_key: str = "oth
                 data["titulo"] = meta["content"].strip()
                 break
     
-    # Fallback ULTIMATO: Título da Tag HTML
+    # Fallback ULTIMATO: Titulo da Tag HTML
     if not data["titulo"] and soup.title:
         raw_title = soup.title.get_text(strip=True)
         if raw_title and len(raw_title) > 5:
@@ -1019,11 +1019,11 @@ def _extract_from_soup(soup: BeautifulSoup, base_url: str, store_key: str = "oth
             raw_title = re.sub(r"^(Amazon\.com\.br|Mercado Livre|Magalu|Magazine Luiza)\s*[:\-]\s*", "", raw_title, flags=re.I)
             data["titulo"] = raw_title.split(":")[0].split("|")[0].strip()
 
-    # ── VALIDAÇÃO DE TÍTULO (Anti-Vazamento de Bloqueio) ────────────────────
+    # ── VALIDACAO DE TITULO (Anti-Vazamento de Bloqueio) ────────────────────
     if data["titulo"]:
         t_low = data["titulo"].lower()
         if any(p in t_low for p in _BLOCK_KEYWORDS) or "bloqueio" in t_low:
-            logger.warning(f"[EXTRACTOR_V2] Título suspeito de bloqueio rejeitado: {data['titulo']}")
+            logger.warning(f"[EXTRACTOR_V2] Titulo suspeito de bloqueio rejeitado: {data['titulo']}")
             data["titulo"] = None
             return {
                 "titulo": None,
@@ -1032,7 +1032,7 @@ def _extract_from_soup(soup: BeautifulSoup, base_url: str, store_key: str = "oth
                 "source_method": "BLOCKED"
             }
 
-    # ── PREÇO PRIORIDADE 0: PIX / à vista (Magalu, ML) ─────────────────────
+    # ── PRECO PRIORIDADE 0: PIX / à vista (Magalu, ML) ─────────────────────
     pix_price = None
     if store_key == "mercadolivre":
         pix_price = _extract_pix_price_ml(soup)
@@ -1050,7 +1050,7 @@ def _extract_from_soup(soup: BeautifulSoup, base_url: str, store_key: str = "oth
         else: preco_orig = None
         data["preco_original"] = preco_orig
     else:
-        # ── PREÇO PADRÃO POR LOJA ──────────────────────────────────────────
+        # ── PRECO PADRAO POR LOJA ──────────────────────────────────────────
         if store_key == "amazon":
             # Amazon: .a-price .a-offscreen (menor valor)
             preco, preco_orig = _extract_price_amazon(soup)
@@ -1071,9 +1071,9 @@ def _extract_from_soup(soup: BeautifulSoup, base_url: str, store_key: str = "oth
     if store_key == "amazon":
         data["cupom"] = _extract_coupon_amazon(soup)
 
-    # ── ULTIMATO DE PREÇO (Meta / Schema / Regex) ──────────────────────────
+    # ── ULTIMATO DE PRECO (Meta / Schema / Regex) ──────────────────────────
     if not data["preco"]:
-        # Tenta meta tags primeiro (rápido e confiável)
+        # Tenta meta tags primeiro (rapido e confiavel)
         data["preco"] = _extract_price_from_meta(soup)
         
         if not data["preco"]:
@@ -1084,7 +1084,7 @@ def _extract_from_soup(soup: BeautifulSoup, base_url: str, store_key: str = "oth
                 if not data["preco_original"]: data["preco_original"] = o_schema
         
         if not data["preco"]:
-            # Tenta regex bruto como última opção
+            # Tenta regex bruto como ultima opcao
             data["preco"] = _extract_price_from_body_regex(soup)
 
     # Fallback preco_original via meta se estiver vazio
@@ -1110,7 +1110,7 @@ def _extract_from_soup(soup: BeautifulSoup, base_url: str, store_key: str = "oth
 
 async def get_page_html(url: str) -> tuple[str | None, str]:
     """
-    Pipeline Híbrido de Extração (V5 Hardened):
+    Pipeline Hibrido de Extracao (V5 Hardened):
     1. HTTPX Mobile (Fallback de Alta Qualidade)
     2. Requests Simples (Fallback)
     """
@@ -1126,7 +1126,7 @@ async def get_page_html(url: str) -> tuple[str | None, str]:
         }
         # Fallback de Alta Qualidade: Mobile User-Agent
         async with httpx.AsyncClient(timeout=10, follow_redirects=True, headers=mobile_headers) as client:
-            # Se for Amazon, tenta a versão /gp/aw/d/ que é mais leve e menos protegida
+            # Se for Amazon, tenta a versao /gp/aw/d/ que e mais leve e menos protegida
             target_url = url
             if "amazon.com.br" in url:
                 asin_match = re.search(r"/(?:dp|gp/product|aw/d)/([A-Z0-9]{10})", url)
@@ -1167,12 +1167,12 @@ def _normalize_amazon_url(url: str) -> str:
       - amazon.com.br/gp/aw/d/XXXXXXXXXX
       - amazon.com.br/exec/obidos/ASIN/XXXXXXXXXX
       - amazon.com.br/o/ASIN/XXXXXXXXXX
-      - amzn.to/XXXXX  (após resolução já foi convertido)
+      - amzn.to/XXXXX  (apos resolucao ja foi convertido)
     """
     if not url or "amazon" not in url.lower():
         return url
 
-    # Tenta extrair o ASIN (10 caracteres alfanuméricos) de vários formatos comuns
+    # Tenta extrair o ASIN (10 caracteres alfanumericos) de varios formatos comuns
     # Regex expandida para pegar em mais contextos (incluindo links patrocinados)
     asin_match = re.search(r"/(?:dp|gp/product|product-reviews|aw/d|vdp|d)/([A-Z0-9]{10})", url, re.I)
     if not asin_match:
@@ -1187,7 +1187,7 @@ def _normalize_amazon_url(url: str) -> str:
         asin = asin_match.group(1).upper()
         domain = "www.amazon.com.br" if "amazon.com.br" in url.lower() else "www.amazon.com"
         clean = f"https://{domain}/dp/{asin}"
-        logger.info(f"[AMAZON_NORM] ASIN extraído: {asin} -> {clean}")
+        logger.info(f"[AMAZON_NORM] ASIN extraido: {asin} -> {clean}")
         return clean
 
     # Sem ASIN identificado — retorna original
@@ -1196,20 +1196,20 @@ def _normalize_amazon_url(url: str) -> str:
 
 
 async def extract_product_data_v2(url: str) -> dict:
-    """Orquestrador do Pipeline Híbrido V5 (5 Camadas)."""
+    """Orquestrador do Pipeline Hibrido V5 (5 Camadas)."""
     from bot.utils.detect_store import detect_store
     from bot.utils.url_resolver import resolve_url
 
-    logger.info(f"[EXTRATOR] ── INÍCIO PIPELINE V5 ── {url[:80]}")
+    logger.info(f"[EXTRATOR] ── INICIO PIPELINE V5 ── {url[:80]}")
     
     result = {
         "store": "desconhecida", "store_key": "other",
         "final_url": url, "titulo": "Produto", "imagem": None,
-        "preco": "Preço não disponível", "preco_original": None,
+        "preco": "Preco nao disponivel", "preco_original": None,
         "source_method": "INICIANDO", "is_pix_price": False
     }
 
-    # Resolve encurtadores simples antes de começar
+    # Resolve encurtadores simples antes de comecar
     final_url = url
     try:
         # Resolve amzn.to, magalu.me e encurtadores comuns
@@ -1246,7 +1246,7 @@ async def extract_product_data_v2(url: str) -> dict:
             logger.warning("[EXTRATOR] Camada 0 (MAGALU): ❌ Falhou — caindo para Camada 1")
 
     elif store_key == "amazon":
-        # Tenta primeiro a Scrapingdog (Nova recomendação do usuário)
+        # Tenta primeiro a Scrapingdog (Nova recomendacao do usuario)
         logger.info("[EXTRATOR] Camada 0: Tentando Scrapingdog API...")
         api_data = await fetch_amazon_scrapingdog(final_url)
         
@@ -1260,13 +1260,13 @@ async def extract_product_data_v2(url: str) -> dict:
         try:
             from bot.services.amazon_api import amazon_api
             api_data = await amazon_api.get_product_details(final_url)
-            if api_data and api_data.get("preco") and api_data.get("preco") != "Preço não disponível":
+            if api_data and api_data.get("preco") and api_data.get("preco") != "Preco nao disponivel":
                 logger.info(f"[EXTRATOR] Camada 0b (AMAZON_API): ✅ Sucesso")
                 result.update(api_data)
                 return result
             elif api_data:
                 logger.warning("[EXTRATOR] Camada 0b (AMAZON_API): ⚠️ Dados parciais. Tentando scraping...")
-                result.update({k: v for k, v in api_data.items() if v and v != "Preço não disponível"})
+                result.update({k: v for k, v in api_data.items() if v and v != "Preco nao disponivel"})
         except Exception as e:
             logger.error(f"[EXTRATOR] Camada 0b (AMAZON_API): ❌ Erro: {e}")
 
@@ -1300,8 +1300,8 @@ async def extract_product_data_v2(url: str) -> dict:
         # 2. Parseamento Centralizado (BS4)
         data = _extract_from_soup(BeautifulSoup(html, "html.parser"), final_url, store_key)
         
-        # Merge de resultados se não estiver bloqueado no parser
-        # Merge de resultados se não estiver bloqueado no parser
+        # Merge de resultados se nao estiver bloqueado no parser
+        # Merge de resultados se nao estiver bloqueado no parser
         is_result_blocked = (data.get("source_method") == "BLOCKED")
         
         if not is_result_blocked:
@@ -1310,7 +1310,7 @@ async def extract_product_data_v2(url: str) -> dict:
             logger.info(f"[EXTRATOR] Camada {method}: ✅ Sucesso")
         else:
             result["source_method"] = f"{method}_BUT_BLOCKED"
-            logger.warning(f"[EXTRATOR] Camada {method}: ❌ Bloqueio detectado no conteúdo")
+            logger.warning(f"[EXTRATOR] Camada {method}: ❌ Bloqueio detectado no conteudo")
 
     # ── CAMADA 4: Fallback Seguro ──────────────────────────────────────────
     if not result.get("titulo") or result["titulo"] == "Produto":
@@ -1322,12 +1322,12 @@ async def extract_product_data_v2(url: str) -> dict:
         elif "mercadolivre" in final_url.lower():
             result["titulo"] = "Produto Mercado Livre"
         else:
-            result["titulo"] = "Produto Disponível"
+            result["titulo"] = "Produto Disponivel"
             
         if result["source_method"] == "FALHA_TOTAL":
             result["source_method"] = "FALLBACK_MINIMO"
 
-    # Blindagem final: garante contrato de saída completo e tipos corretos
+    # Blindagem final: garante contrato de saida completo e tipos corretos
     result = _validate_result(result)
 
     logger.info(f"[EXTRATOR] Metodo final usado: {result['source_method']}")

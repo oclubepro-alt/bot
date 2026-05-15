@@ -8,16 +8,16 @@ logger = logging.getLogger(__name__)
 
 async def publish_offer(bot: Bot, copies: str | dict, photo: str | None = None, affiliate_url: str | None = None) -> None:
     """
-    Roteador responsável por aplicar o link de afiliado final e publicar.
-    Sempre passa as cópias pela função aplicar_link_afiliado antes do disparo.
+    Roteador responsavel por aplicar o link de afiliado final e publicar.
+    Sempre passa as copias pela funcao aplicar_link_afiliado antes do disparo.
     """
-    logger.info("[PUBLISHER_ROUTER] Iniciando rotina de publicação...")
+    logger.info("[PUBLISHER_ROUTER] Iniciando rotina de publicacao...")
     
     # Normaliza para dict se for string
     if isinstance(copies, str):
         copies = {"telegram": copies, "whatsapp": None}
 
-    # Se não veio o link explicitamente, tenta pegar do dicionário de cópias
+    # Se nao veio o link explicitamente, tenta pegar do dicionario de copias
     if not affiliate_url and isinstance(copies, dict):
         affiliate_url = copies.get("short_url")
 
@@ -37,5 +37,5 @@ async def publish_offer(bot: Bot, copies: str | dict, photo: str | None = None, 
     
     from bot.services.metrics_service import log_event
     log_event("published")
-    logger.info("[PUBLISHER_ROUTER] Rotina de publicação concluída.")
+    logger.info("[PUBLISHER_ROUTER] Rotina de publicacao concluida.")
     return res

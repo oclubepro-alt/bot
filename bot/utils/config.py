@@ -1,5 +1,5 @@
 """
-config.py - Carrega e valida variáveis de ambiente do .env
+config.py - Carrega e valida variaveis de ambiente do .env
 """
 import os
 import logging
@@ -9,7 +9,7 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
-# ID Único desta execução para detectar conflitos de instâncias duplicadas
+# ID Unico desta execucao para detectar conflitos de instâncias duplicadas
 import random
 import string
 from datetime import datetime
@@ -30,17 +30,17 @@ ML_ACCESS_TOKEN: str = os.getenv("ML_ACCESS_TOKEN", "").strip()
 ML_REFRESH_TOKEN: str = os.getenv("ML_REFRESH_TOKEN", "").strip()
 
 def _require(var: str) -> str:
-    """Lê variável obrigatória ou lança erro claro."""
+    """Lê variavel obrigatoria ou lanca erro claro."""
     value = os.getenv(var, "").strip()
     if not value:
         raise EnvironmentError(
-            f"[CONFIG] Variável obrigatória '{var}' não encontrada no .env"
+            f"[CONFIG] Variavel obrigatoria '{var}' nao encontrada no .env"
         )
     return value
 
 
 def _parse_admin_ids(raw: str) -> list[int]:
-    """Converte string de IDs separados por vírgula em lista de inteiros."""
+    """Converte string de IDs separados por virgula em lista de inteiros."""
     ids = []
     for part in raw.split(","):
         part = part.strip()
@@ -48,14 +48,14 @@ def _parse_admin_ids(raw: str) -> list[int]:
             try:
                 ids.append(int(part))
             except ValueError:
-                logger.warning(f"[CONFIG] ADMIN_IDS: valor inválido ignorado → '{part}'")
+                logger.warning(f"[CONFIG] ADMIN_IDS: valor invalido ignorado → '{part}'")
     return ids
 
 
-# ── Variáveis públicas ──────────────────────────────────────────────────────
+# ── Variaveis publicas ──────────────────────────────────────────────────────
 
 _raw_token = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
-# Remove aspas se o usuário colou com aspas por engano no Railway
+# Remove aspas se o usuario colou com aspas por engano no Railway
 if (_raw_token.startswith('"') and _raw_token.endswith('"')) or \
    (_raw_token.startswith("'") and _raw_token.endswith("'")):
     TELEGRAM_BOT_TOKEN = _raw_token[1:-1].strip()
@@ -63,7 +63,7 @@ else:
     TELEGRAM_BOT_TOKEN = _raw_token
 
 if not TELEGRAM_BOT_TOKEN:
-    raise EnvironmentError("[CONFIG] TELEGRAM_BOT_TOKEN não encontrado!")
+    raise EnvironmentError("[CONFIG] TELEGRAM_BOT_TOKEN nao encontrado!")
 TELEGRAM_CHANNEL_ID: str = _require("TELEGRAM_CHANNEL_ID")
 OPENAI_API_KEY: str = _require("OPENAI_API_KEY")
 OPENAI_MODEL: str = os.getenv("OPENAI_MODEL", "gpt-4o-mini").strip()
@@ -80,25 +80,25 @@ ADMIN_IDS: list[int] = _parse_admin_ids(_raw_admins) if _raw_admins else []
 
 if not ADMIN_IDS:
     logger.warning(
-        "[CONFIG] ADMIN_IDS está vazio! Nenhum usuário poderá publicar ofertas."
+        "[CONFIG] ADMIN_IDS esta vazio! Nenhum usuario podera publicar ofertas."
     )
 else:
     logger.info(f"[CONFIG] Admins carregados: {ADMIN_IDS}")
 
-logger.info(f"[CONFIG] Canal de publicação: {TELEGRAM_CHANNEL_ID}")
+logger.info(f"[CONFIG] Canal de publicacao: {TELEGRAM_CHANNEL_ID}")
 logger.info(f"[CONFIG] Modelo OpenAI: {OPENAI_MODEL}")
 
-# ── Fase 3: Scheduler e aprovação ───────────────────────────────────────────
-# Intervalo em minutos para varredura automática de fontes
+# ── Fase 3: Scheduler e aprovacao ───────────────────────────────────────────
+# Intervalo em minutos para varredura automatica de fontes
 _raw_interval = os.getenv("MONITOR_INTERVAL_MINUTES", "60").strip()
 try:
     MONITOR_INTERVAL_MINUTES: int = int(_raw_interval)
 except ValueError:
     MONITOR_INTERVAL_MINUTES = 60
-    logger.warning("[CONFIG] MONITOR_INTERVAL_MINUTES inválido, usando 60 minutos.")
+    logger.warning("[CONFIG] MONITOR_INTERVAL_MINUTES invalido, usando 60 minutos.")
 
-# Se True, publica automaticamente sem aguardar aprovação do admin. (Fase 4)
-# PADRÃO DE SEGURANÇA: false — admin revisa cada oferta antes de publicar
+# Se True, publica automaticamente sem aguardar aprovacao do admin. (Fase 4)
+# PADRAO DE SEGURANCA: false — admin revisa cada oferta antes de publicar
 # Para mudar: defina AUTO_APPROVE=true no Railway (ou .env)
 _raw_auto = os.getenv("AUTO_APPROVE", "false").strip().lower()
 AUTO_APPROVE: bool = _raw_auto in ("1", "true", "yes")
@@ -109,11 +109,11 @@ SCRAPINGDOG_API_KEY: str = os.getenv("SCRAPINGDOG_API_KEY", "").strip()
 
 if AUTO_APPROVE:
     logger.warning(
-        "[CONFIG] ⚠️  AUTO_APPROVE=true — ATENÇÃO: as ofertas do monitoramento "
-        "serão publicadas AUTOMATICAMENTE no canal SEM revisão do admin! "
-        "Para revisão manual, defina AUTO_APPROVE=false no Railway."
+        "[CONFIG] ⚠️  AUTO_APPROVE=true — ATENCAO: as ofertas do monitoramento "
+        "serao publicadas AUTOMATICAMENTE no canal SEM revisao do admin! "
+        "Para revisao manual, defina AUTO_APPROVE=false no Railway."
     )
 else:
-    logger.info("[CONFIG] ✅ AUTO_APPROVE=false — todas as ofertas passarão pela revisão do admin.")
+    logger.info("[CONFIG] ✅ AUTO_APPROVE=false — todas as ofertas passarao pela revisao do admin.")
 
 logger.info(f"[CONFIG] Scheduler: a cada {MONITOR_INTERVAL_MINUTES} min | Auto-approve: {AUTO_APPROVE}")

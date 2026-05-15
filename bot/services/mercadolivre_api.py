@@ -1,5 +1,5 @@
 """
-mercadolivre_api.py - Integração com API Oficial do Mercado Livre
+mercadolivre_api.py - Integracao com API Oficial do Mercado Livre
 Focado em extrair dados oficiais sem risco de bloqueio de scraping.
 """
 import os
@@ -25,13 +25,13 @@ class MercadoLivreAPI:
         self._token_expires = None
 
     async def _get_access_token(self) -> str | None:
-        """Obtém ou renova o token OAuth2."""
-        # Se já temos um token válido em memória, usa ele
+        """Obtem ou renova o token OAuth2."""
+        # Se ja temos um token valido em memoria, usa ele
         if self._access_token and self._token_expires and datetime.now() < self._token_expires:
             return self._access_token
 
         if not self.app_id or not self.client_secret:
-            logger.error("[ML_API] ❌ App ID ou Secret não configurados!")
+            logger.error("[ML_API] ❌ App ID ou Secret nao configurados!")
             return None
 
         url = "https://api.mercadolibre.com/oauth/token"
@@ -60,7 +60,7 @@ class MercadoLivreAPI:
                         # Se falhou, limpa o refresh_token para tentar o inicial ou client_credentials
                         self._refresh_token = None
             except Exception as e:
-                logger.error(f"[ML_API] ❌ Exceção ao renovar token: {e}")
+                logger.error(f"[ML_API] ❌ Excecao ao renovar token: {e}")
 
         # 2. Se temos o TG_TOKEN (code) inicial, tenta trocar por tokens
         if ML_TG_TOKEN and not self._access_token:
@@ -86,9 +86,9 @@ class MercadoLivreAPI:
                     else:
                         logger.warning(f"[ML_API] ⚠️ Falha ao trocar TG_TOKEN: {resp.text}")
             except Exception as e:
-                logger.error(f"[ML_API] ❌ Exceção ao trocar TG_TOKEN: {e}")
+                logger.error(f"[ML_API] ❌ Excecao ao trocar TG_TOKEN: {e}")
 
-        # 3. Fallback para client_credentials (dados públicos)
+        # 3. Fallback para client_credentials (dados publicos)
         logger.info("[ML_API] 🔑 Tentando client_credentials (fallback)...")
         payload = {
             "grant_type": "client_credentials",
@@ -105,15 +105,15 @@ class MercadoLivreAPI:
                     logger.info("[ML_API] ✅ Token obtido via client_credentials")
                     return self._access_token
                 else:
-                    logger.error(f"[ML_API] ❌ Erro total na autenticação ML: {resp.text}")
+                    logger.error(f"[ML_API] ❌ Erro total na autenticacao ML: {resp.text}")
         except Exception as e:
-            logger.error(f"[ML_API] ❌ Exceção client_credentials: {e}")
+            logger.error(f"[ML_API] ❌ Excecao client_credentials: {e}")
 
         return None
 
     def _extract_ml_id(self, url: str) -> str | None:
         """Extrai o ID do item do Mercado Livre (ex: MLB12345678)."""
-        # Padrão: MLB-12345678, MLB12345678, etc.
+        # Padrao: MLB-12345678, MLB12345678, etc.
         match = re.search(r"(ML[A-Z]\-?\d{8,15})", url, re.I)
         if match:
             return match.group(1).replace("-", "")
@@ -123,7 +123,7 @@ class MercadoLivreAPI:
         """Consulta detalhes do produto via API do Mercado Livre."""
         item_id = self._extract_ml_id(url)
         if not item_id:
-            logger.warning(f"[ML_API] ⚠️ ID não encontrado na URL: {url[:60]}")
+            logger.warning(f"[ML_API] ⚠️ ID nao encontrado na URL: {url[:60]}")
             return None
         
         token = await self._get_access_token()
@@ -142,7 +142,7 @@ class MercadoLivreAPI:
                     logger.error(f"[ML_API] ❌ Erro API {resp.status_code}: {resp.text}")
                     return None
         except Exception as e:
-            logger.error(f"[ML_API] ❌ Exceção ML Items API: {e}")
+            logger.error(f"[ML_API] ❌ Excecao ML Items API: {e}")
             return None
 
     def _map_response(self, data: dict) -> dict:
@@ -151,7 +151,7 @@ class MercadoLivreAPI:
         
         product = {
             "titulo": data.get("title", "Produto Mercado Livre"),
-            "preco": _clean_price(str(data.get("price"))) if data.get("price") else "Preço não disponível",
+            "preco": _clean_price(str(data.get("price"))) if data.get("price") else "Preco nao disponivel",
             "preco_original": _clean_price(str(data.get("original_price"))) if data.get("original_price") else None,
             "imagem": data.get("thumbnail") or (data.get("pictures", [{}])[0].get("url") if data.get("pictures") else None),
             "store": "Mercado Livre",
@@ -159,12 +159,12 @@ class MercadoLivreAPI:
             "source_method": "ML_API_OFICIAL"
         }
         
-        # Tenta pegar uma imagem maior se possível
+        # Tenta pegar uma imagem maior se possivel
         if data.get("pictures") and len(data["pictures"]) > 0:
             # Pega a primeira imagem de alta qualidade
             product["imagem"] = data["pictures"][0].get("secure_url") or data["pictures"][0].get("url")
 
-        logger.info(f"[ML_API] Mapeado: {product['titulo'][:40]} | Preço: {product['preco']}")
+        logger.info(f"[ML_API] Mapeado: {product['titulo'][:40]} | Preco: {product['preco']}")
         return product
 
 # Instância global

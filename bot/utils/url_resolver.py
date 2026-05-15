@@ -30,7 +30,7 @@ def extract_from_query(url: str) -> str:
         if actual_key:
             potential_url = unquote(qs[actual_key][0])
             if potential_url.startswith("http"):
-                logger.info(f"[URL_RESOLVER] URL extraída do parâmetro '{actual_key}': {potential_url[:60]}...")
+                logger.info(f"[URL_RESOLVER] URL extraida do parâmetro '{actual_key}': {potential_url[:60]}...")
                 return potential_url
             
     return url
@@ -47,7 +47,7 @@ def resolve_url(url: str, timeout: int = 12) -> str:
             "https": HTTP_PROXY,
         } if HTTP_PROXY else None
         
-        # Usamos GET porque HEAD frequentemente é bloqueado ou ignorado por shorteners
+        # Usamos GET porque HEAD frequentemente e bloqueado ou ignorado por shorteners
         resp = requests.get(
             url,
             headers=_HEADERS,
@@ -65,7 +65,7 @@ def resolve_url(url: str, timeout: int = 12) -> str:
         if final and final != url:
             logger.info(f"[URL_RESOLVER] ✅ GET OK → {final[:100]}")
         else:
-            logger.info("[URL_RESOLVER] GET: URL não redirecionada (já é final).")
+            logger.info("[URL_RESOLVER] GET: URL nao redirecionada (ja e final).")
             final = url
         return final
     except Exception as e_get:

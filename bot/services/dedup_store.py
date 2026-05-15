@@ -1,5 +1,5 @@
 """
-dedup_store.py - Controle de links já vistos para evitar postagens duplicadas.
+dedup_store.py - Controle de links ja vistos para evitar postagens duplicadas.
 Armazena em data/seen_links.json (lista de URLs).
 """
 import json
@@ -15,7 +15,7 @@ _DATA_PATH = Path(__file__).resolve().parents[2] / "data" / "seen_links.json"
 
 
 def _load() -> set[str]:
-    """Carrega o conjunto de links já vistos do arquivo JSON."""
+    """Carrega o conjunto de links ja vistos do arquivo JSON."""
     try:
         if _DATA_PATH.exists():
             data = json.loads(_DATA_PATH.read_text(encoding="utf-8"))
@@ -38,10 +38,10 @@ def _save(seen: set[str]) -> None:
 
 
 def normalize_url(url: str) -> str:
-    """Normaliza a URL para comparação (remove UTMs, mobile prefixes, etc)."""
+    """Normaliza a URL para comparacao (remove UTMs, mobile prefixes, etc)."""
     if not url: return ""
     try:
-        # Lowercase, remove excesso de espaços
+        # Lowercase, remove excesso de espacos
         url = url.strip().lower()
 
         # Especial para Amazon: Extrair o ASIN (B0...)
@@ -63,13 +63,13 @@ def normalize_url(url: str) -> str:
         return url
 
 def is_seen(url: str) -> bool:
-    """Retorna True se o link (normalizado) já foi processado antes."""
+    """Retorna True se o link (normalizado) ja foi processado antes."""
     norm = normalize_url(url)
     return norm in _load()
 
 
 def mark_seen(url: str) -> None:
-    """Marca um link como já visto (usando forma normalizada)."""
+    """Marca um link como ja visto (usando forma normalizada)."""
     norm = normalize_url(url)
     seen = _load()
     if norm not in seen:

@@ -1,6 +1,6 @@
 """
 source_monitor.py - Monitora fontes cadastradas em data/sources.json,
-coleta links de produtos encontrados e retorna os novos (não vistos).
+coleta links de produtos encontrados e retorna os novos (nao vistos).
 """
 import logging
 import json
@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 _SOURCES_PATH = Path(__file__).resolve().parents[2] / "data" / "sources.json"
 
-# Padrões de URL que sugerem uma página de produto individual
+# Padroes de URL que sugerem uma pagina de produto individual
 _PRODUCT_URL_PATTERNS = re.compile(
     r"(/produto|/p/|/item/|/pd/|/product|/oferta|/-/|/dp/|/gp/|jm/|[?&]id=|/MLB-|/shopee\.com\.br/.*-i\.)",
     re.IGNORECASE
@@ -42,7 +42,7 @@ def load_sources() -> list[dict]:
             content = _SOURCES_PATH.read_text(encoding="utf-8")
             sources = json.loads(content)
             
-            # FILTRO EXCLUSIVO AMAZON (pedido do usuário)
+            # FILTRO EXCLUSIVO AMAZON (pedido do usuario)
             active = [
                 s for s in sources 
                 if s.get("active", False) and "amazon" in s.get("url", "").lower()
@@ -51,25 +51,25 @@ def load_sources() -> list[dict]:
             logger.info(f"[MONITOR] Sucesso: {len(sources)} totais, {len(active)} ativas (apenas Amazon).")
             return active
         else:
-            logger.error(f"[MONITOR] ERRO: Arquivo não existe em {_SOURCES_PATH}")
+            logger.error(f"[MONITOR] ERRO: Arquivo nao existe em {_SOURCES_PATH}")
     except Exception as e:
         logger.error(f"[MONITOR] Erro ao carregar sources.json: {e}")
     return []
 
 
 def _is_product_link(url: str) -> bool:
-    """Heurística simples para identificar links de produto vs links de navegação."""
+    """Heuristica simples para identificar links de produto vs links de navegacao."""
     return bool(_PRODUCT_URL_PATTERNS.search(url))
 
 
 async def _extract_amazon_links_from_soup(soup: BeautifulSoup, base_url: str) -> list[str]:
     """
     Extrai links de produtos da Amazon de forma robusta, 
-    olhando para ASINs e padrões de widgets de ofertas.
+    olhando para ASINs e padroes de widgets de ofertas.
     """
     collected = set()
     
-    # 1. Busca por links diretos que contenham ASIN (padrão /dp/ ou /gp/product/)
+    # 1. Busca por links diretos que contenham ASIN (padrao /dp/ ou /gp/product/)
     # Ex: https://www.amazon.com.br/dp/B0C2RWN59H
     for tag in soup.find_all("a", href=True):
         href = tag["href"]
@@ -93,12 +93,12 @@ async def _extract_amazon_links_from_soup(soup: BeautifulSoup, base_url: str) ->
         if len(asin) == 10 and asin.isalnum():
             collected.add(f"https://www.amazon.com.br/dp/{asin}")
 
-    # 3. Busca em widgets de deals (às vezes o link está em um data-attribute)
-    # Procuramos por qualquer coisa que pareça um ASIN de 10 caracteres em atributos
+    # 3. Busca em widgets de deals (às vezes o link esta em um data-attribute)
+    # Procuramos por qualquer coisa que pareca um ASIN de 10 caracteres em atributos
     for tag in soup.find_all(True):
         for attr, value in tag.attrs.items():
             if isinstance(value, str) and len(value) == 10 and value.isalnum() and value.isupper():
-                # Heurística: ASINs da Amazon BR costumam começar com B0
+                # Heuristica: ASINs da Amazon BR costumam comecar com B0
                 if value.startswith("B0") or value.startswith("85"):
                     collected.add(f"https://www.amazon.com.br/dp/{value}")
 
@@ -118,7 +118,7 @@ async def _collect_links_from_page(source_url: str) -> list[str]:
         html = None
         if is_amazon:
             logger.info(f"[MONITOR] 🛡️ Usando pipeline robusto para fonte Amazon: {source_url[:50]}")
-            # get_page_html já lida com ScraperAPI e Playwright
+            # get_page_html ja lida com ScraperAPI e Playwright
             html, method = await get_page_html(source_url)
         else:
             async with httpx.AsyncClient(headers=_HEADERS, timeout=20, follow_redirects=True) as client:
@@ -133,11 +133,11 @@ async def _collect_links_from_page(source_url: str) -> list[str]:
         soup = BeautifulSoup(html, "html.parser")
         
         if is_amazon:
-            # Lógica especializada para Amazon
+            # Logica especializada para Amazon
             amazon_links = await _extract_amazon_links_from_soup(soup, base)
             collected.extend(amazon_links)
         else:
-            # Lógica genérica para outras lojas
+            # Logica generica para outras lojas
             seen_hrefs: set[str] = set()
             for tag in soup.find_all("a", href=True):
                 href = tag["href"].strip()

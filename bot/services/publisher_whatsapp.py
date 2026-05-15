@@ -1,6 +1,6 @@
 """
-publisher_whatsapp.py - Responsável por enviar mensagens para o WhatsApp (via API externa)
-Suporta Evolution API, Uazapi ou similares que usem requisições POST JSON.
+publisher_whatsapp.py - Responsavel por enviar mensagens para o WhatsApp (via API externa)
+Suporta Evolution API, Uazapi ou similares que usem requisicoes POST JSON.
 """
 import logging
 import os
@@ -9,7 +9,7 @@ from bot.utils.whatsapp_store import get_whatsapp_channels
 
 logger = logging.getLogger(__name__)
 
-# Configurações da API de WhatsApp (Evolution API / Uazapi)
+# Configuracoes da API de WhatsApp (Evolution API / Uazapi)
 WPP_API_URL = os.getenv("WPP_API_URL", "").strip().rstrip("/")
 WPP_API_KEY = os.getenv("WPP_API_KEY", "").strip()
 WPP_INSTANCE = os.getenv("WPP_INSTANCE", "achadinhos").strip()
@@ -19,7 +19,7 @@ async def publish_to_whatsapp(message_text: str, photo_url: str | None = None) -
     Envia a oferta para todos os destinos WhatsApp cadastrados.
     """
     if not WPP_API_URL or not WPP_API_KEY:
-        logger.warning("[PUBLISHER_WPP] API de WhatsApp não configurada no .env. Pulando.")
+        logger.warning("[PUBLISHER_WPP] API de WhatsApp nao configurada no .env. Pulando.")
         return False
 
     destinos = get_whatsapp_channels()
@@ -37,7 +37,7 @@ async def publish_to_whatsapp(message_text: str, photo_url: str | None = None) -
         logger.info(f"[PUBLISHER_WPP] Enviando para {dest['name']} ({jid})...")
         
         try:
-            # Endpoint padrão para envio de texto ou imagem (Evolution API style)
+            # Endpoint padrao para envio de texto ou imagem (Evolution API style)
             if photo_url:
                 endpoint = f"{WPP_API_URL}/message/sendMedia/{WPP_INSTANCE}"
                 payload = {
@@ -72,7 +72,7 @@ async def publish_to_whatsapp(message_text: str, photo_url: str | None = None) -
                 sucesso_total = False
                 
         except Exception as e:
-            logger.error(f"[PUBLISHER_WPP] Exceção ao enviar para {jid}: {e}")
+            logger.error(f"[PUBLISHER_WPP] Excecao ao enviar para {jid}: {e}")
             sucesso_total = False
 
     return sucesso_total

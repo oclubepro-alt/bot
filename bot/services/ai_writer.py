@@ -1,5 +1,5 @@
 """
-ai_writer.py - Integração com OpenAI para geração de legenda da oferta
+ai_writer.py - Integracao com OpenAI para geracao de legenda da oferta
 """
 import logging
 import httpx
@@ -9,7 +9,7 @@ from bot.utils.config import OPENAI_API_KEY, OPENAI_MODEL, OPENAI_BASE_URL, HTTP
 
 logger = logging.getLogger(__name__)
 
-# Cliente assíncrono (reutilizável) suportando fallback de URL
+# Cliente assincrono (reutilizavel) suportando fallback de URL
 client_kwargs = {"api_key": OPENAI_API_KEY}
 if OPENAI_BASE_URL:
     client_kwargs["base_url"] = OPENAI_BASE_URL
@@ -20,19 +20,19 @@ if HTTP_PROXY:
 _client = AsyncOpenAI(**client_kwargs)
 
 _SYSTEM_PROMPT = """
-Você é um copywriter especialista em grupos de "achadinhos" do Telegram.
-Sua missão: escrever legendas profissionais, curtas e extremamente persuasivas para ofertas.
+Você e um copywriter especialista em grupos de "achadinhos" do Telegram.
+Sua missao: escrever legendas profissionais, curtas e extremamente persuasivas para ofertas.
 
 ESTRUTURA DESEJADA:
-1. Uma frase curta de impacto/introdução (ex: "A revolução na sua cozinha!", "O melhor custo-benefício do ano!").
-2. De 2 a 3 tópicos (usando o emoji ✅) destacando os principais diferenciais ou benefícios do produto.
+1. Uma frase curta de impacto/introducao (ex: "A revolucao na sua cozinha!", "O melhor custo-beneficio do ano!").
+2. De 2 a 3 topicos (usando o emoji ✅) destacando os principais diferenciais ou beneficios do produto.
 
-REGRAS OBRIGATÓRIAS:
+REGRAS OBRIGATORIAS:
 - Escrever em português do Brasil.
 - Tom entusiasta, mas sem exageros infantis.
-- NÃO invente preços, fretes nem links.
-- NÃO altere o nome do produto nem a loja.
-- NÃO use markdown com asteriscos (ex: **texto** é proibido).
+- NAO invente precos, fretes nem links.
+- NAO altere o nome do produto nem a loja.
+- NAO use markdown com asteriscos (ex: **texto** e proibido).
 - Seja breve: o texto completo deve ter entre 3 a 6 linhas.
 """.strip()
 
@@ -47,15 +47,15 @@ async def generate_caption(
     """
     Chama o GPT para gerar uma legenda da oferta.
     """
-    descricao_extra = f"\nInformação adicional: {descricao}" if descricao else ""
-    info_desconto = f"\nPreço Original: {preco_original}\nPreço Atual: {preco}" if preco_original else f"\nPreço: {preco}"
+    descricao_extra = f"\nInformacao adicional: {descricao}" if descricao else ""
+    info_desconto = f"\nPreco Original: {preco_original}\nPreco Atual: {preco}" if preco_original else f"\nPreco: {preco}"
 
     user_prompt = (
         f"Produto: {nome}"
         f"{info_desconto}\n"
         f"Loja: {loja}"
         f"{descricao_extra}\n\n"
-        "Se houver preço original e atual, destaque o DESCONTO no texto de forma empolgante.\n"
+        "Se houver preco original e atual, destaque o DESCONTO no texto de forma empolgante.\n"
         "Escreva a legenda da oferta agora (sem asteriscos):"
     )
 
@@ -85,11 +85,11 @@ async def generate_caption(
 
 
 def _fallback_caption(nome: str, preco: str, loja: str, preco_original: str | None = None) -> str:
-    """Texto padrão usado quando a IA não está disponível."""
-    logger.warning("[IA] Usando legenda padrão (fallback)")
+    """Texto padrao usado quando a IA nao esta disponivel."""
+    logger.warning("[IA] Usando legenda padrao (fallback)")
     return (
-        "Oportunidade incrível detectada! Aproveite esse preço especial por tempo limitado.\n\n"
+        "Oportunidade incrivel detectada! Aproveite esse preco especial por tempo limitado.\n\n"
         "✅ Produto original\n"
-        "✅ Melhor preço do dia\n"
+        "✅ Melhor preco do dia\n"
         "✅ Entrega garantida"
     )

@@ -12,7 +12,7 @@ from bot.utils.constants import CB_MENU_PRINCIPAL
 from bot.handlers import build_main_handler, build_review_queue_handler
 from bot.services.scheduler_service import setup_scheduler
 
-# Garante saída no Windows com utf-8
+# Garante saida no Windows com utf-8
 if sys.stdout and hasattr(sys.stdout, 'reconfigure'):
     sys.stdout.reconfigure(encoding='utf-8')
 
@@ -37,11 +37,11 @@ def main() -> None:
     from bot.utils.config import INSTANCE_ID
     logger.info("=" * 60)
     logger.info(f" 🛒 BOT DE ACHADINHOS — #{INSTANCE_ID}")
-    logger.info(" 🚀 VERSÃO: V5 — BYPASS RADWARE CARREGADO")
+    logger.info(" 🚀 VERSAO: V5 — BYPASS RADWARE CARREGADO")
     logger.info("=" * 60)
 
     if not TELEGRAM_BOT_TOKEN:
-        logger.error("[ERRO] TELEGRAM_BOT_TOKEN não encontrado!")
+        logger.error("[ERRO] TELEGRAM_BOT_TOKEN nao encontrado!")
         sys.exit(1)
 
     app_builder = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN)
@@ -49,18 +49,18 @@ def main() -> None:
     if HTTP_PROXY:
         try:
             logger.info(f"[PROXY] Configurando proxy: {HTTP_PROXY}")
-            # Cortesia para evitar erros de conexão se o proxy for inválido
+            # Cortesia para evitar erros de conexao se o proxy for invalido
             app_builder.proxy(HTTP_PROXY).get_updates_proxy(HTTP_PROXY)
         except Exception as e:
             logger.error(f"[PROXY] Erro ao configurar proxy: {e}")
     else:
-        logger.info("[PROXY] Nenhum proxy configurado. Usando conexão direta.")
+        logger.info("[PROXY] Nenhum proxy configurado. Usando conexao direta.")
         
     app = app_builder.build()
 
-    logger.info("Bot construído com sucesso. Registrando handlers...")
+    logger.info("Bot construido com sucesso. Registrando handlers...")
 
-    # Handlers básicos explícitos para garantir resposta (Requisito de Estabilidade)
+    # Handlers basicos explicitos para garantir resposta (Requisito de Estabilidade)
     from bot.handlers.start import (
         start_command, test_id_command, status_command, check_config_command, test_link_command, stats_command
     )
@@ -121,11 +121,11 @@ def main() -> None:
     ), group=1)
     app.add_handler(MessageHandler((filters.TEXT | filters.PHOTO) & ~filters.COMMAND, receive_correction), group=2)
 
-    # Handler de aprovação manual das ofertas automáticas (Fase 3)
+    # Handler de aprovacao manual das ofertas automaticas (Fase 3)
     # Registrado FORA do ConversationHandler para funcionar a qualquer momento
     app.add_handler(build_review_queue_handler())
 
-    # Handler do fluxo de configuração de afiliados
+    # Handler do fluxo de configuracao de afiliados
     from bot.handlers.affiliate_config import (
         start_config_afiliado, receber_selecao_loja, receber_credencial, cancelar_config,
         SELECIONAR_LOJA, DIGITAR_CREDENCIAL, CB_CANCELAR_CONFIG
@@ -150,20 +150,20 @@ def main() -> None:
     async def global_error_handler(update, context):
         from telegram.error import Conflict, NetworkError
         if isinstance(context.error, Conflict):
-            logger.error("[CONFLITO] ❌ Instância duplicada detectada! Verifique se seu bot local está desligado.")
+            logger.error("[CONFLITO] ❌ Instância duplicada detectada! Verifique se seu bot local esta desligado.")
         elif isinstance(context.error, NetworkError):
             logger.warning(f"[REDE] Erro de rede: {context.error}")
         else:
-            logger.error(f"[ERRO GERAL] Exceção não tratada: {context.error}", exc_info=context.error)
+            logger.error(f"[ERRO GERAL] Excecao nao tratada: {context.error}", exc_info=context.error)
 
     app.add_error_handler(global_error_handler)
     app.add_handler(config_handler)
 
     # Callback CATCH-ALL para voltar ao menu principal de qualquer lugar (Failsafe)
-    # Deve ficar por último para não interceptar ConversationHandlers
+    # Deve ficar por ultimo para nao interceptar ConversationHandlers
     app.add_handler(CallbackQueryHandler(start_command, pattern=r"^(menu_principal|monitor_voltar|cancelar_config_afiliado|encam_cancelar|back_to_main)$"))
 
-    # Iniciar o scheduler para o monitor automático rodar em background
+    # Iniciar o scheduler para o monitor automatico rodar em background
     setup_scheduler(app)
 
     logger.info("[APP] Handlers e scheduler registrados. Iniciando polling...")
@@ -174,7 +174,7 @@ def main() -> None:
     import time
     import signal
     
-    logger.info("[ESTABILIDADE] Aguardando 10 segundos para garantir limpeza de conexões antigas...")
+    logger.info("[ESTABILIDADE] Aguardando 10 segundos para garantir limpeza de conexoes antigas...")
     time.sleep(10)
     
     def handle_signal(sig, frame):

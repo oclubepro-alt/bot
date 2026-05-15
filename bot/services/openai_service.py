@@ -1,5 +1,5 @@
 """
-openai_service.py - Integração com OpenAI para geração de legenda da oferta
+openai_service.py - Integracao com OpenAI para geracao de legenda da oferta
 """
 import logging
 import httpx
@@ -9,7 +9,7 @@ from bot.utils.config import OPENAI_API_KEY, OPENAI_MODEL, HTTP_PROXY
 
 logger = logging.getLogger(__name__)
 
-# Cliente assíncrono (reutilizável)
+# Cliente assincrono (reutilizavel)
 client_kwargs = {
     "api_key": OPENAI_API_KEY,
 }
@@ -19,18 +19,18 @@ if HTTP_PROXY:
 _client = AsyncOpenAI(**client_kwargs)
 
 _SYSTEM_PROMPT = """
-Você é um copywriter especialista em grupos de "achadinhos" do Telegram.
-Sua missão: escrever legendas curtas, envolventes e autênticas para ofertas.
+Você e um copywriter especialista em grupos de "achadinhos" do Telegram.
+Sua missao: escrever legendas curtas, envolventes e autênticas para ofertas.
 
-REGRAS OBRIGATÓRIAS:
-- Máximo 5 linhas
+REGRAS OBRIGATORIAS:
+- Maximo 5 linhas
 - Tom informal e animado (como um amigo compartilhando uma oferta)
-- Destaque o preço e o benefício principal
-- CTA leve no final (ex: "Corre!" / "Vale muito!" / "Não perde!")
-- NÃO invente informações que não foram fornecidas
-- NÃO inclua o link (ele será adicionado automaticamente)
-- NÃO repita o nome do produto de forma robótica
-- NÃO use markdown com asteriscos — escreva texto limpo
+- Destaque o preco e o beneficio principal
+- CTA leve no final (ex: "Corre!" / "Vale muito!" / "Nao perde!")
+- NAO invente informacoes que nao foram fornecidas
+- NAO inclua o link (ele sera adicionado automaticamente)
+- NAO repita o nome do produto de forma robotica
+- NAO use markdown com asteriscos — escreva texto limpo
 """.strip()
 
 
@@ -42,13 +42,13 @@ async def generate_caption(
 ) -> str:
     """
     Chama o GPT para gerar uma legenda da oferta.
-    Retorna a legenda gerada ou um texto padrão se a IA falhar.
+    Retorna a legenda gerada ou um texto padrao se a IA falhar.
     """
-    descricao_extra = f"\nInformação adicional: {descricao}" if descricao else ""
+    descricao_extra = f"\nInformacao adicional: {descricao}" if descricao else ""
 
     user_prompt = (
         f"Produto: {nome}\n"
-        f"Preço: {preco}\n"
+        f"Preco: {preco}\n"
         f"Loja: {loja}"
         f"{descricao_extra}\n\n"
         "Escreva a legenda da oferta agora:"
@@ -80,9 +80,9 @@ async def generate_caption(
 
 
 def _fallback_caption(nome: str, preco: str, loja: str) -> str:
-    """Texto padrão usado quando a IA não está disponível."""
-    logger.warning("[IA] Usando legenda padrão (fallback)")
+    """Texto padrao usado quando a IA nao esta disponivel."""
+    logger.warning("[IA] Usando legenda padrao (fallback)")
     return (
-        f"Encontramos uma oferta incrível de {nome} por apenas {preco} na {loja}!\n"
-        "Essa é uma oportunidade que não dá pra perder. Corre antes que acabe! 🏃‍♂️"
+        f"Encontramos uma oferta incrivel de {nome} por apenas {preco} na {loja}!\n"
+        "Essa e uma oportunidade que nao da pra perder. Corre antes que acabe! 🏃‍♂️"
     )

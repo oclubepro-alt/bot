@@ -1,5 +1,5 @@
 """
-link_converter.py - Serviço para converter e encurtar links em blocos de texto
+link_converter.py - Servico para converter e encurtar links em blocos de texto
 """
 import re
 import logging
@@ -18,7 +18,7 @@ URL_REGEX = re.compile(
 async def convert_links_in_text(text: str) -> str:
     """
     Identifica URLs no texto, resolve, aplica afiliado e encurta.
-    Retorna o texto com os links substituídos.
+    Retorna o texto com os links substituidos.
     """
     if not text:
         return text
@@ -53,8 +53,8 @@ async def convert_links_in_text(text: str) -> str:
             short_url = shorten_for_publication(affiliate_url)
             
             # 5. Substitui no texto original
-            # Usar replace com cuidado para não quebrar links que são sub-strings de outros
-            # (embora urls únicas resolvam isso na maioria dos casos)
+            # Usar replace com cuidado para nao quebrar links que sao sub-strings de outros
+            # (embora urls unicas resolvam isso na maioria dos casos)
             transformed_text = transformed_text.replace(original_url, short_url)
             
             logger.info(f"[LINK_CONVERTER] Sucesso: {original_url[:30]} -> {short_url}")

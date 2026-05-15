@@ -2,7 +2,7 @@
 scheduler_service.py - Scheduler da Fase 3.
 
 Usa o JobQueue nativo do python-telegram-bot (APScheduler embutido)
-para varrer as fontes periodicamente e enviar prévias de aprovação
+para varrer as fontes periodicamente e enviar previas de aprovacao
 para todos os admins cadastrados.
 """
 import logging
@@ -35,17 +35,17 @@ from bot.services.metrics_service import log_event
 
 async def _run_scan(context, limit: int = 10, manual: bool = False, trigger_user_id: int = None) -> int:
     """
-    Job executado pelo scheduler ou manualmente via botão: varre fontes, extrai dados,
-    gera copy e publica ou envia prévias.
+    Job executado pelo scheduler ou manualmente via botao: varre fontes, extrai dados,
+    gera copy e publica ou envia previas.
     Retorna o total de itens processados com sucesso.
     """
     logger.info(f"[SCHEDULER] Iniciando varredura das fontes (limite pedido: {limit})...")
     if AUTO_APPROVE:
-        logger.warning("[SCHEDULER] ⚠️  MODO AUTO-APPROVE: ofertas irão DIRETO ao canal sem revisão!")
+        logger.warning("[SCHEDULER] ⚠️  MODO AUTO-APPROVE: ofertas irao DIRETO ao canal sem revisao!")
     else:
-        logger.info("[SCHEDULER] ✅ MODO REVISÃO: ofertas aguardarão aprovação do admin.")
+        logger.info("[SCHEDULER] ✅ MODO REVISAO: ofertas aguardarao aprovacao do admin.")
     
-    # Feedback inicial para o usuário no modo manual
+    # Feedback inicial para o usuario no modo manual
     if trigger_user_id:
         try:
             await context.bot.send_message(
@@ -56,11 +56,11 @@ async def _run_scan(context, limit: int = 10, manual: bool = False, trigger_user
         except Exception: pass
 
     if not ADMIN_IDS and not manual:
-        logger.warning("[SCHEDULER] ADMIN_IDS vazio — ninguém receberá prévias.")
+        logger.warning("[SCHEDULER] ADMIN_IDS vazio — ninguem recebera previas.")
         return 0
 
     try:
-        # A varredura agora é assíncrona e usa pipeline robusto para Amazon
+        # A varredura agora e assincrona e usa pipeline robusto para Amazon
         all_found_items = await scan_sources()
     except Exception as e:
         logger.error(f"[SCHEDULER] Erro ao escanear fontes: {e}")
@@ -74,7 +74,7 @@ async def _run_scan(context, limit: int = 10, manual: bool = False, trigger_user
             await context.bot.send_message(chat_id=trigger_user_id, text="ℹ️ Nenhuma oferta nova encontrada nas fontes cadastradas.")
         return 0
 
-    # EMBARALHAR: Para não pegar sempre os mesmos 10 do topo
+    # EMBARALHAR: Para nao pegar sempre os mesmos 10 do topo
     random.shuffle(all_found_items)
     
     logger.info(f"[SCHEDULER] {len(all_found_items)} novos itens encontrados. Aplicando limite de {limit} e processando.")
@@ -88,7 +88,7 @@ async def _run_scan(context, limit: int = 10, manual: bool = False, trigger_user
         product_url: str = item["url"]
         source_name: str = item.get("source_name", "—")
 
-        # Pular se já foi visto OU se já está na fila de revisão
+        # Pular se ja foi visto OU se ja esta na fila de revisao
         if is_seen(product_url) or product_url in pending_urls:
             continue
 
@@ -96,51 +96,51 @@ async def _run_scan(context, limit: int = 10, manual: bool = False, trigger_user
             logger.info(f"--- [PROCESSO {count+1}/{limit}] ---")
             logger.info(f"[SCHEDULER] Extraindo: {product_url[:60]}")
             
-            # 1. Extração Mestra V2 (Já é async)
+            # 1. Extracao Mestra V2 (Ja e async)
             dados = await extract_product_data_v2(product_url)
 
             titulo_extraido = dados.get("titulo", "")
-            if not titulo_extraido or titulo_extraido in ["Produto", "Produto Disponível"]:
-                logger.warning(f"[SCHEDULER] Falha ao extrair título para {product_url}. Pulando.")
+            if not titulo_extraido or titulo_extraido in ["Produto", "Produto Disponivel"]:
+                logger.warning(f"[SCHEDULER] Falha ao extrair titulo para {product_url}. Pulando.")
                 continue
             
-            # Padronização de nomes para o resto do pipeline
+            # Padronizacao de nomes para o resto do pipeline
             dados["title"] = dados.get("titulo")
             dados["image_url"] = dados.get("imagem")
             dados["loja"] = dados.get("store", "Loja")
 
-            # 2. Injeção de Afiliado (NUNCA encurtar aqui — link longo preserva tag)
+            # 2. Injecao de Afiliado (NUNCA encurtar aqui — link longo preserva tag)
             store_key = dados.get("store_key", "other")
             affiliate_url = await injetar_link_afiliado(
                 url=dados.get("final_url", product_url),
                 store_key=store_key
             )
-            # IMPORTANTE: encurtamento ocorre SOMENTE na publicação final
+            # IMPORTANTE: encurtamento ocorre SOMENTE na publicacao final
             # Aqui guardamos o link longo para garantir rastreabilidade da tag
             logger.info(f"[SCHEDULER] Link afiliado gerado (longo): {affiliate_url[:80]}")
 
-            # 3. Geração de Copy IA (Já é async)
+            # 3. Geracao de Copy IA (Ja e async)
             copy_ia = await generate_caption(
                 nome=dados["title"], 
-                preco=dados.get("preco", "Preço não disponível"), 
+                preco=dados.get("preco", "Preco nao disponivel"), 
                 loja=dados.get("loja", "Loja"), 
                 descricao=dados.get("descricao"),
                 preco_original=dados.get("preco_original")
             )
 
-            # 4. Publicação ou Fila de Revisão
+            # 4. Publicacao ou Fila de Revisao
             # AUTO_APPROVE=true → publica direto (encurta aqui)
-            # AUTO_APPROVE=false → manda para o admin aprovar (NÃO encurta ainda)
+            # AUTO_APPROVE=false → manda para o admin aprovar (NAO encurta ainda)
             if AUTO_APPROVE:
                 logger.info(f"[SCHEDULER] AUTO_APPROVE ativo — publicando direto: '{dados['title'][:40]}'")
                 
-                # Encurta APENAS aqui, na publicação direta
+                # Encurta APENAS aqui, na publicacao direta
                 final_link = await asyncio.to_thread(shorten_for_publication, affiliate_url)
                 
                 from bot.services.copy_builder import build_copy
                 copies = build_copy(
                     nome=dados["title"],
-                    preco=dados.get("preco", "Preço não disponível"),
+                    preco=dados.get("preco", "Preco nao disponivel"),
                     loja=dados.get("loja", "Loja"),
                     store_key=store_key,
                     short_url=final_link,
@@ -157,21 +157,21 @@ async def _run_scan(context, limit: int = 10, manual: bool = False, trigger_user
                 await asyncio.sleep(3)
 
             else:
-                # ── MODO DE APROVAÇÃO MANUAL ─────────────────────────────────
-                # O link afiliado LONGO (com tag) é guardado na fila.
+                # ── MODO DE APROVACAO MANUAL ─────────────────────────────────
+                # O link afiliado LONGO (com tag) e guardado na fila.
                 # O encurtamento OCORRE SOMENTE quando o admin clica Aprovar.
                 offer_id = uuid.uuid4().hex[:12]
                 if "pending_offers" not in context.bot_data:
                     context.bot_data["pending_offers"] = {}
 
-                # Copy de prévia usa o link longo (para o admin auditar a tag)
+                # Copy de previa usa o link longo (para o admin auditar a tag)
                 from bot.services.copy_builder import build_copy
                 copies_preview = build_copy(
                     nome=dados["title"],
-                    preco=dados.get("preco", "Preço não disponível"),
+                    preco=dados.get("preco", "Preco nao disponivel"),
                     loja=dados.get("loja", "Loja"),
                     store_key=store_key,
-                    short_url=affiliate_url,   # ← link longo na prévia
+                    short_url=affiliate_url,   # ← link longo na previa
                     legenda_ia=copy_ia,
                     preco_original=dados.get("preco_original"),
                     cupom=dados.get("cupom")
@@ -190,7 +190,7 @@ async def _run_scan(context, limit: int = 10, manual: bool = False, trigger_user
                     "copy_ia":       copy_ia,
                     "dados_produto": {
                         "titulo":        dados["title"],
-                        "preco":         dados.get("preco", "Preço não disponível"),
+                        "preco":         dados.get("preco", "Preco nao disponivel"),
                         "preco_original":dados.get("preco_original"),
                         "imagem":        dados.get("image_url"),
                         "store":         dados.get("loja", "Amazon"),
@@ -209,13 +209,13 @@ async def _run_scan(context, limit: int = 10, manual: bool = False, trigger_user
                     [InlineKeyboardButton("✏️ Corrigir",   callback_data=f"review_corrigir:{offer_id}")],
                 ])
 
-                # Prévia enviada AO ADMIN — mostra AMBOS os links para auditoria
+                # Previa enviada AO ADMIN — mostra AMBOS os links para auditoria
                 original_url = dados.get("final_url", product_url)
                 preview_text = (
                     f"🔎 <b>OFERTA ENCONTRADA</b> — <i>{escape_html(source_name)}</i>\n"
                     "━━━━━━━━━━━━━━━━━━━━━\n"
                     f"📦 <b>{escape_html(dados['title'])}</b>\n"
-                    f"💰 <b>Preço:</b> {escape_html(dados.get('preco', '—'))}"
+                    f"💰 <b>Preco:</b> {escape_html(dados.get('preco', '—'))}"
                     + (f"  <s>{escape_html(dados.get('preco_original', ''))}</s>" if dados.get('preco_original') else "") + "\n"
                     + (f"🎟️ <b>Cupom:</b> <code>{escape_html(dados.get('cupom', ''))}</code>\n" if dados.get('cupom') else "")
                     + "\n"
@@ -223,11 +223,11 @@ async def _run_scan(context, limit: int = 10, manual: bool = False, trigger_user
                     f"<code>{escape_html(original_url)}</code>\n\n"
                     f"🔗 <b>Seu link (com a tag):</b>\n"
                     f"<code>{escape_html(affiliate_url)}</code>\n\n"
-                    "⚠️ <i>O link será encurtado apenas ao publicar no canal.</i>"
+                    "⚠️ <i>O link sera encurtado apenas ao publicar no canal.</i>"
                 )
 
-                # Prévia enviada AO ADMIN
-                # Se for busca manual (10 ofertas), removemos os botões individuais conforme solicitado
+                # Previa enviada AO ADMIN
+                # Se for busca manual (10 ofertas), removemos os botoes individuais conforme solicitado
                 msg_reply_markup = None if manual else keyboard
 
                 for admin_id in ADMIN_IDS:
@@ -250,24 +250,24 @@ async def _run_scan(context, limit: int = 10, manual: bool = False, trigger_user
                     except Exception as e:
                         logger.warning(f"[SCHEDULER] Falha ao notificar admin {admin_id}: {e}")
 
-                # NOTA: mark_seen é chamado APENAS após aprovação (em review_queue.py)
-                # Aqui NÃO marcamos como visto para permitir reprocessamento se rejeitado
-                # Marcar como escaneado nas métricas
+                # NOTA: mark_seen e chamado APENAS apos aprovacao (em review_queue.py)
+                # Aqui NAO marcamos como visto para permitir reprocessamento se rejeitado
+                # Marcar como escaneado nas metricas
                 log_event("scanned")
                 count += 1
                 await asyncio.sleep(1)
 
         except Exception as e:
-            logger.error(f"[SCHEDULER] Falha crítica ao processar item {product_url}: {e}", exc_info=True)
+            logger.error(f"[SCHEDULER] Falha critica ao processar item {product_url}: {e}", exc_info=True)
 
     if trigger_user_id:
         pending_count = len(context.bot_data.get("pending_offers", {}))
         keyboard = None
         
         if AUTO_APPROVE:
-            status_msg = f"✅ <b>Varredura concluída!</b>\n{count} ofertas publicadas automaticamente."
+            status_msg = f"✅ <b>Varredura concluida!</b>\n{count} ofertas publicadas automaticamente."
         else:
-            # Personalização solicitada: exibir count/limit e menu de decisão
+            # Personalizacao solicitada: exibir count/limit e menu de decisao
             status_msg = f"✅ <b>{count}/{limit}</b>\n\nO que você deseja fazer?"
             
             keyboard = InlineKeyboardMarkup([
@@ -278,7 +278,7 @@ async def _run_scan(context, limit: int = 10, manual: bool = False, trigger_user
             ])
 
         if count == 0 and pending_count == 0:
-            status_msg = "ℹ️ A varredura não encontrou novos itens ou todos já foram processados."
+            status_msg = "ℹ️ A varredura nao encontrou novos itens ou todos ja foram processados."
             keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Voltar ao Menu", callback_data="monitor_voltar")]])
             
         await context.bot.send_message(
@@ -295,7 +295,7 @@ async def _run_scan(context, limit: int = 10, manual: bool = False, trigger_user
 
 
 def is_monitor_active(app: Application) -> bool:
-    """Verifica se o job de monitoramento está rodando."""
+    """Verifica se o job de monitoramento esta rodando."""
     jobs = app.job_queue.get_jobs_by_name("source_scan")
     return len(jobs) > 0
 
@@ -312,7 +312,7 @@ def stop_monitor(app: Application) -> bool:
 
 
 def start_monitor(app: Application) -> bool:
-    """Inicia o monitoramento se não estiver rodando."""
+    """Inicia o monitoramento se nao estiver rodando."""
     if is_monitor_active(app):
         return False
         
@@ -320,7 +320,7 @@ def start_monitor(app: Application) -> bool:
     app.job_queue.run_repeating(
         _run_scan,
         interval=interval_seconds,
-        first=10,  # Começa em 10s para resposta rápida
+        first=10,  # Comeca em 10s para resposta rapida
         name="source_scan",
     )
     logger.info(f"[SCHEDULER] Monitoramento iniciado — intervalo: {MONITOR_INTERVAL_MINUTES} min.")
@@ -333,11 +333,11 @@ def setup_scheduler(app: Application) -> None:
     """
     start_monitor(app)
     
-    # Job de verificação de expiração (roda a cada 2h)
+    # Job de verificacao de expiracao (roda a cada 2h)
     app.job_queue.run_repeating(
         _check_expirations_job,
         interval=3600 * 2,
-        first=60, # Começa 1 min após o boot
+        first=60, # Comeca 1 min apos o boot
         name="expiration_check"
     )
 
@@ -345,7 +345,7 @@ def setup_scheduler(app: Application) -> None:
     app.job_queue.run_repeating(
         _process_scheduled_queue_job,
         interval=1800, 
-        first=120, # Começa 2 min após o boot
+        first=120, # Comeca 2 min apos o boot
         name="scheduled_posting"
     )
 
@@ -366,20 +366,20 @@ async def _process_scheduled_queue_job(context) -> None:
     logger.info(f"[SCHEDULER] Publicando item agendado: {offer.get('nome') or 'Mensagem Encaminhada'}")
     
     try:
-        # Se for uma mensagem encaminhada já processada (formato do forward_publisher)
+        # Se for uma mensagem encaminhada ja processada (formato do forward_publisher)
         if "copy_final" in offer:
             copy_final = offer["copy_final"]
             midia = offer["midia"]
             link = offer.get("link", "")
             
-            # Encaminhadas já vêm com copy pronta
+            # Encaminhadas ja vêm com copy pronta
             from bot.services.publisher_router import publish_offer
             await publish_offer(context.bot, [copy_final], midia, link)
             log_event("published_forwarded")
             logger.info(f"[SCHEDULER] Mensagem encaminhada agendada publicada com sucesso.")
             return
 
-        # Caso contrário, segue o fluxo de produtos extraídos
+        # Caso contrario, segue o fluxo de produtos extraidos
         affiliate_url = offer.get("affiliate_url", "")
         product_url = offer.get("product_url", "")
         
@@ -411,7 +411,7 @@ async def _process_scheduled_queue_job(context) -> None:
         logger.error(f"[SCHEDULER] Erro ao publicar item agendado: {e}")
 
 async def _check_expirations_job(context) -> None:
-    """Wrapper para chamar o serviço de expiração."""
+    """Wrapper para chamar o servico de expiracao."""
     from bot.services.expiration_service import check_expirations
-    logger.info("[SCHEDULER] Iniciando verificação de expiração das últimas ofertas...")
+    logger.info("[SCHEDULER] Iniciando verificacao de expiracao das ultimas ofertas...")
     await check_expirations(context.bot)

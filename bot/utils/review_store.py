@@ -13,12 +13,12 @@ def save_review_queue(pending_offers: Dict):
     _DATA_DIR.mkdir(parents=True, exist_ok=True)
     
     # Prepara a lista para o JSON
-    # Mantemos todos os campos originais para que o bot possa recuperar depois se necessário
+    # Mantemos todos os campos originais para que o bot possa recuperar depois se necessario
     queue_list = []
     for oid, offer in pending_offers.items():
         item = offer.copy()
         item["id"] = oid
-        # Garante campos básicos para a API/Dashboard
+        # Garante campos basicos para a API/Dashboard
         if "titulo" not in item: item["titulo"] = item.get("nome", "Produto")
         if "preco" not in item: item["preco"] = item.get("dados_produto", {}).get("preco", "N/A")
         if "loja" not in item: item["loja"] = item.get("dados_produto", {}).get("store", "Loja")
@@ -29,12 +29,12 @@ def save_review_queue(pending_offers: Dict):
     try:
         with open(_QUEUE_FILE, "w", encoding="utf-8") as f:
             json.dump(queue_list, f, indent=2, ensure_ascii=False)
-        logger.info(f"[REVIEW_STORE] Fila de revisão salva com {len(queue_list)} itens.")
+        logger.info(f"[REVIEW_STORE] Fila de revisao salva com {len(queue_list)} itens.")
     except Exception as e:
         logger.error(f"[REVIEW_STORE] Erro ao salvar JSON: {e}")
 
 def load_review_queue() -> Dict:
-    """Carrega a fila de revisão do JSON."""
+    """Carrega a fila de revisao do JSON."""
     if not _QUEUE_FILE.exists():
         return {}
     try:

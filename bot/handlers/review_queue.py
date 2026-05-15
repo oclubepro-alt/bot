@@ -1,9 +1,9 @@
 """
-review_queue.py - Handler de aprovação manual das ofertas descobertas
+review_queue.py - Handler de aprovacao manual das ofertas descobertas
 automaticamente pelo scheduler.
 
-Recebe callbacks dos botões "Aprovar" / "Rejeitar" que o scheduler
-envia para os admins e executa a publicação (ou descarte) da oferta.
+Recebe callbacks dos botoes "Aprovar" / "Rejeitar" que o scheduler
+envia para os admins e executa a publicacao (ou descarte) da oferta.
 """
 import logging
 import asyncio
@@ -28,11 +28,11 @@ logger = logging.getLogger(__name__)
 
 
 async def show_next_review_item(update: Update, context: ContextTypes.DEFAULT_TYPE, index: int = 0) -> None:
-    """Mostra um item específico da fila de revisão para o admin (sistema de páginas)."""
+    """Mostra um item especifico da fila de revisao para o admin (sistema de paginas)."""
     pending: dict = context.bot_data.get("pending_offers", {})
     
     if not pending:
-        msg = "✅ <b>Fila de revisão vazia!</b>\nNão há ofertas pendentes no momento."
+        msg = "✅ <b>Fila de revisao vazia!</b>\nNao ha ofertas pendentes no momento."
         keyboard = InlineKeyboardMarkup([[
             InlineKeyboardButton("🏠 Menu Principal", callback_data=CB_MENU_PRINCIPAL)
         ]])
@@ -45,7 +45,7 @@ async def show_next_review_item(update: Update, context: ContextTypes.DEFAULT_TY
             await update.message.reply_text(msg, parse_mode=ParseMode.HTML, reply_markup=keyboard)
         return
 
-    # Garante que o index está dentro dos limites
+    # Garante que o index esta dentro dos limites
     count = len(pending)
     if index >= count: index = 0
     if index < 0: index = count - 1
@@ -54,7 +54,7 @@ async def show_next_review_item(update: Update, context: ContextTypes.DEFAULT_TY
     offer_id = list(pending.keys())[index]
     offer = pending[offer_id]
     
-    # Prepara a prévia
+    # Prepara a previa
     nome = offer.get("nome", "Produto")
     imagem = offer.get("imagem")
     affiliate_url = offer.get("affiliate_url", "")
@@ -65,7 +65,7 @@ async def show_next_review_item(update: Update, context: ContextTypes.DEFAULT_TY
     
     if is_fidelity:
         preview_text = (
-            f"📋 <b>REVISÃO DE FILA (FORWARD)</b> (Página {index + 1} de {count})\n"
+            f"📋 <b>REVISAO DE FILA (FORWARD)</b> (Pagina {index + 1} de {count})\n"
             "━━━━━━━━━━━━━━━━━━━━━\n"
             f"✨ <b>MODO FIDELIDADE ABSOLUTA</b>\n\n"
             f"{offer.get('copy', 'Sem texto')}\n\n"
@@ -75,21 +75,21 @@ async def show_next_review_item(update: Update, context: ContextTypes.DEFAULT_TY
         )
     else:
         preview_text = (
-            f"📋 <b>REVISÃO DE FILA</b> (Página {index + 1} de {count})\n"
+            f"📋 <b>REVISAO DE FILA</b> (Pagina {index + 1} de {count})\n"
             "━━━━━━━━━━━━━━━━━━━━━\n"
             f"📦 <b>{escape_html(nome)}</b>\n"
-            f"💰 <b>Preço:</b> {escape_html(dados.get('preco', '—'))}"
+            f"💰 <b>Preco:</b> {escape_html(dados.get('preco', '—'))}"
             + (f"  <s>{escape_html(dados.get('preco_original', ''))}</s>" if dados.get('preco_original') else "") + "\n\n"
             f"🌐 <b>Link original:</b>\n<code>{escape_html(original_url)}</code>\n\n"
             f"🔗 <b>Seu link:</b>\n<code>{escape_html(affiliate_url)}</code>\n\n"
-            "⚠️ <i>O link será encurtado ao publicar.</i>"
+            "⚠️ <i>O link sera encurtado ao publicar.</i>"
         )
 
     nav_row = []
     if count > 1:
         nav_row = [
             InlineKeyboardButton("⬅️ Anterior", callback_data=f"review_view:{index - 1}"),
-            InlineKeyboardButton("Próxima ➡️",    callback_data=f"review_view:{index + 1}"),
+            InlineKeyboardButton("Proxima ➡️",    callback_data=f"review_view:{index + 1}"),
         ]
 
     keyboard = InlineKeyboardMarkup([
@@ -113,7 +113,7 @@ async def show_next_review_item(update: Update, context: ContextTypes.DEFAULT_TY
         query = update.callback_query
         try:
             if imagem and query.message.photo:
-                # Se já tem foto e o novo item tem foto, editamos a media
+                # Se ja tem foto e o novo item tem foto, editamos a media
                 from telegram import InputMediaPhoto
                 await query.edit_message_media(
                     media=InputMediaPhoto(media=imagem, caption=preview_text, parse_mode=ParseMode.HTML),
@@ -149,7 +149,7 @@ async def start_review_queue(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if update.callback_query:
         await update.callback_query.answer()
     
-    # Se veio de callback (ex: menu), limpa a mensagem anterior se possível
+    # Se veio de callback (ex: menu), limpa a mensagem anterior se possivel
     # Mas como show_next_review envia fotos/mensagens novas, apenas chamamos
     await show_next_review_item(update, context)
 
@@ -158,7 +158,7 @@ async def handle_review_callback(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
     """
-    Processa o clique em Aprovar, Rejeitar ou Bulk de uma oferta da fila automática.
+    Processa o clique em Aprovar, Rejeitar ou Bulk de uma oferta da fila automatica.
     """
     query = update.callback_query
     await query.answer()
@@ -180,7 +180,7 @@ async def handle_review_callback(
         return await review_corrigir_starter(update, context)
 
     if not offer_id:
-        await query.edit_message_text("⚠️ Não foi possível identificar a oferta.")
+        await query.edit_message_text("⚠️ Nao foi possivel identificar a oferta.")
         return
 
     # Recupera a oferta armazenada temporariamente no bot_data
@@ -189,7 +189,7 @@ async def handle_review_callback(
 
     if not offer:
         await query.edit_message_text(
-            "⚠️ Esta oferta já foi processada ou expirou."
+            "⚠️ Esta oferta ja foi processada ou expirou."
         )
         return
 
@@ -201,15 +201,15 @@ async def handle_review_callback(
     if action == CB_REVIEW_APPROVE:
         logger.info(f"[REVIEW] Admin {query.from_user.id} APROVOU oferta: '{nome}'")
         try:
-            # Encurta o link AGORA (apenas no momento da publicação no canal)
+            # Encurta o link AGORA (apenas no momento da publicacao no canal)
             logger.info(f"[REVIEW] Encurtando link: {affiliate_url[:60]}")
             short_url = await asyncio.to_thread(shorten_for_publication, affiliate_url)
             logger.info(f"[REVIEW] Link encurtado: {short_url}")
 
-            # Reconstrói a copy com o link curto para o canal
+            # Reconstroi a copy com o link curto para o canal
             if offer.get("preserve_fidelity"):
-                # Se for fidelidade absoluta, usamos a copy original (já processada)
-                # O encurtamento do link principal no botão é feito pelo publish_offer
+                # Se for fidelidade absoluta, usamos a copy original (ja processada)
+                # O encurtamento do link principal no botao e feito pelo publish_offer
                 copies_final = offer.get("copy", "Sem legenda")
             else:
                 dados = offer.get("dados_produto", {})
@@ -217,7 +217,7 @@ async def handle_review_callback(
                 copy_ia   = offer.get("copy_ia")
                 copies_final = build_copy(
                     nome=dados.get("titulo", nome),
-                    preco=dados.get("preco", "Preço não disponível"),
+                    preco=dados.get("preco", "Preco nao disponivel"),
                     loja=dados.get("store", "Loja"),
                     store_key=store_key,
                     short_url=short_url,
@@ -232,13 +232,13 @@ async def handle_review_callback(
                 register_published_offer(product_url, sent_msgs)
             mark_seen(product_url)
 
-            # Feedback temporário de sucesso removido para mostrar o PRÓXIMO item imediatamente
+            # Feedback temporario de sucesso removido para mostrar o PROXIMO item imediatamente
             if imagem:
                 await query.message.delete()
             else:
                 await query.edit_message_text("✅ Processado.")
             
-            # Chama o próximo automaticamente
+            # Chama o proximo automaticamente
             log_event("approved")
             await show_next_review_item(update, context)
 
@@ -258,7 +258,7 @@ async def handle_review_callback(
         else:
             await query.edit_message_text("❌ Rejeitado.")
         
-        # Chama o próximo automaticamente
+        # Chama o proximo automaticamente
         log_event("rejected")
         await show_next_review_item(update, context)
 
@@ -267,7 +267,7 @@ async def handle_review_callback(
         from bot.services.scheduler_queue_service import add_to_queue
         pos = add_to_queue(offer)
         
-        await query.answer(f"⏰ Agendado! Posição na fila: {pos}", show_alert=True)
+        await query.answer(f"⏰ Agendado! Posicao na fila: {pos}", show_alert=True)
         
         if imagem:
             try:
@@ -277,10 +277,10 @@ async def handle_review_callback(
         else:
             await query.edit_message_text("⏰ Agendado.")
         
-        # Chama o próximo automaticamente
+        # Chama o proximo automaticamente
         await show_next_review_item(update, context)
 
-    # Remove da fila apenas se for ação individual
+    # Remove da fila apenas se for acao individual
     if action in [CB_REVIEW_APPROVE, CB_REVIEW_REJECT, CB_REVIEW_SCHEDULE]:
         pending.pop(offer_id, None)
         context.bot_data["pending_offers"] = pending
@@ -290,21 +290,21 @@ async def handle_review_callback(
 async def handle_review_bulk_callback(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
-    """Processa ações em massa na fila de revisão."""
+    """Processa acoes em massa na fila de revisao."""
     query = update.callback_query
     await query.answer()
 
     action = query.data.split(":", 1)[1]
     pending: dict = context.bot_data.get("pending_offers", {})
 
-    # Botão de volta consistente
+    # Botao de volta consistente
     back_keyboard = InlineKeyboardMarkup([[
         InlineKeyboardButton("⬅️ Voltar ao Menu", callback_data="monitor_voltar")
     ]])
 
     if action == "clear_all":
         count = len(pending)
-        # Marca todos como vistos para não reaparecerem
+        # Marca todos como vistos para nao reaparecerem
         for offer in pending.values():
             try:
                 mark_seen(offer.get("product_url", ""))
@@ -316,7 +316,7 @@ async def handle_review_bulk_callback(
         texto_sucesso = f"🚫 <b>Fila limpa!</b>\n{count} ofertas foram descartadas."
         
         try:
-            # Se a mensagem original tem foto, não podemos usar edit_message_text
+            # Se a mensagem original tem foto, nao podemos usar edit_message_text
             if query.message.photo:
                 await query.message.delete()
                 await context.bot.send_message(
@@ -340,7 +340,7 @@ async def handle_review_bulk_callback(
                 reply_markup=back_keyboard
             )
         
-        logger.warning(f"[REVIEW] Fila de revisão limpa pelo admin {query.from_user.id}.")
+        logger.warning(f"[REVIEW] Fila de revisao limpa pelo admin {query.from_user.id}.")
         log_event("rejected") # Bulk clear counts as rejected for metrics
 
     elif action == "approve_all":
@@ -373,7 +373,7 @@ async def handle_review_bulk_callback(
 
                     copies_final = build_copy(
                         nome=dados.get("titulo", nome_offer),
-                        preco=dados.get("preco", "Preço não disponível"),
+                        preco=dados.get("preco", "Preco nao disponivel"),
                         loja=dados.get("store", "Loja"),
                         store_key=store_key,
                         short_url=short_url or aff_url,
@@ -418,6 +418,6 @@ async def handle_review_bulk_callback(
             )
             
         log_event("approved")
-        logger.info(f"[REVIEW] Aprovação em massa concluída: {success_count}/{count} por admin {query.from_user.id}.")
+        logger.info(f"[REVIEW] Aprovacao em massa concluida: {success_count}/{count} por admin {query.from_user.id}.")
 
 import asyncio # Ensure asyncio is available for sleep
