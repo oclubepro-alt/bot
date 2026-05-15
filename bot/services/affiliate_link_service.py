@@ -273,7 +273,7 @@ async def injetar_link_afiliado(url: str, store_key: str | None = None) -> str:
         try:
             import httpx
             headers_social = {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0.0.0 Safari/537.36",
+                "User-Agent": "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)",
                 "Accept-Language": "pt-BR,pt;q=0.9",
             }
             async with httpx.AsyncClient(follow_redirects=True, timeout=15.0, headers=headers_social) as client:
@@ -285,6 +285,9 @@ async def injetar_link_afiliado(url: str, store_key: str | None = None) -> str:
                     m_link = re.search(fr'https?://[^"\s]*{code}[^"\s]*MLB[^"\s>]*', html)
                     if m_link:
                         url = m_link.group(0).replace("&amp;", "&")
+                        import urllib.parse
+                        parsed_m_link = urllib.parse.urlparse(url)
+                        url = urllib.parse.urlunparse(parsed_m_link._replace(query="", fragment=""))
                         logger.info(f"[AFFILIATE_SERVICE] /social/ convertido para produto real: {url[:80]}")
         except Exception as e:
             logger.warning(f"[AFFILIATE_SERVICE] Falha ao extrair produto de /social/: {e}")
