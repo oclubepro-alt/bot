@@ -770,14 +770,14 @@ async def encam_aprovar_todas(update: Update, context: ContextTypes.DEFAULT_TYPE
     )
 
 async def encam_agendar_este_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Exibe opções de tempo para agendar apenas O POST ATUAL."""
+    """Exibe opÃ§Ãµes de tempo para agendar apenas O POST ATUAL."""
     query = update.callback_query
     await query.answer()
 
     texto = (
-        "?? <b>Agendar ESTA Promoção</b>\n\n"
-        "Em quanto tempo você deseja que esta promoção seja postada?\n"
-        "Ela será movida para a fila de agendamento."
+        "?? <b>Agendar ESTA PromoÃ§Ã£o</b>\n\n"
+        "Em quanto tempo vocÃª deseja que esta promoÃ§Ã£o seja postada?\n"
+        "Ela serÃ¡ movida para a fila de agendamento."
     )
 
     keyboard = [
@@ -804,21 +804,21 @@ async def encam_agendar_este_exec(update: Update, context: ContextTypes.DEFAULT_
     if not fila:
         return
 
-    # O item sendo revisado é o FILA[0]
+    # O item sendo revisado Ã© o FILA[0]
     item = fila.pop(0)
     context.user_data["fila_revisao"] = fila
 
     from bot.services.scheduler_queue_service import add_to_queue
     from bot.services.metrics_service import log_event
     
-    # Adiciona à fila persistente
+    # Adiciona Ã  fila persistente
     add_to_queue(item)
     log_event("scheduled_single")
 
-    # Feedback rápido
+    # Feedback rÃ¡pido
     await context.bot.send_message(
         chat_id=update.effective_chat.id,
-        text=f"? <b>Agendado!</b>\nEsta promoção entrará na fila de postagem (aprox. {minutos} min).",
+        text=f"? <b>Agendado!</b>\nEsta promoÃ§Ã£o entrarÃ¡ na fila de postagem (aprox. {minutos} min).",
         parse_mode="HTML"
     )
 
@@ -826,5 +826,5 @@ async def encam_agendar_este_exec(update: Update, context: ContextTypes.DEFAULT_
     try: await query.message.delete()
     except: pass
 
-    # Segue para o próximo
+    # Segue para o prÃ³ximo
     await show_next_review(update, context)

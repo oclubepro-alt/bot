@@ -1374,6 +1374,18 @@ async def extract_product_data_v2(url: str) -> dict:
         else:
             logger.warning("[EXTRATOR] Camada 0 (NETSHOES): ❌ Falhou — caindo para Camada 1")
 
+    elif store_key == "mercadolivre":
+        logger.info("[EXTRATOR] Camada 0: Tentando Mercado Livre API Oficial...")
+        try:
+            from bot.services.mercadolivre_api import mercadolivre_api
+            api_data = await mercadolivre_api.get_product_details(final_url)
+            if api_data:
+                logger.info("[EXTRATOR] Camada 0 (ML_API): ✅ Sucesso")
+                result.update(api_data)
+                return result
+        except Exception as e:
+            logger.error(f"[EXTRATOR] Camada 0 (ML_API): ❌ Erro: {e}")
+
     # ── CAMADA 1-3: Fluxo de HTML ──────────────────────────────────────────
     html, method = await get_page_html(final_url)
     result["source_method"] = method

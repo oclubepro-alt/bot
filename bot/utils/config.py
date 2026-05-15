@@ -22,6 +22,13 @@ AMAZON_CREATORS_CLIENT_ID: str = os.getenv("AMAZON_CREATORS_CLIENT_ID", "").stri
 AMAZON_CREATORS_CLIENT_SECRET: str = os.getenv("AMAZON_CREATORS_CLIENT_SECRET", "").strip()
 AMAZON_API_VERSION: str = os.getenv("AMAZON_API_VERSION", "v1").strip()
 
+# Mercado Livre
+ML_APP_ID: str = os.getenv("ML_APP_ID", "").strip()
+ML_CLIENT_SECRET: str = os.getenv("ML_CLIENT_SECRET", "").strip()
+ML_TG_TOKEN: str = os.getenv("ML_TG_TOKEN", "").strip() # Token inicial/Grant
+ML_ACCESS_TOKEN: str = os.getenv("ML_ACCESS_TOKEN", "").strip()
+ML_REFRESH_TOKEN: str = os.getenv("ML_REFRESH_TOKEN", "").strip()
+
 def _require(var: str) -> str:
     """Lê variável obrigatória ou lança erro claro."""
     value = os.getenv(var, "").strip()
