@@ -63,17 +63,27 @@ async def show_next_review_item(update: Update, context: ContextTypes.DEFAULT_TY
     
     is_fidelity = offer.get("preserve_fidelity", False)
     
-    preview_text = (
-        f"📋 <b>REVISÃO DE FILA</b> (Página {index + 1} de {count})\n"
-        "━━━━━━━━━━━━━━━━━━━━━\n"
-        + (f"✨ <b>MODO FIDELIDADE ABSOLUTA</b>\n" if is_fidelity else "") +
-        f"📦 <b>{escape_html(nome)}</b>\n"
-        f"💰 <b>Preço:</b> {escape_html(dados.get('preco', '—'))}"
-        + (f"  <s>{escape_html(dados.get('preco_original', ''))}</s>" if dados.get('preco_original') else "") + "\n\n"
-        f"🌐 <b>Link original:</b>\n<code>{escape_html(original_url)}</code>\n\n"
-        f"🔗 <b>Seu link:</b>\n<code>{escape_html(affiliate_url)}</code>\n\n"
-        "⚠️ <i>O link será encurtado ao publicar.</i>"
-    )
+    if is_fidelity:
+        preview_text = (
+            f"📋 <b>REVISÃO DE FILA (FORWARD)</b> (Página {index + 1} de {count})\n"
+            "━━━━━━━━━━━━━━━━━━━━━\n"
+            f"✨ <b>MODO FIDELIDADE ABSOLUTA</b>\n\n"
+            f"{offer.get('copy', 'Sem texto')}\n\n"
+            "━━━━━━━━━━━━━━━━━━━━━\n"
+            f"🔗 <b>Link Original:</b> {escape_html(original_url[:50])}...\n"
+            f"🔗 <b>Seu Link:</b> {escape_html(affiliate_url[:50])}..."
+        )
+    else:
+        preview_text = (
+            f"📋 <b>REVISÃO DE FILA</b> (Página {index + 1} de {count})\n"
+            "━━━━━━━━━━━━━━━━━━━━━\n"
+            f"📦 <b>{escape_html(nome)}</b>\n"
+            f"💰 <b>Preço:</b> {escape_html(dados.get('preco', '—'))}"
+            + (f"  <s>{escape_html(dados.get('preco_original', ''))}</s>" if dados.get('preco_original') else "") + "\n\n"
+            f"🌐 <b>Link original:</b>\n<code>{escape_html(original_url)}</code>\n\n"
+            f"🔗 <b>Seu link:</b>\n<code>{escape_html(affiliate_url)}</code>\n\n"
+            "⚠️ <i>O link será encurtado ao publicar.</i>"
+        )
 
     nav_row = []
     if count > 1:
@@ -353,21 +363,24 @@ async def handle_review_bulk_callback(
                 aff_url = offer.get("affiliate_url", "")
                 short_url = await asyncio.to_thread(shorten_for_publication, aff_url) if aff_url else ""
 
-                dados     = offer.get("dados_produto", {})
-                store_key = offer.get("store_key", "amazon")
-                copy_ia   = offer.get("copy_ia")
-                nome_offer = offer.get("nome", "produto")
+                if offer.get("preserve_fidelity"):
+                    copies_final = offer.get("copy", "Sem legenda")
+                else:
+                    dados     = offer.get("dados_produto", {})
+                    store_key = offer.get("store_key", "amazon")
+                    copy_ia   = offer.get("copy_ia")
+                    nome_offer = offer.get("nome", "produto")
 
-                copies_final = build_copy(
-                    nome=dados.get("titulo", nome_offer),
-                    preco=dados.get("preco", "Preço não disponível"),
-                    loja=dados.get("store", "Loja"),
-                    store_key=store_key,
-                    short_url=short_url or aff_url,
-                    legenda_ia=copy_ia,
-                    preco_original=dados.get("preco_original"),
-                    cupom=offer.get("cupom"),
-                )
+                    copies_final = build_copy(
+                        nome=dados.get("titulo", nome_offer),
+                        preco=dados.get("preco", "Preço não disponível"),
+                        loja=dados.get("store", "Loja"),
+                        store_key=store_key,
+                        short_url=short_url or aff_url,
+                        legenda_ia=copy_ia,
+                        preco_original=dados.get("preco_original"),
+                        cupom=offer.get("cupom"),
+                    )
 
                 sent_msgs = await publish_offer(context.bot, copies_final, offer.get("imagem"), short_url)
                 if sent_msgs and isinstance(sent_msgs, list):
