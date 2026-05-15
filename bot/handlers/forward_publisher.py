@@ -356,11 +356,9 @@ async def process_all_forwardings(update: Update, context: ContextTypes.DEFAULT_
         precos = re.findall(r'R\$\s*[\d.,]+', texto_original)
         preco = precos[0] if precos else "Confira o preço"
 
-        cupom = item.get("cupom")
-        if not cupom:
-            cupons = re.findall(r'\b[A-Z0-9]{4,15}\b', texto_original)
-            cupons = [c for c in cupons if not c.startswith('HTTP') and len(c) > 4]
-            cupom = cupons[0] if cupons else None
+        # No encaminhamento, NÃO tentamos adivinhar cupom do meio do texto
+        # Isso evita que palavras como "VALOR" ou "OFERTA" sejam confundidas com cupons
+        cupom = item.get("cupom") 
         
         # Passo 3
         prog_texto = (
@@ -384,7 +382,7 @@ async def process_all_forwardings(update: Update, context: ContextTypes.DEFAULT_
             "copy": copy_gerada,
             "texto_base": texto_original,
             "link_original": link_original,
-            "link_afiliado": link_final_botao,
+            "affiliate_url": link_final_botao,
             "preco": preco,
             "loja": loja_detectada,
             "cupom": cupom,
@@ -486,12 +484,7 @@ async def show_next_review(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     msg_texto = (
         f"💎 <b>PRÉVIA — {atual} de {total}</b>\n\n"
-        f"{item['copy']}\n\n"
-        "━━━━━━━━━━━━━━━\n"
-        f"{cupom_info}\n"
-        f"🔗 <b>Link de conferência:</b>\n"
-        f"<code>{item.get('link_afiliado') or 'Sem link'}</code>"
-        f"{dica}"
+        f"{item['copy']}\n"
     )
 
     keyboard = [
@@ -700,7 +693,7 @@ async def encam_aprovar_todas(update: Update, context: ContextTypes.DEFAULT_TYPE
                     chat_id=cid, 
                     midia=item.get("midia", {}), 
                     texto=item["copy"],
-                    affiliate_url=item.get("link_afiliado")
+                    affiliate_url=item.get("affiliate_url")
                 )
             except Exception as e:
                 logger.error(f"Erro publicando: {e}")

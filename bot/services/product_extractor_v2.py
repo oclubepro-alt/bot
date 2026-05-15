@@ -325,38 +325,48 @@ async def fetch_netshoes_api(url: str) -> dict | None:
 # Helpers de preço
 # ---------------------------------------------------------------------------
 
-    text = re.sub(r"\(.*?\)", "", text)
-    
-    # Se tiver "R$", remove tudo antes e limpa o resto
-    if "R$" in text:
-        text = text.split("R$")[-1]
-    
-    cleaned = re.sub(r"[^\d,.]", "", text)
-    if not cleaned:
+def _parse_price_to_float(price_str: str) -> float | None:
+    """
+    Converte strings de preço em float, lidando com formatos variados:
+    - R$ 49,90 -> 49.9
+    - 1.249,00 -> 1249.0
+    - 1,249.00 -> 1249.0 (Internacional)
+    - 49 -> 49.0
+    """
+    if not price_str:
+        return None
+        
+    if isinstance(price_str, (int, float)):
+        return float(price_str)
+
+    if not isinstance(price_str, str):
         return None
 
     try:
-        # Caso 1: Tem vírgula (Padrão BR: 1.299,90 ou 49,90)
-        if "," in cleaned:
-            parts = cleaned.split(",")
-            # O que vem antes da última vírgula é parte inteira (remove pontos de milhar)
-            integer_part = "".join(parts[:-1]).replace(".", "")
-            decimal_part = parts[-1]
-            val = float(f"{integer_part or '0'}.{decimal_part}")
-            return val if 0 < val < 500000 else None
-        
-        # Caso 2: Só tem pontos ou nada
-        else:
-            # Se houver múltiplos pontos (ex: 1.299.000), remove todos (milhar)
-            # Se houver apenas um ponto e 2 dígitos depois (ex: 29.90), pode ser decimal
-            parts = cleaned.split('.')
-            if len(parts) == 2 and len(parts[1]) in [1, 2]:
-                val = float(cleaned)
-            else:
-                val = float(cleaned.replace(".", ""))
-            
-            return val if 0 < val < 500000 else None
-            
+        # 1. Limpeza básica: remove parênteses e caracteres não numéricos (exceto , e .)
+        text = re.sub(r"\(.*?\)", "", price_str)
+        clean = re.sub(r'[^\d,.]', '', text)
+        if not clean: return None
+
+        # 2. Heurística para decidir o formato (BR vs US)
+        last_comma = clean.rfind(',')
+        last_dot = clean.rfind('.')
+
+        if last_comma > last_dot:
+            # Formato BR: 1.249,00
+            clean = clean.replace('.', '').replace(',', '.')
+        elif last_dot > last_comma:
+            # Formato US: 1,249.00
+            clean = clean.replace(',', '')
+        elif last_comma != -1:
+            # Só tem vírgula: 49,90
+            clean = clean.replace(',', '.')
+
+        val = float(clean)
+        # Sanity check: preços absurdos (> 1M) costumam ser erro de parsing
+        if val > 1000000:
+            return None
+        return val
     except Exception:
         return None
 
@@ -1115,11 +1125,16 @@ async def get_page_html(url: str) -> tuple[str | None, str]:
             async with httpx.AsyncClient(timeout=_TIMEOUT_SCRAPERAPI) as client:
                 resp = await client.get('https://api.scraperapi.com', params=payload)
                 
-                # Se 403, pode ser que o plano não suporte premium. Tenta sem premium.
-                if resp.status_code == 403 and ('premium' in payload or 'ultra_premium' in payload):
-                    logger.warning("[SCRAPERAPI] ⚠️ 403 Forbidden (Premium negado). Tentando SEM premium...")
-                    payload = get_payload(use_premium=False)
-                    resp = await client.get('https://api.scraperapi.com', params=payload)
+                # Se 403, pode ser que o plano não suporte premium ou CRÉDITOS ESGOTADOS.
+                if resp.status_code == 403:
+                    if "exhausted" in resp.text.lower() or "credits" in resp.text.lower():
+                        logger.error("[SCRAPERAPI] ❌ CRÉDITOS ESGOTADOS! O scraper não funcionará até você recarregar.")
+                        return None, "SCRAPERAPI_EXHAUSTED"
+                    
+                    if 'premium' in payload or 'ultra_premium' in payload:
+                        logger.warning("[SCRAPERAPI] ⚠️ 403 Forbidden (Premium negado). Tentando SEM premium...")
+                        payload = get_payload(use_premium=False)
+                        resp = await client.get('https://api.scraperapi.com', params=payload)
 
                 if resp.status_code == 200:
                     html = resp.text

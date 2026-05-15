@@ -33,46 +33,51 @@ class AmazonCreatorsAPI:
             return None
 
         url = "https://api.amazon.com/auth/o2/token"
-        # O escopo padrão para Creators API costuma ser 'advertising::campaign_management'
-        # mas pode variar conforme o Marketplace ou tipo de conta.
-        # Permitimos configurar via ENV para flexibilidade.
-        scope = os.getenv("AMAZON_CREATORS_SCOPE", "advertising::campaign_management")
         
-        payload = {
-            "grant_type": "client_credentials",
-            "client_id": self.client_id,
-            "client_secret": self.client_secret,
-            "scope": scope
-        }
+        # Lista de escopos para tentar. Prioriza o que estiver no .env
+        env_scope = os.getenv("AMAZON_CREATORS_SCOPE")
+        scopes_to_try = [env_scope] if env_scope else [None, "advertising::campaign_management"]
         
-        logger.info(f"[AMAZON_API] 🔑 Solicitando token LWA (scope={scope})...")
-        
-        try:
-            async with httpx.AsyncClient(timeout=15.0) as client:
-                response = await client.post(
-                    "https://api.amazon.com/auth/o2/token",
-                    data=payload
-                )
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            for scope in scopes_to_try:
+                payload = {
+                    "grant_type": "client_credentials",
+                    "client_id": self.client_id,
+                    "client_secret": self.client_secret
+                }
+                if scope:
+                    payload["scope"] = scope
                 
-                if response.status_code == 200:
-                    data = response.json()
-                    self._token = data["access_token"]
-                    # Expira em geral em 3600s
-                    self._token_expires = datetime.now() + timedelta(seconds=data.get("expires_in", 3600) - 60)
-                    logger.info("[AMAZON_API] ✅ Token obtido com sucesso")
-                    return self._token
-                else:
+                logger.info(f"[AMAZON_API] 🔑 Solicitando token LWA (scope={scope or 'None'})...")
+                
+                try:
+                    response = await client.post(url, data=payload)
+                    
+                    if response.status_code == 200:
+                        data = response.json()
+                        self._token = data["access_token"]
+                        self._token_expires = datetime.now() + timedelta(seconds=data.get("expires_in", 3600) - 60)
+                        logger.info(f"[AMAZON_API] ✅ Token obtido com sucesso (scope={scope or 'None'})")
+                        return self._token
+                    
                     err_data = response.json()
-                    err_msg = err_data.get("error_description") or err_data.get("error")
-                    logger.error(f"[AMAZON_API] ❌ Erro no token: {response.status_code} - {err_msg}")
+                    err_msg = str(err_data.get("error_description") or err_data.get("error") or "").lower()
                     
-                    if "invalid_scope" in str(err_msg).lower():
-                        logger.error("[AMAZON_API] 💡 DICA: O escopo configurado é inválido para sua conta. Tente alterar AMAZON_CREATORS_SCOPE no .env")
-                    
+                    if "missing" in err_msg and "scope" in err_msg:
+                        logger.warning(f"[AMAZON_API] ⚠️ Servidor exige scope. Tentando próximo...")
+                        continue
+                    elif "invalid" in err_msg and "scope" in err_msg:
+                        logger.warning(f"[AMAZON_API] ⚠️ Scope '{scope}' inválido. Tentando próximo...")
+                        continue
+                    else:
+                        logger.error(f"[AMAZON_API] ❌ Erro fatal no token: {response.status_code} - {err_msg}")
+                        return None
+                        
+                except Exception as e:
+                    logger.error(f"[AMAZON_API] ❌ Exceção no token: {e}")
                     return None
-        except Exception as e:
-            logger.error(f"[AMAZON_API] ❌ Exceção no token: {e}")
-            return None
+        
+        return None
 
     def _extract_asin(self, url: str) -> str | None:
         """Extrai o ASIN da URL da Amazon."""
