@@ -1,7 +1,7 @@
 """
-affiliate_link_service.py — Servico centralizado de geracao de links de afiliado.
+affiliate_link_service.py  Servico centralizado de geracao de links de afiliado.
 
-Injecao via urllib.parse (à prova de falha).
+Injecao via urllib.parse ( prova de falha).
 Logs obrigatorios: LINK_AFILIADO_GERADO, LOJA_NAO_SUPORTADA, LOJA_NAO_CONFIGURADA.
 """
 import logging
@@ -49,15 +49,15 @@ def get_effective_affiliate_id(store_key: str) -> str:
 
 def log_config_status():
     """Util para diagnostico no console."""
-    logger.info("─── AFILIADOS: STATUS DA CONFIGURACAO ───")
+    logger.info(" AFILIADOS: STATUS DA CONFIGURACAO ")
     stores = ["amazon", "mercadolivre", "magalu", "netshoes", "shopee", "aliexpress", "kabum", "casasbahia", "ponto", "extra", "samsung"]
     for store in stores:
         aid = get_effective_affiliate_id(store)
         if aid:
             masked = aid[:4] + "***" + aid[-4:] if len(aid) > 8 else aid
-            logger.info(f"✅ {store.upper()}: Conectado ({masked})")
+            logger.info(f" {store.upper()}: Conectado ({masked})")
         else:
-            logger.warning(f"❌ {store.upper()}: ID nao configurado (use /config_afiliado)")
+            logger.warning(f" {store.upper()}: ID nao configurado (use /config_afiliado)")
 
 # Executa log no startup
 log_config_status()
@@ -76,6 +76,8 @@ _STORE_DOMAINS = [
     ("mercadolibre.com",     "mercadolivre"),
     ("produto.mercadolivre", "mercadolivre"),
     ("ml.tidd.ly",           "mercadolivre"),
+    ("meli.la",              "mercadolivre"),
+    ("mli.",                 "mercadolivre"),
     ("magazineluiza.com.br", "magalu"),
     ("magalu.com",           "magalu"),
     ("netshoes.com.br",      "netshoes"),
@@ -97,7 +99,7 @@ _STORE_DOMAINS = [
 # ---------------------------------------------------------------------------
 # Dominios de encurtadores que precisam ser expandidos antes da injecao
 # ---------------------------------------------------------------------------
-_SHORT_DOMAINS = ["amzn.to", "amzn.com", "shope.ee", "shp.ee", "bit.ly", "t.co", "is.gd", "cupom.cc"]
+_SHORT_DOMAINS = ["amzn.to", "amzn.com", "shope.ee", "shp.ee", "meli.la", "mli.", "bit.ly", "t.co", "is.gd", "cupom.cc"]
 
 
 def _detectar_loja(url: str) -> str:
@@ -109,19 +111,19 @@ def _detectar_loja(url: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Injetores por loja — usando urllib.parse
+# Injetores por loja  usando urllib.parse
 # ---------------------------------------------------------------------------
 
 def _injetar_amazon(url: str, tag: str) -> str:
     """
     Amazon: canonical /dp/ASIN?tag=ID.
-    Extrai o ASIN e forca o formato canônico para evitar parâmetros de rastreio de terceiros.
+    Extrai o ASIN e forca o formato cannico para evitar parmetros de rastreio de terceiros.
     """
     # Tenta extrair o ASIN (10 caracteres alfanumericos)
     asin_match = re.search(r"/(?:dp|gp/product|product-reviews|aw/d|vdp)/([A-Z0-9]{10})", url, re.I)
     if asin_match:
         asin = asin_match.group(1).upper()
-        # Forca dominio .com.br para consistência se for Amazon Brasil
+        # Forca dominio .com.br para consistncia se for Amazon Brasil
         domain = "www.amazon.com.br" if "amazon.com.br" in url.lower() else "www.amazon.com"
         resultado = f"https://{domain}/dp/{asin}?tag={tag}"
         logger.info(f"[AFFILIATE_SERVICE] Amazon (Canonical) | ASIN={asin} | tag={tag}")
@@ -141,11 +143,14 @@ def _injetar_mercadolivre(url: str, id_ml: str) -> str:
     """Adiciona matt_from= para o programa de afiliados do ML."""
     parsed = urlparse(url)
     params = parse_qs(parsed.query, keep_blank_values=True)
-    # Remove parâmetros anteriores do ML
+    # Remove parmetros anteriores do ML
     for key in list(params.keys()):
         if key.startswith("matt_"):
             del params[key]
+    # Adiciona matt_from= e matt_tool= (alguns links usam um ou outro)
     params["matt_from"] = [id_ml]
+    params["matt_tool"] = [id_ml]
+    
     nova_query = urlencode(params, doseq=True)
     resultado = urlunparse(parsed._replace(query=nova_query))
     logger.info(f"[AFFILIATE_SERVICE] Mercado Livre | matt_from={id_ml} | URL={resultado[:100]}")
@@ -153,14 +158,14 @@ def _injetar_mercadolivre(url: str, id_ml: str) -> str:
 
 
 def _injetar_magalu(url: str, id_magalu: str) -> str:
-    """Adiciona promoter_id e partner_id para Magalu (Magazine Você)."""
+    """Adiciona promoter_id e partner_id para Magalu (Magazine Voc)."""
     parsed = urlparse(url)
     params = parse_qs(parsed.query, keep_blank_values=True)
     
     # Se o ID for numerico (ID de promotor), usamos o formato oficial de Divulgador
     if id_magalu.isdigit():
         params["promoter_id"] = [id_magalu]
-        params["partner_id"] = ["3440"] # ID padrao para Magazine Você
+        params["partner_id"] = ["3440"] # ID padrao para Magazine Voc
     
     params["utm_medium"] = ["affiliate"]
     params["utm_source"]  = [id_magalu]
@@ -185,7 +190,7 @@ def _injetar_shopee(url: str, shopee_id: str) -> str:
 def _injetar_netshoes(url: str, ns_id: str) -> str:
     """Netshoes via Rakuten. O * no ID e URL-encoded como %2A."""
     encoded_url = quote(url, safe="")
-    encoded_id  = quote(ns_id, safe="")  # Codifica o * → %2A
+    encoded_id  = quote(ns_id, safe="")  # Codifica o *  %2A
     resultado = f"https://click.linksynergy.com/deeplink?id={encoded_id}&mid=43984&murl={encoded_url}"
     logger.info(f"[AFFILIATE_SERVICE] Netshoes | gateway Rakuten | ID={ns_id[:8]}...")
     return resultado
@@ -200,11 +205,11 @@ def _injetar_aliexpress(url: str, id_ali: str) -> str:
     return urlunparse(parsed._replace(query=nova_query))
 
 def _injetar_generic(url: str, aff_id: str, store_key: str) -> str:
-    """Injetor generico que usa UTMs ou parâmetros comuns."""
+    """Injetor generico que usa UTMs ou parmetros comuns."""
     parsed = urlparse(url)
     params = parse_qs(parsed.query, keep_blank_values=True)
     
-    # Mapeamento de parâmetros comuns por loja
+    # Mapeamento de parmetros comuns por loja
     param_map = {
         "kabum": "utm_source",
         "casasbahia": "utm_source",
@@ -238,7 +243,7 @@ async def injetar_link_afiliado(url: str, store_key: str | None = None) -> str:
         store_key:  Loja (detectada automaticamente se None).
 
     Returns:
-        URL com parâmetros de afiliado corretos.
+        URL com parmetros de afiliado corretos.
     """
     if not url or not isinstance(url, str):
         logger.warning("[AFFILIATE_SERVICE] ERRO_GERANDO_LINK_AFILIADO: URL invalida.")
@@ -258,7 +263,7 @@ async def injetar_link_afiliado(url: str, store_key: str | None = None) -> str:
                 url = expanded
                 # Redetecta loja apos expansao
                 store_key = _detectar_loja(url)
-                logger.info(f"[AFFILIATE_SERVICE] Expandido → {url[:80]}... | Loja: {store_key}")
+                logger.info(f"[AFFILIATE_SERVICE] Expandido  {url[:80]}... | Loja: {store_key}")
         except Exception as e:
             logger.warning(f"[AFFILIATE_SERVICE] Falha ao expandir link curto: {e}")
 
@@ -275,7 +280,7 @@ async def injetar_link_afiliado(url: str, store_key: str | None = None) -> str:
         if store_key != "other":
             logger.warning(
                 f"[AFFILIATE_SERVICE] LOJA_NAO_CONFIGURADA: {store_key} "
-                f"— verifique as variaveis de ambiente no Railway"
+                f" verifique as variaveis de ambiente no Railway"
             )
         else:
             logger.info(f"[AFFILIATE_SERVICE] LOJA_NAO_SUPORTADA | url={url[:60]}")
