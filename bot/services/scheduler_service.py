@@ -363,9 +363,23 @@ async def _process_scheduled_queue_job(context) -> None:
     if not offer:
         return
 
-    logger.info(f"[SCHEDULER] Publicando item agendado: {offer.get('nome')}")
+    logger.info(f"[SCHEDULER] Publicando item agendado: {offer.get('nome') or 'Mensagem Encaminhada'}")
     
     try:
+        # Se for uma mensagem encaminhada já processada (formato do forward_publisher)
+        if "copy_final" in offer:
+            copy_final = offer["copy_final"]
+            midia = offer["midia"]
+            link = offer.get("link", "")
+            
+            # Encaminhadas já vêm com copy pronta
+            from bot.services.publisher_router import publish_offer
+            await publish_offer(context.bot, [copy_final], midia, link)
+            log_event("published_forwarded")
+            logger.info(f"[SCHEDULER] Mensagem encaminhada agendada publicada com sucesso.")
+            return
+
+        # Caso contrário, segue o fluxo de produtos extraídos
         affiliate_url = offer.get("affiliate_url", "")
         product_url = offer.get("product_url", "")
         

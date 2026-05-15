@@ -16,6 +16,8 @@ logger = logging.getLogger(__name__)
 
 CB_PROCESSAR_TUDO = "encam_processar_tudo"
 CB_CANCELAR_ENCAM = "encam_cancelar"
+CB_AGENDAR_MENU = "encam_agendar_menu"
+CB_AGENDAR_EXEC = "encam_agendar_exec"
 
 async def capturar_midia(message) -> dict:
     midia = {"tipo": None, "file_id": None}
@@ -101,6 +103,29 @@ async def receive_forwarded_message(update: Update, context: ContextTypes.DEFAUL
 
     if not texto and not midia.get("file_id"):
         return
+
+    # Verificação de Marca d'água (Fase 1)
+    if midia.get("tipo") == "photo":
+        try:
+            import io
+            file = await context.bot.get_file(midia["file_id"])
+            out = io.BytesIO()
+            await file.download_to_memory(out)
+            img_bytes = out.getvalue()
+            
+            from bot.services.vision_service import detect_watermark
+            tem_marca = await detect_watermark(img_bytes)
+            
+            if tem_marca:
+                logger.warning(f"[ENCAM] 🚫 Marca d'água detectada. Ignorando mensagem.")
+                await context.bot.send_message(
+                    chat_id=update.effective_chat.id,
+                    text="🚫 <b>Mensagem ignorada!</b>\nDetectamos uma marca d'água ou logo de outro canal nesta imagem.",
+                    parse_mode="HTML"
+                )
+                return
+        except Exception as e:
+            logger.error(f"[ENCAM] Erro ao processar visão: {e}")
 
     fila.append({
         "midia": midia,
@@ -443,7 +468,8 @@ async def process_all_forwardings(update: Update, context: ContextTypes.DEFAULT_
     
     keyboard = [
         [InlineKeyboardButton("👀 Abrir Fila de Revisão (Mission Control)", callback_data="review_view:0")],
-        [InlineKeyboardButton("✅ Aprovar Todas (Apenas Forward)", callback_data="encam_aprovar_todas")],
+        [InlineKeyboardButton("✅ Aprovar Todas (Postar Agora)", callback_data="encam_aprovar_todas")],
+        [InlineKeyboardButton("📅 Agendar Postagem", callback_data=CB_AGENDAR_MENU)],
         [InlineKeyboardButton("❌ Cancelar Tudo", callback_data=CB_CANCELAR_ENCAM),
          InlineKeyboardButton("🏠 Voltar ao Menu", callback_data="menu_principal")]
     ]

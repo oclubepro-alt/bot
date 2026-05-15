@@ -86,7 +86,8 @@ def main() -> None:
     from bot.handlers.forward_publisher import (
         start_forward_mode, receive_forwarded_message, cancel_forward_mode, process_all_forwardings,
         encam_revisar_uma, encam_aprovar_todas, frev_aprovar, frev_descartar, frev_proxima, frev_corrigir, frev_cupom,
-        receive_correction, CB_PROCESSAR_TUDO, CB_CANCELAR_ENCAM, encam_add_cupom, encam_cancelar_cupom
+        receive_correction, CB_PROCESSAR_TUDO, CB_CANCELAR_ENCAM, encam_add_cupom, encam_cancelar_cupom,
+        encam_agendar_menu, encam_agendar_exec, CB_AGENDAR_MENU, CB_AGENDAR_EXEC
     )
     from bot.utils.constants import CB_PUBLICAR_ENCAMINHAMENTO
 
@@ -102,6 +103,8 @@ def main() -> None:
     app.add_handler(CallbackQueryHandler(frev_cupom, pattern=r"^frev_cupom$"))
     app.add_handler(CallbackQueryHandler(encam_add_cupom, pattern=r"^encam_add_cupom$"))
     app.add_handler(CallbackQueryHandler(encam_cancelar_cupom, pattern=r"^encam_cancelar_cupom$"))
+    app.add_handler(CallbackQueryHandler(encam_agendar_menu, pattern=f"^{CB_AGENDAR_MENU}$"))
+    app.add_handler(CallbackQueryHandler(encam_agendar_exec, pattern=f"^{CB_AGENDAR_EXEC}:"))
     
     app.add_handler(MessageHandler(
         filters.FORWARDED & (
