@@ -18,6 +18,8 @@ CB_PROCESSAR_TUDO = "encam_processar_tudo"
 CB_CANCELAR_ENCAM = "encam_cancelar"
 CB_AGENDAR_MENU = "encam_agendar_menu"
 CB_AGENDAR_EXEC = "encam_agendar_exec"
+CB_AGENDAR_ESTE_MENU = "encam_agendar_este_menu"
+CB_AGENDAR_ESTE_EXEC = "encam_agendar_este_exec"
 
 async def capturar_midia(message) -> dict:
     midia = {"tipo": None, "file_id": None}
@@ -469,7 +471,7 @@ async def process_all_forwardings(update: Update, context: ContextTypes.DEFAULT_
     keyboard = [
         [InlineKeyboardButton("üëÄ Abrir Fila de Revis√£o (Mission Control)", callback_data="review_view:0")],
         [InlineKeyboardButton("‚úÖ Aprovar Todas (Postar Agora)", callback_data="encam_aprovar_todas")],
-        [InlineKeyboardButton("üìÖ Agendar Postagem", callback_data=CB_AGENDAR_MENU)],
+        [InlineKeyboardButton("üìÖ Agendar Todos", callback_data=CB_AGENDAR_MENU)],
         [InlineKeyboardButton("‚ùå Cancelar Tudo", callback_data=CB_CANCELAR_ENCAM),
          InlineKeyboardButton("üè† Voltar ao Menu", callback_data="menu_principal")]
     ]
@@ -525,10 +527,11 @@ async def show_next_review(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [InlineKeyboardButton("‚úÖ Aprovar e Postar", callback_data="frev_aprovar")],
         [InlineKeyboardButton("üé´ Adicionar/Editar Cupom", callback_data="frev_cupom")],
-        [InlineKeyboardButton("‚úèÔ∏è Editar Legenda", callback_data="frev_corrigir"),
-         InlineKeyboardButton("‚ùå Descartar", callback_data="frev_descartar")],
-        [InlineKeyboardButton("‚è≠Ô∏è Ver Pr√≥xima", callback_data="frev_proxima"),
-         InlineKeyboardButton("üè† Voltar ao Menu", callback_data="menu_principal")]
+        [InlineKeyboardButton("‚úçÔ∏è Corrigir Legenda", callback_data="frev_corrigir"),
+         InlineKeyboardButton("üìÖ Agendar Este", callback_data=CB_AGENDAR_ESTE_MENU)],
+        [InlineKeyboardButton("‚ùå Descartar", callback_data="frev_descartar"),
+         InlineKeyboardButton("‚è≠Ô∏è Ver Pr√≥xima", callback_data="frev_proxima")],
+        [InlineKeyboardButton("üè† Voltar ao Menu", callback_data="menu_principal")]
     ]
 
     chat_id = update.effective_chat.id
@@ -765,3 +768,63 @@ async def encam_aprovar_todas(update: Update, context: ContextTypes.DEFAULT_TYPE
         parse_mode="HTML", 
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
+
+async def encam_agendar_este_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Exibe opÁıes de tempo para agendar apenas O POST ATUAL."""
+    query = update.callback_query
+    await query.answer()
+
+    texto = (
+        "?? <b>Agendar ESTA PromoÁ„o</b>\n\n"
+        "Em quanto tempo vocÍ deseja que esta promoÁ„o seja postada?\n"
+        "Ela ser· movida para a fila de agendamento."
+    )
+
+    keyboard = [
+        [InlineKeyboardButton("?? Em 30 minutos", callback_data=f"{CB_AGENDAR_ESTE_EXEC}:30")],
+        [InlineKeyboardButton("?? Em 1 hora", callback_data=f"{CB_AGENDAR_ESTE_EXEC}:60")],
+        [InlineKeyboardButton("?? Em 2 horas", callback_data=f"{CB_AGENDAR_ESTE_EXEC}:120")],
+        [InlineKeyboardButton("?? Em 6 horas", callback_data=f"{CB_AGENDAR_ESTE_EXEC}:360")],
+        [InlineKeyboardButton("?? Voltar", callback_data="frev_proxima")] 
+    ]
+
+    await query.edit_message_text(texto, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(keyboard))
+
+async def encam_agendar_este_exec(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Agenda apenas o item atual da fila."""
+    query = update.callback_query
+    await query.answer()
+
+    try:
+        minutos = int(query.data.split(":")[-1])
+    except:
+        minutos = 30
+
+    fila = context.user_data.get("fila_revisao", [])
+    if not fila:
+        return
+
+    # O item sendo revisado È o FILA[0]
+    item = fila.pop(0)
+    context.user_data["fila_revisao"] = fila
+
+    from bot.services.scheduler_queue_service import add_to_queue
+    from bot.services.metrics_service import log_event
+    
+    # Adiciona ‡ fila persistente
+    add_to_queue(item)
+    log_event("scheduled_single")
+
+    # Feedback r·pido
+    await context.bot.send_message(
+        chat_id=update.effective_chat.id,
+        text=f"? <b>Agendado!</b>\nEsta promoÁ„o entrar· na fila de postagem (aprox. {minutos} min).",
+        parse_mode="HTML"
+    )
+
+    # Deleta menu de tempo
+    try: await query.message.delete()
+    except: pass
+
+    # Segue para o prÛximo
+    await show_next_review(update, context)
