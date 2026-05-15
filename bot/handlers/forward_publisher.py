@@ -770,22 +770,22 @@ async def encam_aprovar_todas(update: Update, context: ContextTypes.DEFAULT_TYPE
     )
 
 async def encam_agendar_este_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Exibe opções de tempo para agendar apenas O POST ATUAL."""
+    """Exibe opcoes de tempo para agendar apenas o POST ATUAL."""
     query = update.callback_query
     await query.answer()
 
     texto = (
-        "?? <b>Agendar ESTA Promoção</b>\n\n"
+        "📅 <b>Agendar ESTA Promoção</b>\n\n"
         "Em quanto tempo você deseja que esta promoção seja postada?\n"
         "Ela será movida para a fila de agendamento."
     )
 
     keyboard = [
-        [InlineKeyboardButton("?? Em 30 minutos", callback_data=f"{CB_AGENDAR_ESTE_EXEC}:30")],
-        [InlineKeyboardButton("?? Em 1 hora", callback_data=f"{CB_AGENDAR_ESTE_EXEC}:60")],
-        [InlineKeyboardButton("?? Em 2 horas", callback_data=f"{CB_AGENDAR_ESTE_EXEC}:120")],
-        [InlineKeyboardButton("?? Em 6 horas", callback_data=f"{CB_AGENDAR_ESTE_EXEC}:360")],
-        [InlineKeyboardButton("?? Voltar", callback_data="frev_proxima")] 
+        [InlineKeyboardButton("🕙 Em 30 minutos", callback_data=f"{CB_AGENDAR_ESTE_EXEC}:30")],
+        [InlineKeyboardButton("🕙 Em 1 hora", callback_data=f"{CB_AGENDAR_ESTE_EXEC}:60")],
+        [InlineKeyboardButton("🕙 Em 2 horas", callback_data=f"{CB_AGENDAR_ESTE_EXEC}:120")],
+        [InlineKeyboardButton("🕙 Em 6 horas", callback_data=f"{CB_AGENDAR_ESTE_EXEC}:360")],
+        [InlineKeyboardButton("🔙 Voltar", callback_data="frev_proxima")] 
     ]
 
     await query.edit_message_text(texto, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(keyboard))
