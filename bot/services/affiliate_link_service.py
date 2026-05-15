@@ -34,6 +34,12 @@ def get_effective_affiliate_id(store_key: str) -> str:
         "magalu":       "AFFILIATE_ID_MAGALU",
         "netshoes":     "AFFILIATE_ID_NETSHOES",
         "shopee":       "AFFILIATE_ID_SHOPEE",
+        "aliexpress":   "AFFILIATE_ID_ALIEXPRESS",
+        "kabum":        "AFFILIATE_ID_KABUM",
+        "casasbahia":   "AFFILIATE_ID_CASASBAHIA",
+        "ponto":        "AFFILIATE_ID_PONTO",
+        "extra":        "AFFILIATE_ID_EXTRA",
+        "samsung":      "AFFILIATE_ID_SAMSUNG",
     }
     env_var = env_map.get(store_key)
     if env_var:
@@ -44,7 +50,7 @@ def get_effective_affiliate_id(store_key: str) -> str:
 def log_config_status():
     """Útil para diagnóstico no console."""
     logger.info("─── AFILIADOS: STATUS DA CONFIGURAÇÃO ───")
-    stores = ["amazon", "mercadolivre", "magalu", "netshoes", "shopee"]
+    stores = ["amazon", "mercadolivre", "magalu", "netshoes", "shopee", "aliexpress", "kabum", "casasbahia", "ponto", "extra", "samsung"]
     for store in stores:
         aid = get_effective_affiliate_id(store)
         if aid:
@@ -75,6 +81,16 @@ _STORE_DOMAINS = [
     ("netshoes.com.br",      "netshoes"),
     ("shopee.com.br",        "shopee"),
     ("shp.ee",               "shopee"),
+    ("aliexpress.com",       "aliexpress"),
+    ("best.aliexpress",      "aliexpress"),
+    ("kabum.com.br",         "kabum"),
+    ("casasbahia.com.br",    "casasbahia"),
+    ("ponto.com.br",         "ponto"),
+    ("pontofrio.com.br",     "ponto"),
+    ("extra.com.br",         "extra"),
+    ("samsung.com/br",       "samsung"),
+    ("adidas.com.br",        "adidas"),
+    ("nike.com.br",          "nike"),
 ]
 
 
@@ -174,6 +190,38 @@ def _injetar_netshoes(url: str, ns_id: str) -> str:
     logger.info(f"[AFFILIATE_SERVICE] Netshoes | gateway Rakuten | ID={ns_id[:8]}...")
     return resultado
 
+def _injetar_aliexpress(url: str, id_ali: str) -> str:
+    """Adiciona aff_id= para AliExpress."""
+    parsed = urlparse(url)
+    params = parse_qs(parsed.query, keep_blank_values=True)
+    params["aff_id"] = [id_ali]
+    params["aff_platform"] = ["api-v2"]
+    nova_query = urlencode(params, doseq=True)
+    return urlunparse(parsed._replace(query=nova_query))
+
+def _injetar_generic(url: str, aff_id: str, store_key: str) -> str:
+    """Injetor genérico que usa UTMs ou parâmetros comuns."""
+    parsed = urlparse(url)
+    params = parse_qs(parsed.query, keep_blank_values=True)
+    
+    # Mapeamento de parâmetros comuns por loja
+    param_map = {
+        "kabum": "utm_source",
+        "casasbahia": "utm_source",
+        "ponto": "utm_source",
+        "extra": "utm_source",
+        "samsung": "utm_source",
+        "adidas": "utm_source",
+        "nike": "utm_source",
+    }
+    
+    p_name = param_map.get(store_key, "aff_id")
+    params[p_name] = [aff_id]
+    params["utm_medium"] = ["affiliate"]
+    
+    nova_query = urlencode(params, doseq=True)
+    return urlunparse(parsed._replace(query=nova_query))
+
 
 # ---------------------------------------------------------------------------
 # Função pública central
@@ -244,6 +292,10 @@ async def injetar_link_afiliado(url: str, store_key: str | None = None) -> str:
             resultado = _injetar_shopee(url, affiliate_id)
         elif store_key == "netshoes":
             resultado = _injetar_netshoes(url, affiliate_id)
+        elif store_key == "aliexpress":
+            resultado = _injetar_aliexpress(url, affiliate_id)
+        elif store_key in ["kabum", "casasbahia", "ponto", "extra", "samsung", "adidas", "nike"]:
+            resultado = _injetar_generic(url, affiliate_id, store_key)
         else:
             return url
 
