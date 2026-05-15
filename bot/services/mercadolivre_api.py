@@ -31,14 +31,14 @@ class MercadoLivreAPI:
             return self._access_token
 
         if not self.app_id or not self.client_secret:
-            logger.error("[ML_API] ❌ App ID ou Secret nao configurados!")
+            logger.error("[ML_API]  App ID ou Secret nao configurados!")
             return None
 
         url = "https://api.mercadolibre.com/oauth/token"
         
         # 1. Se temos um refresh_token, tenta renovar
         if self._refresh_token:
-            logger.info("[ML_API] 🔄 Tentando renovar token via refresh_token...")
+            logger.info("[ML_API]  Tentando renovar token via refresh_token...")
             payload = {
                 "grant_type": "refresh_token",
                 "client_id": self.app_id,
@@ -53,18 +53,18 @@ class MercadoLivreAPI:
                         self._access_token = data["access_token"]
                         self._refresh_token = data.get("refresh_token", self._refresh_token)
                         self._token_expires = datetime.now() + timedelta(seconds=data.get("expires_in", 21600) - 60)
-                        logger.info("[ML_API] ✅ Token renovado com sucesso")
+                        logger.info("[ML_API]  Token renovado com sucesso")
                         return self._access_token
                     else:
-                        logger.warning(f"[ML_API] ⚠️ Falha ao renovar token: {resp.text}")
+                        logger.warning(f"[ML_API]  Falha ao renovar token: {resp.text}")
                         # Se falhou, limpa o refresh_token para tentar o inicial ou client_credentials
                         self._refresh_token = None
             except Exception as e:
-                logger.error(f"[ML_API] ❌ Excecao ao renovar token: {e}")
+                logger.error(f"[ML_API]  Excecao ao renovar token: {e}")
 
         # 2. Se temos o TG_TOKEN (code) inicial, tenta trocar por tokens
         if ML_TG_TOKEN and not self._access_token:
-            logger.info(f"[ML_API] 🔑 Trocando TG_TOKEN por tokens reais...")
+            logger.info(f"[ML_API]  Trocando TG_TOKEN por tokens reais...")
             payload = {
                 "grant_type": "authorization_code",
                 "client_id": self.app_id,
@@ -80,16 +80,16 @@ class MercadoLivreAPI:
                         self._access_token = data["access_token"]
                         self._refresh_token = data.get("refresh_token")
                         self._token_expires = datetime.now() + timedelta(seconds=data.get("expires_in", 21600) - 60)
-                        logger.info("[ML_API] ✅ Tokens obtidos com sucesso via TG_TOKEN")
-                        logger.info(f"[ML_API] 💡 IMPORTANTE: Atualize seu ML_REFRESH_TOKEN no Railway com: {self._refresh_token}")
+                        logger.info("[ML_API]  Tokens obtidos com sucesso via TG_TOKEN")
+                        logger.info(f"[ML_API]  IMPORTANTE: Atualize seu ML_REFRESH_TOKEN no Railway com: {self._refresh_token}")
                         return self._access_token
                     else:
-                        logger.warning(f"[ML_API] ⚠️ Falha ao trocar TG_TOKEN: {resp.text}")
+                        logger.warning(f"[ML_API]  Falha ao trocar TG_TOKEN: {resp.text}")
             except Exception as e:
-                logger.error(f"[ML_API] ❌ Excecao ao trocar TG_TOKEN: {e}")
+                logger.error(f"[ML_API]  Excecao ao trocar TG_TOKEN: {e}")
 
         # 3. Fallback para client_credentials (dados publicos)
-        logger.info("[ML_API] 🔑 Tentando client_credentials (fallback)...")
+        logger.info("[ML_API]  Tentando client_credentials (fallback)...")
         payload = {
             "grant_type": "client_credentials",
             "client_id": self.app_id,
@@ -102,12 +102,12 @@ class MercadoLivreAPI:
                     data = resp.json()
                     self._access_token = data["access_token"]
                     self._token_expires = datetime.now() + timedelta(seconds=data.get("expires_in", 21600) - 60)
-                    logger.info("[ML_API] ✅ Token obtido via client_credentials")
+                    logger.info("[ML_API]  Token obtido via client_credentials")
                     return self._access_token
                 else:
-                    logger.error(f"[ML_API] ❌ Erro total na autenticacao ML: {resp.text}")
+                    logger.error(f"[ML_API]  Erro total na autenticacao ML: {resp.text}")
         except Exception as e:
-            logger.error(f"[ML_API] ❌ Excecao client_credentials: {e}")
+            logger.error(f"[ML_API]  Excecao client_credentials: {e}")
 
         return None
 
@@ -123,7 +123,7 @@ class MercadoLivreAPI:
         """Consulta detalhes do produto via API do Mercado Livre."""
         item_id = self._extract_ml_id(url)
         if not item_id:
-            logger.warning(f"[ML_API] ⚠️ ID nao encontrado na URL: {url[:60]}")
+            logger.warning(f"[ML_API]  ID nao encontrado na URL: {url[:60]}")
             return None
         
         token = await self._get_access_token()
@@ -132,17 +132,17 @@ class MercadoLivreAPI:
         headers = {"Authorization": f"Bearer {token}"} if token else {}
         
         try:
-            logger.info(f"[ML_API] 📡 Consultando Item {item_id}...")
+            logger.info(f"[ML_API]  Consultando Item {item_id}...")
             async with httpx.AsyncClient(timeout=15) as client:
                 resp = await client.get(endpoint, headers=headers)
                 if resp.status_code == 200:
                     data = resp.json()
                     return self._map_response(data)
                 else:
-                    logger.error(f"[ML_API] ❌ Erro API {resp.status_code}: {resp.text}")
+                    logger.error(f"[ML_API]  Erro API {resp.status_code}: {resp.text}")
                     return None
         except Exception as e:
-            logger.error(f"[ML_API] ❌ Excecao ML Items API: {e}")
+            logger.error(f"[ML_API]  Excecao ML Items API: {e}")
             return None
 
     def _map_response(self, data: dict) -> dict:
@@ -167,5 +167,5 @@ class MercadoLivreAPI:
         logger.info(f"[ML_API] Mapeado: {product['titulo'][:40]} | Preco: {product['preco']}")
         return product
 
-# Instância global
+# Instncia global
 mercadolivre_api = MercadoLivreAPI()

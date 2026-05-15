@@ -2,11 +2,11 @@
 detect_store.py - Detecta a loja pelo dominio da URL final resolvida.
 
 Regras (ordem de prioridade):
-  - "amazon."                        → Amazon
-  - "mercadolivre." / "mercadolibre." → Mercado Livre
-  - "magazineluiza." / "magalu."      → Magalu
-  - "netshoes."                       → Netshoes
-  - demais                            → Outra
+  - "amazon."                         Amazon
+  - "mercadolivre." / "mercadolibre."  Mercado Livre
+  - "magazineluiza." / "magalu."       Magalu
+  - "netshoes."                        Netshoes
+  - demais                             Outra
 """
 import logging
 from urllib.parse import urlparse
@@ -20,6 +20,7 @@ _STORE_MAP: list[tuple[str, str, str]] = [
     ("mercadolivre.",    "Mercado Livre", "mercadolivre"),
     ("mercadolibre.",    "Mercado Livre", "mercadolivre"),
     ("mli.",             "Mercado Livre", "mercadolivre"),
+    ("meli.la",          "Mercado Livre", "mercadolivre"),
     ("magazineluiza.",   "Magalu",        "magalu"),
     ("magalu.",          "Magalu",        "magalu"),
     ("netshoes.",        "Netshoes",      "netshoes"),
@@ -57,8 +58,8 @@ def detect_store(url: str) -> tuple[str, str]:
 
     for fragment, display, key in _STORE_MAP:
         if fragment in netloc or fragment in url.lower():
-            logger.info(f"[DETECT_STORE] '{fragment}' encontrado → {display}")
+            logger.info(f"[DETECT_STORE] '{fragment}' encontrado  {display}")
             return display, key
 
-    logger.info(f"[DETECT_STORE] Loja nao identificada para '{netloc or url[:40]}' → Outra")
+    logger.info(f"[DETECT_STORE] Loja nao identificada para '{netloc or url[:40]}'  Outra")
     return "Outra", "other"

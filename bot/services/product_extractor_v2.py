@@ -1,14 +1,14 @@
 """
-product_extractor_v2.py — Extrator de produtos em camadas.
+product_extractor_v2.py  Extrator de produtos em camadas.
 
 Ordem de prioridade:
-  Prioridade 0 — Preco PIX/à-vista (antes de tudo)
-  Camada 1 — Playwright (renderizacao real de JS)
-  Camada 2 — requests + BeautifulSoup (fallback HTML)
-  Camada 3 — Retorno seguro minimo (nunca quebra o fluxo)
+  Prioridade 0  Preco PIX/-vista (antes de tudo)
+  Camada 1  Playwright (renderizacao real de JS)
+  Camada 2  requests + BeautifulSoup (fallback HTML)
+  Camada 3  Retorno seguro minimo (nunca quebra o fluxo)
 
 Regra de preco:
-  1. Se existe preco PIX/à-vista → usa ele (is_pix_price=True)
+  1. Se existe preco PIX/-vista  usa ele (is_pix_price=True)
   2. Senao: pega o MENOR entre promocional e original.
   Log obrigatorio: PRECO_TIPO=PIX | PROMOCIONAL | ORIGINAL
 """
@@ -27,7 +27,7 @@ from bot.utils.price_utils import _parse_price_to_float, _clean_price, format_ap
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Contrato de saida — garante que o dict retornado NUNCA tem chaves ausentes
+# Contrato de saida  garante que o dict retornado NUNCA tem chaves ausentes
 # Qualquer codigo que consuma extract_product_data_v2 pode usar .get() com
 # seguranca, mas esta funcao elimina KeyError mesmo com acesso direto.
 # ---------------------------------------------------------------------------
@@ -99,7 +99,7 @@ _TIMEOUT_PLAYWRIGHT = 45
 
 
 # ---------------------------------------------------------------------------
-# Camada 0: API Interna da Magalu — cascata de 3 endpoints
+# Camada 0: API Interna da Magalu  cascata de 3 endpoints
 # ---------------------------------------------------------------------------
 
 async def fetch_magalu_api(url: str) -> dict | None:
@@ -108,14 +108,14 @@ async def fetch_magalu_api(url: str) -> dict | None:
       1. API mobile catalog (ms.catalog.magazineluiza.com.br)
       2. API site product (www.magazineluiza.com.br/api/v1/product/)
     """
-    # Extrai o ID do produto da URL — padrao: /p/XXXXXXXX/
+    # Extrai o ID do produto da URL  padrao: /p/XXXXXXXX/
     match = re.search(r'/p/(\w+)/?', url)
     if not match:
-        logger.warning("[MAGALU_API] ⚠️ ID do produto nao encontrado na URL")
+        logger.warning("[MAGALU_API]  ID do produto nao encontrado na URL")
         return None
 
     product_id = match.group(1)
-    logger.info(f"[MAGALU_API] ℹ️ Produto ID extraido: {product_id}")
+    logger.info(f"[MAGALU_API]  Produto ID extraido: {product_id}")
 
     # Headers robustos para emular app/mobile e evitar blocks simples
     headers = {
@@ -136,7 +136,7 @@ async def fetch_magalu_api(url: str) -> dict | None:
     async with httpx.AsyncClient(timeout=12, follow_redirects=True, verify=False) as client:
         for endpoint in _ENDPOINTS_MAGALU:
             try:
-                logger.info(f"[MAGALU_API] ℹ️ Tentando: {endpoint}")
+                logger.info(f"[MAGALU_API]  Tentando: {endpoint}")
                 resp = await client.get(endpoint, headers=headers)
                 
                 if resp.status_code != 200:
@@ -158,7 +158,7 @@ async def fetch_magalu_api(url: str) -> dict | None:
                     imagem = data["images"][0].get("url")
 
                 if titulo and best_price:
-                    logger.info(f"[MAGALU_API] ✅ Sucesso via {endpoint}")
+                    logger.info(f"[MAGALU_API]  Sucesso via {endpoint}")
                     return {
                         "titulo": titulo,
                         "imagem": imagem,
@@ -169,18 +169,18 @@ async def fetch_magalu_api(url: str) -> dict | None:
                     }
 
             except Exception as e:
-                logger.warning(f"[MAGALU_API] ❌ Erro em {endpoint}: {str(e)[:80]}")
+                logger.warning(f"[MAGALU_API]  Erro em {endpoint}: {str(e)[:80]}")
                 continue
 
     # Camada 0b: Scraping LEVE (Apenas MetaTags/JSON-LD) com Mobile Headers
     try:
-        logger.info("[MAGALU_API] ℹ️ Tentando extracao leve via Mobile Headers...")
+        logger.info("[MAGALU_API]  Tentando extracao leve via Mobile Headers...")
         async with httpx.AsyncClient(timeout=10, follow_redirects=True, headers=headers) as client:
             resp = await client.get(url)
             if resp.status_code == 200:
                 html = resp.text
                 if any(p in html.lower() for p in ["radware", "captcha"]):
-                    logger.warning("[MAGALU_API] ⚠️ Bloqueio detectado no HTML leve.")
+                    logger.warning("[MAGALU_API]  Bloqueio detectado no HTML leve.")
                     return None
                 
                 # Tenta extrair do __NEXT_DATA__ ou similar se existir
@@ -193,7 +193,7 @@ async def fetch_magalu_api(url: str) -> dict | None:
                 titulo_schema = titulo_tag.get_text(strip=True) if titulo_tag else None
                 
                 if titulo_schema and preco_schema:
-                    logger.info("[MAGALU_API] ✅ JSON-LD/HTML leve OK")
+                    logger.info("[MAGALU_API]  JSON-LD/HTML leve OK")
                     return {
                         "titulo": titulo_schema,
                         "imagem": None,
@@ -203,11 +203,11 @@ async def fetch_magalu_api(url: str) -> dict | None:
                         "is_pix_price": False,
                     }
     except Exception as e:
-        logger.warning(f"[MAGALU_API] ⚠️ JSON-LD leve falhou: {str(e)[:80]}")
+        logger.warning(f"[MAGALU_API]  JSON-LD leve falhou: {str(e)[:80]}")
 
     # Camada 0c: Fallback via Busca (Resiliente a blocks de produto direto)
     try:
-        logger.info("[MAGALU_API] ℹ️ Tentando fallback via busca por ID...")
+        logger.info("[MAGALU_API]  Tentando fallback via busca por ID...")
         search_url = f"https://www.magazineluiza.com.br/busca/{product_id}"
         async with httpx.AsyncClient(timeout=10, follow_redirects=True, headers=headers) as client:
             resp = await client.get(search_url)
@@ -223,7 +223,7 @@ async def fetch_magalu_api(url: str) -> dict | None:
                         img_tag = first_prod.select_one('img[data-testid="image"]')
                         
                         if title_tag and price_tag:
-                            logger.info("[MAGALU_API] ✅ Sucesso via Busca")
+                            logger.info("[MAGALU_API]  Sucesso via Busca")
                             return {
                                 "titulo": title_tag.get_text(strip=True),
                                 "imagem": img_tag.get("src") if img_tag else None,
@@ -232,14 +232,14 @@ async def fetch_magalu_api(url: str) -> dict | None:
                                 "is_pix_price": True
                             }
     except Exception as e:
-        logger.warning(f"[MAGALU_API] ❌ Fallback busca falhou: {str(e)[:80]}")
+        logger.warning(f"[MAGALU_API]  Fallback busca falhou: {str(e)[:80]}")
 
-    logger.warning("[MAGALU_API] ❌ Todos os endpoints falharam → caindo para Camada 1")
+    logger.warning("[MAGALU_API]  Todos os endpoints falharam  caindo para Camada 1")
     return None
 
 
 # ---------------------------------------------------------------------------
-# Camada 0: API Interna da Netshoes — extracao por SKU
+# Camada 0: API Interna da Netshoes  extracao por SKU
 # ---------------------------------------------------------------------------
 
 async def fetch_netshoes_api(url: str) -> dict | None:
@@ -252,11 +252,11 @@ async def fetch_netshoes_api(url: str) -> dict | None:
     path = urlparse(url).path.rstrip("/")
     sku_match = re.search(r'/([A-Z0-9]{2,6}-[\w-]{4,30})$', path)
     if not sku_match:
-        logger.warning("[NETSHOES_API] ⚠️ SKU nao encontrado na URL")
+        logger.warning("[NETSHOES_API]  SKU nao encontrado na URL")
         return None
 
     sku = sku_match.group(1)
-    logger.info(f"[NETSHOES_API] ℹ️ SKU extraido: {sku}")
+    logger.info(f"[NETSHOES_API]  SKU extraido: {sku}")
 
     headers_json = {
         "User-Agent": "Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36",
@@ -275,9 +275,9 @@ async def fetch_netshoes_api(url: str) -> dict | None:
     async with httpx.AsyncClient(timeout=12, follow_redirects=True, verify=False) as client:
         for endpoint in _ENDPOINTS_NETSHOES:
             try:
-                logger.info(f"[NETSHOES_API] ℹ️ Tentando: {endpoint}")
+                logger.info(f"[NETSHOES_API]  Tentando: {endpoint}")
                 resp = await client.get(endpoint, headers=headers_json)
-                logger.info(f"[NETSHOES_API] ℹ️ Status: {resp.status_code}")
+                logger.info(f"[NETSHOES_API]  Status: {resp.status_code}")
 
                 if resp.status_code != 200:
                     continue
@@ -307,7 +307,7 @@ async def fetch_netshoes_api(url: str) -> dict | None:
                 orig_price = price_obj.get("list_price") or price_obj.get("original_price")
 
                 if titulo and best_price:
-                    logger.info(f"[NETSHOES_API] ✅ Sucesso | {titulo[:50]} | Preco: {best_price}")
+                    logger.info(f"[NETSHOES_API]  Sucesso | {titulo[:50]} | Preco: {best_price}")
                     return {
                         "titulo": titulo,
                         "imagem": imagem,
@@ -317,15 +317,15 @@ async def fetch_netshoes_api(url: str) -> dict | None:
                         "is_pix_price": False,
                     }
                 else:
-                    logger.warning(f"[NETSHOES_API] ⚠️ Dados incompletos neste endpoint")
+                    logger.warning(f"[NETSHOES_API]  Dados incompletos neste endpoint")
 
             except Exception as e:
-                logger.warning(f"[NETSHOES_API] ❌ Excecao: {str(e)[:80]}")
+                logger.warning(f"[NETSHOES_API]  Excecao: {str(e)[:80]}")
                 continue
 
     # --- Fallback Camada 0b: HTML leve + JSON-LD ---
     try:
-        logger.info("[NETSHOES_API] ℹ️ Tentando HTML leve + JSON-LD...")
+        logger.info("[NETSHOES_API]  Tentando HTML leve + JSON-LD...")
         headers_html = {
             "User-Agent": _HEADERS["User-Agent"],
             "Accept-Language": "pt-BR,pt;q=0.9",
@@ -342,7 +342,7 @@ async def fetch_netshoes_api(url: str) -> dict | None:
                 imagem_schema = meta_img["content"] if meta_img and meta_img.get("content") else None
 
                 if titulo_schema and preco_schema:
-                    logger.info(f"[NETSHOES_API] ✅ HTML leve OK | {titulo_schema[:40]}")
+                    logger.info(f"[NETSHOES_API]  HTML leve OK | {titulo_schema[:40]}")
                     return {
                         "titulo": titulo_schema,
                         "imagem": imagem_schema,
@@ -352,7 +352,7 @@ async def fetch_netshoes_api(url: str) -> dict | None:
                         "is_pix_price": False,
                     }
     except Exception as e:
-        logger.warning(f"[NETSHOES_API] ⚠️ HTML leve falhou: {str(e)[:80]}")
+        logger.warning(f"[NETSHOES_API]  HTML leve falhou: {str(e)[:80]}")
 
 
 async def fetch_amazon_scrapingdog(url: str) -> dict | None:
@@ -361,7 +361,7 @@ async def fetch_amazon_scrapingdog(url: str) -> dict | None:
     Custo: 5 creditos por request (com country=br).
     """
     if not SCRAPINGDOG_API_KEY:
-        logger.warning("[SCRAPINGDOG] ⚠️ SCRAPINGDOG_API_KEY nao configurada!")
+        logger.warning("[SCRAPINGDOG]  SCRAPINGDOG_API_KEY nao configurada!")
         return None
 
     # Extrai ASIN
@@ -370,7 +370,7 @@ async def fetch_amazon_scrapingdog(url: str) -> dict | None:
         asin_match = re.search(r"[/\?&](?:pd_rd_i|ASIN|item_id)=([A-Z0-9]{10})", url, re.I)
     
     if not asin_match:
-        logger.warning(f"[SCRAPINGDOG] ⚠️ ASIN nao encontrado na URL: {url[:60]}")
+        logger.warning(f"[SCRAPINGDOG]  ASIN nao encontrado na URL: {url[:60]}")
         return None
         
     asin = asin_match.group(1).upper()
@@ -384,19 +384,19 @@ async def fetch_amazon_scrapingdog(url: str) -> dict | None:
     }
     
     try:
-        logger.info(f"[SCRAPINGDOG] 📡 Consultando ASIN {asin} na Scrapingdog...")
+        logger.info(f"[SCRAPINGDOG]  Consultando ASIN {asin} na Scrapingdog...")
         async with httpx.AsyncClient(timeout=30) as client:
             resp = await client.get(endpoint, params=params)
             
             if resp.status_code == 200:
                 data = resp.json()
-                # Scrapingdog às vezes retorna uma lista com um objeto
+                # Scrapingdog s vezes retorna uma lista com um objeto
                 if isinstance(data, list) and len(data) > 0:
                     data = data[0]
                 
                 # Se houver erro na resposta da API (ex: credito insuficiente)
                 if data.get("error"):
-                    logger.error(f"[SCRAPINGDOG] ❌ Erro da API: {data.get('error')}")
+                    logger.error(f"[SCRAPINGDOG]  Erro da API: {data.get('error')}")
                     return None
 
                 titulo = data.get("title") or data.get("name")
@@ -410,7 +410,7 @@ async def fetch_amazon_scrapingdog(url: str) -> dict | None:
                     imagem = data["main_image"]
 
                 if titulo and price_raw:
-                    logger.info(f"[SCRAPINGDOG] ✅ Sucesso | {titulo[:50]} | Preco: {price_raw}")
+                    logger.info(f"[SCRAPINGDOG]  Sucesso | {titulo[:50]} | Preco: {price_raw}")
                     return {
                         "titulo": titulo,
                         "imagem": imagem,
@@ -421,12 +421,12 @@ async def fetch_amazon_scrapingdog(url: str) -> dict | None:
                         "cupom": data.get("coupon_text") or data.get("coupon")
                     }
                 else:
-                    logger.warning("[SCRAPINGDOG] ⚠️ Resposta da API sem titulo ou preco.")
+                    logger.warning("[SCRAPINGDOG]  Resposta da API sem titulo ou preco.")
                     return None
             else:
-                logger.error(f"[SCRAPINGDOG] ❌ Erro HTTP {resp.status_code}: {resp.text[:200]}")
+                logger.error(f"[SCRAPINGDOG]  Erro HTTP {resp.status_code}: {resp.text[:200]}")
     except Exception as e:
-        logger.error(f"[SCRAPINGDOG] ❌ Excecao Scrapingdog: {str(e)}")
+        logger.error(f"[SCRAPINGDOG]  Excecao Scrapingdog: {str(e)}")
     
     return None
 def _choose_lower_price(p1: str | None, p2: str | None) -> tuple[str | None, str | None]:
@@ -451,10 +451,10 @@ def _choose_lower_price(p1: str | None, p2: str | None) -> tuple[str | None, str
 
 
 # ---------------------------------------------------------------------------
-# Prioridade 0: Preco PIX / à vista — buscado ANTES dos seletores padrao
+# Prioridade 0: Preco PIX /  vista  buscado ANTES dos seletores padrao
 # ---------------------------------------------------------------------------
 
-_PIX_PATTERN = re.compile(r'pix|à\s*vista', re.IGNORECASE)
+_PIX_PATTERN = re.compile(r'pix|\s*vista', re.IGNORECASE)
 
 
 def _find_price_near_text(soup: BeautifulSoup, text_pattern, price_selectors: list[str]) -> str | None:
@@ -479,7 +479,7 @@ def _find_price_near_text(soup: BeautifulSoup, text_pattern, price_selectors: li
 
 
 def _extract_pix_price_amazon(soup: BeautifulSoup) -> str | None:
-    """Amazon: busca preco 'no Pix' / 'à vista no Pix'."""
+    """Amazon: busca preco 'no Pix' / ' vista no Pix'."""
     price_selectors = [
         ".a-price .a-offscreen",
         ".a-price-whole",
@@ -600,7 +600,7 @@ def _extract_pix_price_magalu(soup: BeautifulSoup) -> str | None:
 
 
 # ---------------------------------------------------------------------------
-# Extracao de preco por loja — seletores com prioridade por tipo
+# Extracao de preco por loja  seletores com prioridade por tipo
 # ---------------------------------------------------------------------------
 
 def _is_valid_price_tag(tag) -> bool:
@@ -778,7 +778,7 @@ def _extract_coupon_amazon(soup: BeautifulSoup) -> str | None:
         ".ux-coupon-text",
         ".vpc-coupon-label",
         "#vcp-coupon-text",
-        ".a-size-base.a-color-success" # Às vezes cupons simples aparecem aqui
+        ".a-size-base.a-color-success" # s vezes cupons simples aparecem aqui
     ]
     for sel in coupon_selectors:
         tag = soup.select_one(sel)
@@ -871,7 +871,7 @@ def _extract_price_ml(soup: BeautifulSoup) -> tuple[str | None, str | None]:
         if preco_promo:
             break
 
-    # Preco original riscado — seletor da classe "previous"
+    # Preco original riscado  seletor da classe "previous"
     orig_tag = soup.select_one(".andes-money-amount--previous .andes-money-amount__fraction")
     if orig_tag:
         preco_orig = orig_tag.get_text(strip=True)
@@ -905,11 +905,11 @@ def _extract_price_netshoes(soup: BeautifulSoup) -> tuple[str | None, str | None
 
 
 def _extract_price_generic(soup: BeautifulSoup) -> tuple[str | None, str | None]:
-    """Generico: meta tags de preco de venda têm prioridade."""
+    """Generico: meta tags de preco de venda tm prioridade."""
     preco_promo = None
     preco_orig  = None
 
-    # 1. Meta sale_price → promo; price:amount → original ou fallback
+    # 1. Meta sale_price  promo; price:amount  original ou fallback
     sale_meta = soup.find("meta", attrs={"property": "product:sale_price:amount"})
     price_meta = soup.find("meta", attrs={"property": "product:price:amount"})
 
@@ -964,7 +964,7 @@ def _extract_from_soup(soup: BeautifulSoup, base_url: str, store_key: str = "oth
     """Extrai titulo, preco promocional, preco original, imagem, cupom e flag PIX."""
     data = {"titulo": None, "preco": None, "preco_original": None, "imagem": None, "is_pix_price": False, "cupom": None}
 
-    # ── DETECCAO DE BLOQUEIO ────────────────────────────────────────────────
+    #  DETECCAO DE BLOQUEIO 
     page_text_lower = soup.get_text().lower()
     page_title_lower = (soup.title.string.lower() if soup.title else "")
     
@@ -981,7 +981,7 @@ def _extract_from_soup(soup: BeautifulSoup, base_url: str, store_key: str = "oth
             "source_method": "BLOCKED"
         }
 
-    # ── TITULO ──────────────────────────────────────────────────────────────
+    #  TITULO 
     title_selectors = [
         "#productTitle",             # Amazon principal
         "#title",                    # Amazon secundario
@@ -999,7 +999,7 @@ def _extract_from_soup(soup: BeautifulSoup, base_url: str, store_key: str = "oth
             text = tag.get_text(strip=True)
             if len(text) > 10:
                 raw = re.sub(r"^(Amazon\.com\.br|Mercado Livre|Magalu|Magazine Luiza)\s*[:\-]\s*", "", text, flags=re.I)
-                raw = re.sub(r"\s*[|–\-]\s*(Amazon|Mercado Livre|Magalu|Magazine Luiza|Shopee).*", "", raw, flags=re.I)
+                raw = re.sub(r"\s*[|\-]\s*(Amazon|Mercado Livre|Magalu|Magazine Luiza|Shopee).*", "", raw, flags=re.I)
                 data["titulo"] = raw.strip()
                 break
 
@@ -1019,7 +1019,7 @@ def _extract_from_soup(soup: BeautifulSoup, base_url: str, store_key: str = "oth
             raw_title = re.sub(r"^(Amazon\.com\.br|Mercado Livre|Magalu|Magazine Luiza)\s*[:\-]\s*", "", raw_title, flags=re.I)
             data["titulo"] = raw_title.split(":")[0].split("|")[0].strip()
 
-    # ── VALIDACAO DE TITULO (Anti-Vazamento de Bloqueio) ────────────────────
+    #  VALIDACAO DE TITULO (Anti-Vazamento de Bloqueio) 
     if data["titulo"]:
         t_low = data["titulo"].lower()
         if any(p in t_low for p in _BLOCK_KEYWORDS) or "bloqueio" in t_low:
@@ -1032,7 +1032,7 @@ def _extract_from_soup(soup: BeautifulSoup, base_url: str, store_key: str = "oth
                 "source_method": "BLOCKED"
             }
 
-    # ── PRECO PRIORIDADE 0: PIX / à vista (Magalu, ML) ─────────────────────
+    #  PRECO PRIORIDADE 0: PIX /  vista (Magalu, ML) 
     pix_price = None
     if store_key == "mercadolivre":
         pix_price = _extract_pix_price_ml(soup)
@@ -1050,7 +1050,7 @@ def _extract_from_soup(soup: BeautifulSoup, base_url: str, store_key: str = "oth
         else: preco_orig = None
         data["preco_original"] = preco_orig
     else:
-        # ── PRECO PADRAO POR LOJA ──────────────────────────────────────────
+        #  PRECO PADRAO POR LOJA 
         if store_key == "amazon":
             # Amazon: .a-price .a-offscreen (menor valor)
             preco, preco_orig = _extract_price_amazon(soup)
@@ -1067,11 +1067,11 @@ def _extract_from_soup(soup: BeautifulSoup, base_url: str, store_key: str = "oth
         data["preco"] = preco
         data["preco_original"] = preco_orig
 
-    # ── CUPOM (Amazon) ──────────────────────────────────────────────────────
+    #  CUPOM (Amazon) 
     if store_key == "amazon":
         data["cupom"] = _extract_coupon_amazon(soup)
 
-    # ── ULTIMATO DE PRECO (Meta / Schema / Regex) ──────────────────────────
+    #  ULTIMATO DE PRECO (Meta / Schema / Regex) 
     if not data["preco"]:
         # Tenta meta tags primeiro (rapido e confiavel)
         data["preco"] = _extract_price_from_meta(soup)
@@ -1091,7 +1091,7 @@ def _extract_from_soup(soup: BeautifulSoup, base_url: str, store_key: str = "oth
     if not data["preco_original"] and store_key == "amazon":
         _, data["preco_original"] = _extract_price_generic(soup)
 
-    # ── IMAGEM ──────────────────────────────────────────────────────────────
+    #  IMAGEM 
     # Prioridade meta og:image como solicitado
     for og_prop in ["og:image", "twitter:image"]:
         meta = soup.find("meta", attrs={"property": og_prop}) or soup.find("meta", attrs={"name": og_prop})
@@ -1115,7 +1115,7 @@ async def get_page_html(url: str) -> tuple[str | None, str]:
     2. Requests Simples (Fallback)
     """
 
-    # ── TENTATIVA 1b: HTTPX Direto com Mobile User-Agent (Fallback de Alta Qualidade) ──────
+    #  TENTATIVA 1b: HTTPX Direto com Mobile User-Agent (Fallback de Alta Qualidade) 
     try:
         logger.info(f"[EXTRACTOR_V2] Camada 1b: HTTPX Mobile | url={url[:60]}")
         mobile_headers = {
@@ -1137,19 +1137,19 @@ async def get_page_html(url: str) -> tuple[str | None, str]:
             if resp.status_code == 200:
                 html = resp.text
                 if not any(p in html.lower() for p in ["radware", "captcha", "blocked"]):
-                    logger.info(f"[HTTPX_MOBILE] ✅ Sucesso | URL={target_url[:50]}...")
+                    logger.info(f"[HTTPX_MOBILE]  Sucesso | URL={target_url[:50]}...")
                     return html, "HTTPX_MOBILE"
     except Exception as e:
-        logger.warning(f"[HTTPX_MOBILE] ❌ Falhou: {str(e)[:100]}")
+        logger.warning(f"[HTTPX_MOBILE]  Falhou: {str(e)[:100]}")
     try:
         logger.info(f"[EXTRACTOR_V2] Camada 2: Requests Simples | url={url[:60]}")
         async with httpx.AsyncClient(timeout=_TIMEOUT_HTTP, follow_redirects=True, headers=_HEADERS) as client:
             resp = await client.get(url)
             if resp.status_code == 200:
-                logger.info("[REQUESTS] ✅ Sucesso")
+                logger.info("[REQUESTS]  Sucesso")
                 return resp.text, "REQUESTS_FALLBACK"
     except Exception as e:
-        logger.warning(f"[REQUESTS] ❌ Falhou: {str(e)[:100]}")
+        logger.warning(f"[REQUESTS]  Falhou: {str(e)[:100]}")
 
     return None, "FALHA_TOTAL"
 
@@ -1190,7 +1190,7 @@ def _normalize_amazon_url(url: str) -> str:
         logger.info(f"[AMAZON_NORM] ASIN extraido: {asin} -> {clean}")
         return clean
 
-    # Sem ASIN identificado — retorna original
+    # Sem ASIN identificado  retorna original
     logger.debug(f"[AMAZON_NORM] Nenhum ASIN encontrado em: {url[:80]}")
     return url
 
@@ -1200,7 +1200,7 @@ async def extract_product_data_v2(url: str) -> dict:
     from bot.utils.detect_store import detect_store
     from bot.utils.url_resolver import resolve_url
 
-    logger.info(f"[EXTRATOR] ── INICIO PIPELINE V5 ── {url[:80]}")
+    logger.info(f"[EXTRATOR]  INICIO PIPELINE V5  {url[:80]}")
     
     result = {
         "store": "desconhecida", "store_key": "other",
@@ -1213,7 +1213,7 @@ async def extract_product_data_v2(url: str) -> dict:
     final_url = url
     try:
         # Resolve amzn.to, magalu.me e encurtadores comuns
-        _SHORTENERS = ["amzn.to", "amzn.com/gp/r.", "magalu.me", "t.co", "bit.ly", "ow.ly", "is.gd"]
+        _SHORTENERS = ["amzn.to", "amzn.com/gp/r.", "magalu.me", "meli.la", "mli.", "t.co", "bit.ly", "ow.ly", "is.gd"]
         if any(x in url for x in _SHORTENERS):
             logger.info(f"[EXTRATOR] Resolvendo encurtador: {url[:60]}")
             final_url = await asyncio.to_thread(resolve_url, url)
@@ -1221,7 +1221,7 @@ async def extract_product_data_v2(url: str) -> dict:
     except Exception as e:
         logger.warning(f"[EXTRATOR] Falha ao resolver encurtador: {e}")
 
-    # Normaliza URLs Amazon para /dp/ASIN (remove parâmetros sujos, gp/product, etc.)
+    # Normaliza URLs Amazon para /dp/ASIN (remove parmetros sujos, gp/product, etc.)
     if "amazon" in final_url.lower() or "amzn" in final_url.lower():
         final_url = _normalize_amazon_url(final_url)
 
@@ -1234,16 +1234,16 @@ async def extract_product_data_v2(url: str) -> dict:
 
 
 
-    # ── CAMADA 0b: API INTERNA (Magalu e Netshoes) ─────────────────────────
+    #  CAMADA 0b: API INTERNA (Magalu e Netshoes) 
     if store_key == "magalu":
         logger.info("[EXTRATOR] Camada 0: Tentando Magalu API Interna...")
         api_data = await fetch_magalu_api(final_url)
         if api_data:
-            logger.info(f"[EXTRATOR] Camada 0 (MAGALU): ✅ Sucesso via {api_data.get('source_method')}")
+            logger.info(f"[EXTRATOR] Camada 0 (MAGALU):  Sucesso via {api_data.get('source_method')}")
             result.update(api_data)
             return result
         else:
-            logger.warning("[EXTRATOR] Camada 0 (MAGALU): ❌ Falhou — caindo para Camada 1")
+            logger.warning("[EXTRATOR] Camada 0 (MAGALU):  Falhou  caindo para Camada 1")
 
     elif store_key == "amazon":
         # Tenta primeiro a Scrapingdog (Nova recomendacao do usuario)
@@ -1251,7 +1251,7 @@ async def extract_product_data_v2(url: str) -> dict:
         api_data = await fetch_amazon_scrapingdog(final_url)
         
         if api_data:
-            logger.info("[EXTRATOR] Camada 0 (SCRAPINGDOG): ✅ Sucesso")
+            logger.info("[EXTRATOR] Camada 0 (SCRAPINGDOG):  Sucesso")
             result.update(api_data)
             return result
             
@@ -1261,24 +1261,24 @@ async def extract_product_data_v2(url: str) -> dict:
             from bot.services.amazon_api import amazon_api
             api_data = await amazon_api.get_product_details(final_url)
             if api_data and api_data.get("preco") and api_data.get("preco") != "Preco nao disponivel":
-                logger.info(f"[EXTRATOR] Camada 0b (AMAZON_API): ✅ Sucesso")
+                logger.info(f"[EXTRATOR] Camada 0b (AMAZON_API):  Sucesso")
                 result.update(api_data)
                 return result
             elif api_data:
-                logger.warning("[EXTRATOR] Camada 0b (AMAZON_API): ⚠️ Dados parciais. Tentando scraping...")
+                logger.warning("[EXTRATOR] Camada 0b (AMAZON_API):  Dados parciais. Tentando scraping...")
                 result.update({k: v for k, v in api_data.items() if v and v != "Preco nao disponivel"})
         except Exception as e:
-            logger.error(f"[EXTRATOR] Camada 0b (AMAZON_API): ❌ Erro: {e}")
+            logger.error(f"[EXTRATOR] Camada 0b (AMAZON_API):  Erro: {e}")
 
     elif store_key == "netshoes":
         logger.info("[EXTRATOR] Camada 0: Tentando Netshoes API Interna...")
         api_data = await fetch_netshoes_api(final_url)
         if api_data:
-            logger.info(f"[EXTRATOR] Camada 0 (NETSHOES): ✅ Sucesso via {api_data.get('source_method')}")
+            logger.info(f"[EXTRATOR] Camada 0 (NETSHOES):  Sucesso via {api_data.get('source_method')}")
             result.update(api_data)
             return result
         else:
-            logger.warning("[EXTRATOR] Camada 0 (NETSHOES): ❌ Falhou — caindo para Camada 1")
+            logger.warning("[EXTRATOR] Camada 0 (NETSHOES):  Falhou  caindo para Camada 1")
 
     elif store_key == "mercadolivre":
         logger.info("[EXTRATOR] Camada 0: Tentando Mercado Livre API Oficial...")
@@ -1286,13 +1286,13 @@ async def extract_product_data_v2(url: str) -> dict:
             from bot.services.mercadolivre_api import mercadolivre_api
             api_data = await mercadolivre_api.get_product_details(final_url)
             if api_data:
-                logger.info("[EXTRATOR] Camada 0 (ML_API): ✅ Sucesso")
+                logger.info("[EXTRATOR] Camada 0 (ML_API):  Sucesso")
                 result.update(api_data)
                 return result
         except Exception as e:
-            logger.error(f"[EXTRATOR] Camada 0 (ML_API): ❌ Erro: {e}")
+            logger.error(f"[EXTRATOR] Camada 0 (ML_API):  Erro: {e}")
 
-    # ── CAMADA 1-3: Fluxo de HTML ──────────────────────────────────────────
+    #  CAMADA 1-3: Fluxo de HTML 
     html, method = await get_page_html(final_url)
     result["source_method"] = method
 
@@ -1307,12 +1307,12 @@ async def extract_product_data_v2(url: str) -> dict:
         if not is_result_blocked:
             for k in ["titulo", "preco", "preco_original", "imagem", "is_pix_price", "cupom"]:
                 if data.get(k): result[k] = data[k]
-            logger.info(f"[EXTRATOR] Camada {method}: ✅ Sucesso")
+            logger.info(f"[EXTRATOR] Camada {method}:  Sucesso")
         else:
             result["source_method"] = f"{method}_BUT_BLOCKED"
-            logger.warning(f"[EXTRATOR] Camada {method}: ❌ Bloqueio detectado no conteudo")
+            logger.warning(f"[EXTRATOR] Camada {method}:  Bloqueio detectado no conteudo")
 
-    # ── CAMADA 4: Fallback Seguro ──────────────────────────────────────────
+    #  CAMADA 4: Fallback Seguro 
     if not result.get("titulo") or result["titulo"] == "Produto":
         # Tenta inferir da URL se tudo falhar
         if "amazon" in final_url.lower():
