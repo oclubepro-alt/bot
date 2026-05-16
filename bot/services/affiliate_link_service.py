@@ -99,7 +99,7 @@ _STORE_DOMAINS = [
 # ---------------------------------------------------------------------------
 # Dominios de encurtadores que precisam ser expandidos antes da injecao
 # ---------------------------------------------------------------------------
-_SHORT_DOMAINS = ["amzn.to", "amzn.com", "shope.ee", "shp.ee", "meli.la", "mli.", "bit.ly", "t.co", "is.gd", "cupom.cc"]
+_SHORT_DOMAINS = ["amzn.to", "amzn.com", "shope.ee", "shp.ee", "meli.la", "mli.", "bit.ly", "t.co", "is.gd", "cupom.cc", "descontinhodemamae.com", "divulgador.magalu.com"]
 
 
 def _detectar_loja(url: str) -> str:
@@ -140,39 +140,74 @@ def _injetar_amazon(url: str, tag: str) -> str:
 
 
 def _injetar_mercadolivre(url: str, id_ml: str) -> str:
-    """Adiciona matt_from= para o programa de afiliados do ML."""
+    """
+    Gera link social do Mercado Livre (Vitrine).
+    Formato desejado: https://www.mercadolivre.com.br/social/{id_ml}/p/{code}
+    """
+    # 1. Tenta extrair o ID do produto (MLB123...)
+    item_id_match = re.search(r"(ML[A-Z]\-?\d{8,15})", url, re.I)
+    
+    if item_id_match:
+        code = item_id_match.group(1).replace("-", "").upper()
+        # Se for um link de produto, usamos o formato social
+        resultado = f"https://www.mercadolivre.com.br/social/{id_ml}/p/{code}"
+        logger.info(f"[AFFILIATE_SERVICE] Mercado Livre Social | ID={id_ml} | Code={code}")
+        return resultado
+
+    # 2. Fallback para links que nao sao de produtos especificos (busca, landing pages)
     parsed = urlparse(url)
     params = parse_qs(parsed.query, keep_blank_values=True)
-    # Remove parmetros anteriores do ML
+    # Remove parametros anteriores do ML
     for key in list(params.keys()):
         if key.startswith("matt_"):
             del params[key]
+    
     # Adiciona matt_from= e matt_tool= (alguns links usam um ou outro)
     params["matt_from"] = [id_ml]
     params["matt_tool"] = [id_ml]
     
     nova_query = urlencode(params, doseq=True)
     resultado = urlunparse(parsed._replace(query=nova_query))
-    logger.info(f"[AFFILIATE_SERVICE] Mercado Livre | matt_from={id_ml} | URL={resultado[:100]}")
+    logger.info(f"[AFFILIATE_SERVICE] Mercado Livre Fallback | ID={id_ml} | URL={resultado[:100]}")
     return resultado
 
 
 def _injetar_magalu(url: str, id_magalu: str) -> str:
-    """Adiciona promoter_id e partner_id para Magalu (Magazine Voc)."""
+    """
+    Magalu / Magazine Voce.
+    Se o ID for um slug (ex: 'descontecas'), reconstroi a URL no formato Magazine Voce.
+    """
+    # 1. Tenta extrair o ID do produto (/p/1234567 ou final da URL)
+    m_id = re.search(r"/p/(\d{5,15})", url)
+    if not m_id:
+        # Tenta pegar um numero longo no final da URL que parece ser o SKU
+        m_id = re.search(r"/(\d{7,12})/?$", url)
+
+    if m_id and not id_magalu.isdigit():
+        product_id = m_id.group(1)
+        slug = id_magalu.lower().strip()
+        # No Magazine Voce, o slug geralmente e 'magazineseunome'
+        if not slug.startswith("magazine"):
+            slug = f"magazine{slug}"
+        
+        resultado = f"https://www.magazinevoce.com.br/{slug}/p/{product_id}/"
+        logger.info(f"[AFFILIATE_SERVICE] Magalu Social | ID={id_magalu} | Slug={slug} | Code={product_id}")
+        return resultado
+
+    # 2. Fallback: Adiciona promoter_id e partner_id se for numerico
     parsed = urlparse(url)
     params = parse_qs(parsed.query, keep_blank_values=True)
     
-    # Se o ID for numerico (ID de promotor), usamos o formato oficial de Divulgador
     if id_magalu.isdigit():
         params["promoter_id"] = [id_magalu]
-        params["partner_id"] = ["3440"] # ID padrao para Magazine Voc
+        params["partner_id"] = ["3440"]
     
     params["utm_medium"] = ["affiliate"]
     params["utm_source"]  = [id_magalu]
     
     nova_query = urlencode(params, doseq=True)
     resultado = urlunparse(parsed._replace(query=nova_query))
-    logger.info(f"[AFFILIATE_SERVICE] Magalu | ID={id_magalu} | URL={resultado[:100]}")
+    logger.info(f"[AFFILIATE_SERVICE] Magalu Fallback | ID={id_magalu} | URL={resultado[:100]}")
     return resultado
 
 
@@ -267,30 +302,69 @@ async def injetar_link_afiliado(url: str, store_key: str | None = None) -> str:
         except Exception as e:
             logger.warning(f"[AFFILIATE_SERVICE] Falha ao expandir link curto: {e}")
 
-    # 2.5 Tratamento especial para paginas /social/ do Mercado Livre
+    # 2.5 Tratamento especial para paginas /social/ do Mercado Livre (Vitrines de terceiros)
     if store_key == "mercadolivre" and "/social/" in url.lower():
-        logger.info(f"[AFFILIATE_SERVICE] Detectado link /social/. Extraindo produto real...")
+        logger.info(f"[AFFILIATE_SERVICE] Detectado link /social/. Extraindo produto real para garantir sua comissao...")
         try:
             import httpx
-            headers_social = {
-                "User-Agent": "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)",
-                "Accept-Language": "pt-BR,pt;q=0.9",
-            }
-            async with httpx.AsyncClient(follow_redirects=True, timeout=15.0, headers=headers_social) as client:
-                resp = await client.get(url)
-                html = resp.text
-                m_code = re.search(r'MLB-?\d+', html) or re.search(r'short_name=([^&"]+)', url)
-                code = m_code.group(0) if m_code else ""
-                if code:
-                    m_link = re.search(fr'https?://[^"\s]*{code}[^"\s]*MLB[^"\s>]*', html)
-                    if m_link:
-                        url = m_link.group(0).replace("&amp;", "&")
-                        import urllib.parse
-                        parsed_m_link = urllib.parse.urlparse(url)
-                        url = urllib.parse.urlunparse(parsed_m_link._replace(query="", fragment=""))
-                        logger.info(f"[AFFILIATE_SERVICE] /social/ convertido para produto real: {url[:80]}")
+            from urllib.parse import quote, urlparse, urlunparse
+            html = ""
+            
+            # Tenta Scrapingdog se houver chave (evita block de IP do Mercado Livre)
+            sd_key = os.getenv("SCRAPINGDOG_API_KEY", "").strip()
+            if sd_key:
+                try:
+                    logger.info("[AFFILIATE_SERVICE] Usando Scrapingdog para abrir pagina social...")
+                    # dynamic=false e suficiente para o HTML estatico que contem os links
+                    sd_url = f"https://api.scrapingdog.com/scrape?api_key={sd_key}&url={quote(url)}&dynamic=false"
+                    async with httpx.AsyncClient(timeout=20.0) as client:
+                        resp = await client.get(sd_url)
+                        if resp.status_code == 200:
+                            html = resp.text
+                except Exception as e:
+                    logger.warning(f"[AFFILIATE_SERVICE] Scrapingdog falhou: {e}")
+
+            if not html:
+                # Fallback para direto com Googlebot se Scrapingdog falhar ou nao existir
+                headers_social = {
+                    "User-Agent": "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)",
+                    "Accept-Language": "pt-BR,pt;q=0.9",
+                }
+                async with httpx.AsyncClient(follow_redirects=True, timeout=15.0, headers=headers_social) as client:
+                    resp = await client.get(url)
+                    html = resp.text
+
+            # 1. Busca codigo do produto (MLB...) no HTML ou na URL
+            m_code = re.search(r'MLB-?\d+', html)
+            if not m_code:
+                 # Tenta buscar na propria URL social se houver algum ID
+                 m_code = re.search(r'MLB-?\d+', url)
+            
+            if m_code:
+                code = m_code.group(0)
+                # 2. Busca o link real do produto que contem esse codigo
+                # Procuramos um link que contenha o codigo e nao seja o proprio link social
+                links_no_html = re.findall(fr'https?://[^"\s]*{code}[^"\s]*', html)
+                
+                real_url = None
+                for l in links_no_html:
+                    if "/social/" not in l and ("/p/" in l or "/produto" in l or "MLB" in l):
+                        real_url = l.replace("&amp;", "&")
+                        break
+                
+                if real_url:
+                    # Limpa a URL de lixo do social para injetar o novo afiliado limpo
+                    p = urlparse(real_url)
+                    url = urlunparse(p._replace(query="", fragment=""))
+                    logger.info(f"[AFFILIATE_SERVICE] /social/ convertido para produto direto: {url[:80]}")
+                else:
+                    # Se nao achou link completo, mas tem o codigo, monta o link padrao do produto
+                    url = f"https://www.mercadolivre.com.br/p/{code.replace('-', '')}"
+                    logger.info(f"[AFFILIATE_SERVICE] /social/ convertido via ID direto: {url}")
+            else:
+                logger.warning("[AFFILIATE_SERVICE] Nao foi possivel encontrar um produto MLB na pagina social.")
         except Exception as e:
-            logger.warning(f"[AFFILIATE_SERVICE] Falha ao extrair produto de /social/: {e}")
+            logger.warning(f"[AFFILIATE_SERVICE] Falha ao processar /social/: {e}")
 
     # 3. Limpeza preventiva de rastreadores de terceiros
     for param in ["fbclid", "gclid", "aff_id", "clickid"]:
@@ -343,46 +417,63 @@ async def injetar_link_afiliado(url: str, store_key: str | None = None) -> str:
 
 async def resolve_short_url_httpx(url: str) -> str:
     """
-    Resolve URLs curtas (amzn.to, shope.ee, ml.tidd.ly, etc.) via httpx.
-    Substitui o Playwright para evitar bloqueios ou uso excessivo de recursos.
-
-    SO usa httpx (Requests) seguindo os redirecionamentos HTTP (301/302).
-
-    Args:
-        url: URL curta.
-
-    Returns:
-        URL final apos redirecionamentos. Retorna a original em caso de falha.
+    Resolve URLs curtas (amzn.to, shope.ee, meli.la, etc.) via httpx.
+    Detecta redirecionamentos via Meta Refresh ou JavaScript.
     """
     try:
         import httpx
-        logger.info(f"[AFFILIATE_SERVICE] HTTPX resolver iniciando: {url[:80]}")
+        logger.info(f"[AFFILIATE_SERVICE] Resolvendo link curto: {url[:80]}")
 
         headers = {
-            "User-Agent": (
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/124.0.0.0 Safari/537.36"
-            ),
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
             "Accept-Language": "pt-BR,pt;q=0.9",
         }
 
-        # Siga ate 5 redirecionamentos
-        async with httpx.AsyncClient(follow_redirects=True, max_redirects=5, timeout=15.0, headers=headers) as client:
+        async with httpx.AsyncClient(follow_redirects=True, max_redirects=10, timeout=15.0, headers=headers) as client:
             resp = await client.get(url)
             final_url = str(resp.url)
 
+            # Se o status e 200 mas o link nao mudou, checa se ha redirecionamento no corpo (JS/Meta)
+            if final_url == url and resp.status_code == 200:
+                html = resp.text
+                # Meta refresh
+                m_meta = re.search(r'<meta[^>]+http-equiv=["\']refresh["\'][^>]+url=([^"\'>]+)["\']', html, re.I)
+                # JS Location
+                m_js = re.search(r'window\.location\.href\s*=\s*["\']([^"\']+)["\']', html) or \
+                       re.search(r'location\.replace\(["\']([^"\']+)["\']\)', html)
+                
+                target = (m_meta.group(1) if m_meta else None) or (m_js.group(1) if m_js else None)
+                if target:
+                    if not target.startswith("http"):
+                        from urllib.parse import urljoin
+                        target = urljoin(url, target)
+                    logger.info(f"[AFFILIATE_SERVICE] Detectado redirecionamento interno para: {target[:80]}")
+                    return await resolve_short_url_httpx(target)
+
         if final_url and final_url != url:
-            logger.info(f"[AFFILIATE_SERVICE] HTTPX resolveu: {final_url[:100]}")
-        else:
-            logger.info("[AFFILIATE_SERVICE] HTTPX: URL nao redirecionada (ja e final).")
-            final_url = url
+            logger.info(f"[AFFILIATE_SERVICE] Link resolvido: {final_url[:100]}")
+            return final_url
+        
+        # Se falhou e for um encurtador conhecido, tenta via Scrapingdog como ultimo recurso
+        if any(s in url.lower() for s in ["meli.la", "ml.tidd.ly", "amzn.to", "shope.ee"]):
+            sd_key = os.getenv("SCRAPINGDOG_API_KEY", "").strip()
+            if sd_key:
+                try:
+                    logger.info(f"[AFFILIATE_SERVICE] Tentando Scrapingdog para expansao de {url[:40]}...")
+                    sd_url = f"https://api.scrapingdog.com/scrape?api_key={sd_key}&url={quote(url)}&dynamic=true"
+                    async with httpx.AsyncClient(timeout=25.0) as client:
+                        resp_sd = await client.get(sd_url)
+                        # O Scrapingdog com dynamic=true nos dara a URL final no header ou podemos extrair do HTML
+                        if resp_sd.status_code == 200:
+                            # Tenta pegar link de produto no HTML resultante
+                            m_mlb = re.search(r'https?://[^"\s]*MLB-?\d+[^"\s]*', resp_sd.text)
+                            if m_mlb:
+                                logger.info(f"[AFFILIATE_SERVICE] Link extraido via Scrapingdog: {m_mlb.group(0)[:80]}")
+                                return m_mlb.group(0)
+                except: pass
 
-        return final_url
-
-    except ImportError:
-        logger.warning("[AFFILIATE_SERVICE] httpx nao instalado. Usando URL original.")
         return url
+
     except Exception as e:
-        logger.warning(f"[AFFILIATE_SERVICE] HTTPX resolver falhou ({e}). Usando URL original.")
+        logger.warning(f"[AFFILIATE_SERVICE] Falha ao resolver link ({e}).")
         return url

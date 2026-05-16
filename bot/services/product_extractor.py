@@ -161,16 +161,22 @@ def extract_product_data(url: str) -> dict:
         result["loja"], result["store_key"] = detect_store(final_url)
         result["product_url"] = final_url  # Salva a URL limpa para uso posterior
 
-        # /social/
+        # /social/ (Tratamento para Vitrines do Mercado Livre)
         if "/social/" in final_url:
-            m_code = re.search(r'MLB-?\d+', html) or re.search(r'short_name=([^&"]+)', url)
-            code = m_code.group(0) if m_code else ""
-            m_link = re.search(fr'https?://[^"\s]*{code}[^"\s]*MLB[^"\s>]*', html)
-            if m_link:
-                real_url = m_link.group(0).replace("&amp;", "&")
-                res_real = session.get(real_url, headers=_GOOGLEBOT_HEADERS, timeout=10)
-                soup = BeautifulSoup(res_real.text, "html.parser")
-                html = res_real.text
+            logger.info(f"[EXTRACTOR] Detectado link social. Extraindo produto real...")
+            m_code = re.search(r'MLB-?\d+', html)
+            if m_code:
+                code = m_code.group(0)
+                # Regex flexivel para encontrar o link do produto que contem o MLB
+                m_link = re.search(fr'https?://[^"\s]*{code}[^"\s]*', html)
+                if m_link:
+                    real_url = m_link.group(0).replace("&amp;", "&")
+                    logger.info(f"[EXTRACTOR] Indo para URL real do produto: {real_url[:60]}")
+                    res_real = session.get(real_url, headers=_GOOGLEBOT_HEADERS, timeout=10)
+                    soup = BeautifulSoup(res_real.text, "html.parser")
+                    html = res_real.text
+                    # Atualiza a URL final para a URL do produto direto
+                    final_url = real_url
 
         # Extracao
         final_data = _extract_seo_data(soup, html)
